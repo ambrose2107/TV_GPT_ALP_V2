@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OptiTrade Bot Dashboard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #0d1117; color: #e6edf3; min-height: 100vh; }
+  header { background: #161b22; border-bottom: 1px solid #30363d; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+  header h1 { font-size: 1.2rem; font-weight: 600; color: #58a6ff; }
+  .mode-badge { background: #1f6feb; color: white; padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: 600; }
+  .mode-badge.live { background: #da3633; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  .grid-top { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 20px; }
+  .card h3 { font-size: 0.75rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+  .card .value { font-size: 1.6rem; font-weight: 700; }
+  .card .value.green { color: #3fb950; }
+  .card .value.red { color: #f85149; }
+  .card .value.blue { color: #58a6ff; }
+  .controls { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+  button { padding: 10px 20px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; font-size: 0.9rem; transition: opacity 0.2s; }
+  button:hover { opacity: 0.85; }
+  .btn-danger  { background: #da3633; color: white; }
+  .btn-success { background: #238636; color: white; }
+  .btn-warning { background: #e3b341; color: #0d1117; }
+  .btn-blue    { background: #1f6feb; color: white; }
+  .btn-gray    { background: #30363d; color: #e6edf3; }
+  .section-title { font-size: 1rem; font-weight: 600; margin-bottom: 12px; color: #c9d1d9; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th { background: #21262d; padding: 10px 12px; text-align: left; color: #8b949e; font-weight: 500; border-bottom: 1px solid #30363d; }
+  td { padding: 10px 12px; border-bottom: 1px solid #21262d; }
+  tr:hover td { background: #161b22; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+  .badge-buy    { background: #0d3024; color: #3fb950; }
+  .badge-sell   { background: #3d1a1a; color: #f85149; }
+  .badge-ok     { background: #0d2d41; color: #58a6ff; }
+  .badge-error  { background: #3d1a1a; color: #f85149; }
+  .badge-blocked{ background: #2d2d00; color: #e3b341; }
+  .kill-on  { background: #da3633 !important; }
+  .kill-off { background: #238636 !important; }
+  .status-bar { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px 16px; margin-bottom: 24px; display: flex; gap: 24px; font-size: 0.85rem; }
+  .status-item { display: flex; align-items: center; gap: 6px; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .status-dot.green { background: #3fb950; }
+  .status-dot.red   { background: #f85149; }
+  .tab-bar { display: flex; gap: 4px; margin-bottom: 16px; }
+  .tab { padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 0.85rem; background: transparent; color: #8b949e; border: 1px solid transparent; }
+  .tab.active { background: #21262d; color: #e6edf3; border-color: #30363d; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  #webhook-url { background: #21262d; border: 1px solid #30363d; border-radius: 6px; padding: 10px 14px; color: #58a6ff; font-family: monospace; font-size: 0.85rem; width: 100%; margin-top: 8px; }
+  .positions-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .pos-card { background: #21262d; border-radius: 8px; padding: 16px; border-left: 3px solid #3fb950; }
+  .pos-card.short { border-color: #f85149; }
+  .pos-card .sym { font-weight: 700; font-size: 1rem; }
+  .pos-card .pnl { font-size: 1.1rem; font-weight: 600; margin-top: 6px; }
+  .empty-state { color: #8b949e; text-align: center; padding: 40px; }
+  .refresh-note { color: #8b949e; font-size: 0.75rem; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🤖 OptiTrade Webhook Bot</h1>
+  <span id="mode-badge" class="mode-badge">PAPER</span>
+</header>
+
+<div class="container">
+
+  <!-- Portfolio cards -->
+  <div class="grid-top">
+    <div class="card">
+      <h3>Portfolio Value</h3>
+      <div class="value blue" id="portfolio-value">—</div>
+    </div>
+    <div class="card">
+      <h3>Cash Available</h3>
+      <div class="value" id="cash">—</div>
+    </div>
+    <div class="card">
+      <h3>Today's P&L</h3>
+      <div class="value" id="daily-pnl">—</div>
+    </div>
+    <div class="card">
+      <h3>Open Positions</h3>
+      <div class="value blue" id="open-positions">—</div>
+    </div>
+  </div>
+
+  <!-- Status bar -->
+  <div class="status-bar">
+    <div class="status-item">
+      <div class="status-dot" id="kill-dot"></div>
+      <span id="kill-text">Kill Switch: —</span>
+    </div>
+    <div class="status-item">
+      <div class="status-dot" id="trading-dot"></div>
+      <span id="trading-text">Trading: —</span>
+    </div>
+    <div class="status-item">
+      <div class="dot"></div>
+      <span>Live — refreshes every 10s</span>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <button id="btn-kill" class="btn-danger" onclick="toggleKillSwitch()">🛑 Kill Switch</button>
+    <button id="btn-trading" class="btn-success" onclick="toggleTrading()">✅ Disable Trading</button>
+    <button class="btn-warning" onclick="closeAll()">⚠️ Close ALL Positions</button>
+    <button class="btn-blue" onclick="loadAll()">🔄 Refresh</button>
+  </div>
+
+  <!-- Webhook URL helper -->
+  <div class="card" style="margin-bottom:24px">
+    <h3>Your TradingView Webhook URL</h3>
+    <input id="webhook-url" readonly value="Loading..." onclick="this.select()">
+    <p class="refresh-note">Paste this URL in your TradingView alert → Webhook URL field</p>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tab-bar">
+    <div class="tab active" onclick="switchTab('signals')">📡 Signals</div>
+    <div class="tab" onclick="switchTab('trades')">📋 Trades</div>
+    <div class="tab" onclick="switchTab('positions')">📊 Positions</div>
+  </div>
+
+  <div id="tab-signals" class="tab-content active">
+    <div class="section-title"><div class="dot"></div> Recent Signals from TradingView</div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Time</th><th>Symbol</th><th>Action</th><th>Status</th><th>Note</th></tr></thead>
+        <tbody id="signals-body"><tr><td colspan="5" class="empty-state">Loading...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="tab-trades" class="tab-content">
+    <div class="section-title">📋 Executed Trades</div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Time</th><th>Symbol</th><th>Action</th><th>Qty</th><th>Price</th><th>Status</th></tr></thead>
+        <tbody id="trades-body"><tr><td colspan="6" class="empty-state">Loading...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="tab-positions" class="tab-content">
+    <div class="section-title">📊 Open Positions</div>
+    <div id="positions-grid" class="positions-grid"><p class="empty-state">Loading...</p></div>
+  </div>
+
+</div>
+
+<script>
+const fmt = (n) => '$' + parseFloat(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+async function apiFetch(url, opts={}) {
+  const r = await fetch(url, opts);
+  if (r.status === 401) { location.reload(); return null; }
+  return r.json();
+}
+
+async function loadPortfolio() {
+  const d = await apiFetch('/api/portfolio');
+  if (!d || d.error) return;
+  document.getElementById('portfolio-value').textContent = fmt(d.portfolio_value);
+  document.getElementById('cash').textContent = fmt(d.cash);
+  const pnl = d.portfolio_value - d.last_equity;
+  const pnlEl = document.getElementById('daily-pnl');
+  pnlEl.textContent = (pnl >= 0 ? '+' : '') + fmt(pnl);
+  pnlEl.className = 'value ' + (pnl >= 0 ? 'green' : 'red');
+  document.getElementById('open-positions').textContent = d.positions.length;
+  document.getElementById('mode-badge').textContent = d.mode;
+  if (d.mode === 'LIVE') document.getElementById('mode-badge').classList.add('live');
+
+  // Positions tab
+  const pg = document.getElementById('positions-grid');
+  if (d.positions.length === 0) {
+    pg.innerHTML = '<p class="empty-state">No open positions</p>';
+  } else {
+    pg.innerHTML = d.positions.map(p => {
+      const pnl = parseFloat(p.unrealized_pl || 0);
+      const side = p.side;
+      return `<div class="pos-card ${side}">
+        <div class="sym">${p.symbol}</div>
+        <div style="color:#8b949e;font-size:0.8rem">${p.qty} shares · ${side.toUpperCase()}</div>
+        <div class="pnl ${pnl>=0?'green':'red'}">${pnl>=0?'+':''}${fmt(pnl)}</div>
+        <div style="color:#8b949e;font-size:0.75rem">@ ${fmt(p.avg_entry_price)}</div>
+      </div>`;
+    }).join('');
+  }
+}
+
+async function loadSignals() {
+  const rows = await apiFetch('/api/signals');
+  if (!rows) return;
+  const tbody = document.getElementById('signals-body');
+  if (rows.length === 0) { tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No signals yet</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => {
+    const statusMap = { 0:'pending', 1:'executed', 2:'blocked' };
+    const statusClass = { 0:'badge-ok', 1:'badge-buy', 2:'badge-blocked' };
+    const s = r.processed;
+    return `<tr>
+      <td>${r.timestamp}</td>
+      <td><strong>${r.symbol}</strong></td>
+      <td><span class="badge badge-${r.action}">${r.action.toUpperCase()}</span></td>
+      <td><span class="badge ${statusClass[s]}">${statusMap[s]}</span></td>
+      <td style="color:#8b949e;font-size:0.8rem">${r.block_reason || ''}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function loadTrades() {
+  const rows = await apiFetch('/api/trades');
+  if (!rows) return;
+  const tbody = document.getElementById('trades-body');
+  if (rows.length === 0) { tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No trades yet</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => `<tr>
+    <td>${r.timestamp}</td>
+    <td><strong>${r.symbol}</strong></td>
+    <td><span class="badge badge-${r.action}">${r.action.toUpperCase()}</span></td>
+    <td>${r.quantity}</td>
+    <td>${r.price ? fmt(r.price) : '—'}</td>
+    <td><span class="badge badge-${r.status === 'error' ? 'error' : 'ok'}">${r.status}</span></td>
+  </tr>`).join('');
+}
+
+async function loadStatus() {
+  const d = await apiFetch('/api/status');
+  if (!d) return;
+  const killDot  = document.getElementById('kill-dot');
+  const killText = document.getElementById('kill-text');
+  const tradDot  = document.getElementById('trading-dot');
+  const tradText = document.getElementById('trading-text');
+  const btnKill  = document.getElementById('btn-kill');
+  const btnTrad  = document.getElementById('btn-trading');
+
+  killDot.className  = 'status-dot ' + (d.kill_switch ? 'red' : 'green');
+  killText.textContent = 'Kill Switch: ' + (d.kill_switch ? 'ON 🔴' : 'OFF ✅');
+  btnKill.textContent  = d.kill_switch ? '✅ Deactivate Kill Switch' : '🛑 Activate Kill Switch';
+  btnKill.className    = d.kill_switch ? 'btn-success' : 'btn-danger';
+
+  tradDot.className  = 'status-dot ' + (d.trading_enabled ? 'green' : 'red');
+  tradText.textContent = 'Trading: ' + (d.trading_enabled ? 'Enabled ✅' : 'Disabled 🔴');
+  btnTrad.textContent  = d.trading_enabled ? '🚫 Disable Trading' : '✅ Enable Trading';
+  btnTrad.className    = d.trading_enabled ? 'btn-warning' : 'btn-success';
+}
+
+async function toggleKillSwitch() {
+  const d = await apiFetch('/api/status');
+  if (!d) return;
+  await apiFetch('/api/kill-switch', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({on: !d.kill_switch}) });
+  loadStatus();
+}
+
+async function toggleTrading() {
+  const d = await apiFetch('/api/status');
+  if (!d) return;
+  await apiFetch('/api/trading-enabled', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({enabled: !d.trading_enabled}) });
+  loadStatus();
+}
+
+async function closeAll() {
+  if (!confirm('Close ALL open positions now? This cannot be undone.')) return;
+  const r = await apiFetch('/api/close-all', { method:'POST' });
+  alert(r.message);
+  loadPortfolio();
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+  if (name === 'signals') loadSignals();
+  if (name === 'trades')  loadTrades();
+}
+
+async function loadAll() {
+  await Promise.all([loadPortfolio(), loadSignals(), loadStatus()]);
+  // Set webhook URL
+  document.getElementById('webhook-url').value = window.location.origin + '/webhook';
+}
+
+// Auto-refresh every 10s
+loadAll();
+setInterval(loadAll, 10000);
+</script>
+</body>
+</html>

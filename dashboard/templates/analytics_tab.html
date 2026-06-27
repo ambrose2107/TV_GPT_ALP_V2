@@ -1,0 +1,280 @@
+<!-- ═══════════════════════════════════════════════════════════════
+     ANALYTICS TAB  — paste this inside the tabs section of dashboard.html
+     Tab button: add to nav bar:
+       <button class="tab-btn" onclick="switchTab('analytics')">📊 Analytics</button>
+     Tab content: add inside the main tab container area
+     ════════════════════════════════════════════════════════════════ -->
+
+<!-- TAB BUTTON (add to nav row) -->
+<!-- <button class="tab-btn" onclick="switchTab('analytics')" id="tab-analytics">📊 Analytics</button> -->
+
+<!-- TAB CONTENT -->
+<div id="tab-content-analytics" class="tab-content" style="display:none;">
+  <div style="padding:20px 0;">
+
+    <!-- Summary metric cards -->
+    <div id="analytics-summary-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px;">
+      <div class="stat-card"><div class="stat-label">Total Trades</div><div class="stat-value" id="an-total-trades">—</div></div>
+      <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-value" id="an-win-rate" style="color:#4caf50">—</div></div>
+      <div class="stat-card"><div class="stat-label">Total P&L</div><div class="stat-value" id="an-total-pnl">—</div></div>
+      <div class="stat-card"><div class="stat-label">Profit Factor</div><div class="stat-value" id="an-pf">—</div></div>
+      <div class="stat-card"><div class="stat-label">Avg Trade</div><div class="stat-value" id="an-avg-trade">—</div></div>
+      <div class="stat-card"><div class="stat-label">Best Trade</div><div class="stat-value" id="an-best" style="color:#4caf50">—</div></div>
+      <div class="stat-card"><div class="stat-label">Worst Trade</div><div class="stat-value" id="an-worst" style="color:#f44336">—</div></div>
+    </div>
+
+    <!-- Equity Curve -->
+    <div class="section-card" style="margin-bottom:24px;">
+      <div class="section-title">📈 Equity Curve</div>
+      <div style="position:relative;height:220px;">
+        <canvas id="equityChart" role="img" aria-label="Equity curve showing cumulative P&L over time">Equity curve</canvas>
+      </div>
+    </div>
+
+    <!-- Per-symbol charts row -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">
+      <!-- Trades per symbol bar chart -->
+      <div class="section-card">
+        <div class="section-title">🏢 Trades by Company</div>
+        <div style="position:relative;height:260px;">
+          <canvas id="tradesPerSymbolChart" role="img" aria-label="Bar chart of number of trades per symbol">Trades per symbol</canvas>
+        </div>
+      </div>
+      <!-- P&L per symbol bar chart -->
+      <div class="section-card">
+        <div class="section-title">💰 Total P&L by Symbol</div>
+        <div style="position:relative;height:260px;">
+          <canvas id="pnlPerSymbolChart" role="img" aria-label="Bar chart of total P&L per symbol">P&L per symbol</canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Win rate per symbol -->
+    <div class="section-card" style="margin-bottom:24px;">
+      <div class="section-title">🎯 Win Rate by Symbol</div>
+      <div style="position:relative;height:220px;">
+        <canvas id="winRateChart" role="img" aria-label="Win rate percentage per symbol">Win rate per symbol</canvas>
+      </div>
+    </div>
+
+    <!-- Per-symbol table -->
+    <div class="section-card">
+      <div class="section-title">📋 Per-Symbol Breakdown</div>
+      <div style="overflow-x:auto;">
+        <table class="data-table" id="analytics-symbol-table">
+          <thead>
+            <tr>
+              <th>Symbol</th><th>Trades</th><th>W</th><th>L</th>
+              <th>Win%</th><th>Total P&L</th><th>Avg Win</th>
+              <th>Avg Loss</th><th>Profit Factor</th><th>Best</th><th>Worst</th>
+            </tr>
+          </thead>
+          <tbody id="analytics-tbody">
+            <tr><td colspan="11" style="text-align:center;color:#888">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ── Analytics Tab Logic ──────────────────────────────────────────────────────
+let analyticsLoaded = false;
+let equityChartInst = null;
+let tradesPerSymbolChartInst = null;
+let pnlPerSymbolChartInst = null;
+let winRateChartInst = null;
+
+function loadAnalytics() {
+  if (analyticsLoaded) return;
+  fetch('/api/analytics/summary')
+    .then(r => r.json())
+    .then(data => {
+      analyticsLoaded = true;
+      renderAnalyticsSummary(data);
+    })
+    .catch(e => console.error('Analytics load error:', e));
+}
+
+function renderAnalyticsSummary(data) {
+  const t = data.totals || {};
+  const pnlColor = t.total_pnl >= 0 ? '#4caf50' : '#f44336';
+  const avgColor = t.avg_trade_pnl >= 0 ? '#4caf50' : '#f44336';
+
+  document.getElementById('an-total-trades').textContent = t.total_trades ?? '—';
+  document.getElementById('an-win-rate').textContent = t.win_rate != null ? t.win_rate + '%' : '—';
+  const pnlEl = document.getElementById('an-total-pnl');
+  pnlEl.textContent = t.total_pnl != null ? '$' + t.total_pnl.toFixed(2) : '—';
+  pnlEl.style.color = pnlColor;
+  document.getElementById('an-pf').textContent = t.profit_factor ?? '—';
+  const avgEl = document.getElementById('an-avg-trade');
+  avgEl.textContent = t.avg_trade_pnl != null ? '$' + t.avg_trade_pnl.toFixed(2) : '—';
+  avgEl.style.color = avgColor;
+  document.getElementById('an-best').textContent = t.best_trade != null ? '$' + t.best_trade.toFixed(2) : '—';
+  document.getElementById('an-worst').textContent = t.worst_trade != null ? '$' + t.worst_trade.toFixed(2) : '—';
+
+  // Symbol table
+  const tbody = document.getElementById('analytics-tbody');
+  if (data.symbols && data.symbols.length > 0) {
+    tbody.innerHTML = data.symbols.map(s => {
+      const pnlCls = s.total_pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+      const wrCls = s.win_rate >= 60 ? 'pnl-positive' : s.win_rate < 40 ? 'pnl-negative' : '';
+      return `<tr>
+        <td><strong>${s.symbol}</strong></td>
+        <td>${s.trades}</td>
+        <td style="color:#4caf50">${s.wins}</td>
+        <td style="color:#f44336">${s.losses}</td>
+        <td class="${wrCls}">${s.win_rate}%</td>
+        <td class="${pnlCls}">$${s.total_pnl.toFixed(2)}</td>
+        <td style="color:#4caf50">$${s.avg_win.toFixed(2)}</td>
+        <td style="color:#f44336">$${s.avg_loss.toFixed(2)}</td>
+        <td>${s.profit_factor}</td>
+        <td style="color:#4caf50">$${s.max_win.toFixed(2)}</td>
+        <td style="color:#f44336">$${s.max_loss.toFixed(2)}</td>
+      </tr>`;
+    }).join('');
+  } else {
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#888">No closed trade data found.</td></tr>';
+  }
+
+  // Equity curve chart
+  renderEquityChart(data.equity_curve || []);
+
+  // Per-symbol charts
+  if (data.symbols && data.symbols.length > 0) {
+    renderSymbolCharts(data.symbols);
+  }
+}
+
+function renderEquityChart(curve) {
+  const ctx = document.getElementById('equityChart');
+  if (!ctx) return;
+  if (equityChartInst) { equityChartInst.destroy(); equityChartInst = null; }
+  const labels = curve.map(p => p.date);
+  const vals = curve.map(p => p.cumulative_pnl);
+  const color = vals.length && vals[vals.length - 1] >= 0 ? '#4caf50' : '#f44336';
+  equityChartInst = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Cumulative P&L ($)',
+        data: vals,
+        borderColor: color,
+        backgroundColor: color + '22',
+        fill: true,
+        tension: 0.3,
+        pointRadius: vals.length > 50 ? 0 : 3,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#aaa', maxTicksLimit: 10 }, grid: { color: '#333' } },
+        y: { ticks: { color: '#aaa', callback: v => '$' + v.toFixed(0) }, grid: { color: '#333' } },
+      }
+    }
+  });
+}
+
+function renderSymbolCharts(symbols) {
+  const labels = symbols.map(s => s.symbol);
+  const isDark = true;
+  const gridColor = '#333';
+  const tickColor = '#aaa';
+
+  // Trades per symbol
+  const ctx1 = document.getElementById('tradesPerSymbolChart');
+  if (ctx1) {
+    if (tradesPerSymbolChartInst) { tradesPerSymbolChartInst.destroy(); }
+    tradesPerSymbolChartInst = new Chart(ctx1, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Wins', data: symbols.map(s => s.wins), backgroundColor: '#4caf5099' },
+          { label: 'Losses', data: symbols.map(s => s.losses), backgroundColor: '#f4433699' },
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: tickColor } } },
+        scales: {
+          x: { stacked: true, ticks: { color: tickColor }, grid: { color: gridColor } },
+          y: { stacked: true, ticks: { color: tickColor }, grid: { color: gridColor } },
+        }
+      }
+    });
+  }
+
+  // P&L per symbol
+  const ctx2 = document.getElementById('pnlPerSymbolChart');
+  if (ctx2) {
+    if (pnlPerSymbolChartInst) { pnlPerSymbolChartInst.destroy(); }
+    const pnlVals = symbols.map(s => s.total_pnl);
+    pnlPerSymbolChartInst = new Chart(ctx2, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Total P&L ($)',
+          data: pnlVals,
+          backgroundColor: pnlVals.map(v => v >= 0 ? '#4caf5099' : '#f4433699'),
+          borderColor: pnlVals.map(v => v >= 0 ? '#4caf50' : '#f44336'),
+          borderWidth: 1,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: tickColor }, grid: { color: gridColor } },
+          y: { ticks: { color: tickColor, callback: v => '$' + v.toFixed(0) }, grid: { color: gridColor } },
+        }
+      }
+    });
+  }
+
+  // Win rate per symbol
+  const ctx3 = document.getElementById('winRateChart');
+  if (ctx3) {
+    if (winRateChartInst) { winRateChartInst.destroy(); }
+    const wrVals = symbols.map(s => s.win_rate);
+    winRateChartInst = new Chart(ctx3, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Win Rate (%)',
+          data: wrVals,
+          backgroundColor: wrVals.map(v => v >= 60 ? '#4caf5099' : v >= 50 ? '#ff980099' : '#f4433699'),
+          borderWidth: 1,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: tickColor }, grid: { color: gridColor } },
+          y: {
+            min: 0, max: 100,
+            ticks: { color: tickColor, callback: v => v + '%' },
+            grid: { color: gridColor }
+          },
+        }
+      }
+    });
+    // 50% reference line annotation (manual)
+  }
+}
+
+// Hook into switchTab to lazy-load
+const _origSwitchTab = typeof switchTab === 'function' ? switchTab : null;
+// This will be merged in the main dashboard's switchTab function.
+// Add this call inside switchTab when tab === 'analytics':
+//   if (tab === 'analytics') loadAnalytics();
+</script>

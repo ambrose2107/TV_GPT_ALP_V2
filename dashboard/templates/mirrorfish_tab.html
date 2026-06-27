@@ -1,0 +1,267 @@
+<!-- ═══════════════════════════════════════════════════════════════
+     MIRRORFISH TAB — paste into dashboard.html tabs section
+     Tab button: <button class="tab-btn" onclick="switchTab('mirrorfish')">🐟 MirrorFish AI</button>
+     ════════════════════════════════════════════════════════════════ -->
+
+<div id="tab-content-mirrorfish" class="tab-content" style="display:none;">
+  <div style="padding:20px 0;">
+
+    <!-- Provider status banner -->
+    <div id="mf-provider-banner" style="margin-bottom:20px;padding:12px 16px;border-radius:8px;background:#1a2a1a;border:1px solid #2a4a2a;font-size:13px;">
+      <span style="color:#888">🐟 MirrorFish AI — checking provider...</span>
+    </div>
+
+    <!-- Setup guide (shown when no provider configured) -->
+    <div id="mf-setup-guide" style="display:none;margin-bottom:24px;padding:16px;border:1px solid #333;border-radius:8px;">
+      <div style="font-size:16px;font-weight:600;margin-bottom:12px;color:#fff;">⚙️ Quick Setup — Free LLM in 2 minutes</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
+        <div style="padding:12px;background:#161b22;border-radius:6px;">
+          <div style="font-weight:600;color:#58a6ff;margin-bottom:6px;">🥇 Groq (Recommended)</div>
+          <div style="font-size:12px;color:#aaa;margin-bottom:8px;">Fastest. Free tier. LLaMA 70B.</div>
+          <div style="font-size:11px;color:#ccc;">1. Go to <strong>console.groq.com</strong><br>2. Sign up free<br>3. Create API Key<br>4. Add to Railway:</div>
+          <code style="display:block;margin-top:8px;padding:6px;background:#0d1117;border-radius:4px;font-size:11px;color:#79c0ff;">GROQ_API_KEY=gsk_...</code>
+        </div>
+        <div style="padding:12px;background:#161b22;border-radius:6px;">
+          <div style="font-weight:600;color:#7c3aed;margin-bottom:6px;">🥈 OpenRouter</div>
+          <div style="font-size:12px;color:#aaa;margin-bottom:8px;">Multiple free models. $0 credit.</div>
+          <div style="font-size:11px;color:#ccc;">1. Go to <strong>openrouter.ai</strong><br>2. Sign up free<br>3. Create API Key<br>4. Add to Railway:</div>
+          <code style="display:block;margin-top:8px;padding:6px;background:#0d1117;border-radius:4px;font-size:11px;color:#79c0ff;">OPENROUTER_API_KEY=sk-or-...</code>
+        </div>
+        <div style="padding:12px;background:#161b22;border-radius:6px;">
+          <div style="font-weight:600;color:#16a34a;margin-bottom:6px;">🥉 HuggingFace</div>
+          <div style="font-size:12px;color:#aaa;margin-bottom:8px;">Free inference API. Slower.</div>
+          <div style="font-size:11px;color:#ccc;">1. Go to <strong>huggingface.co</strong><br>2. Settings → Access Tokens<br>3. Create READ token<br>4. Add to Railway:</div>
+          <code style="display:block;margin-top:8px;padding:6px;background:#0d1117;border-radius:4px;font-size:11px;color:#79c0ff;">HUGGINGFACE_API_KEY=hf_...</code>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main MirrorFish grid -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;">
+
+      <!-- Symbol Analyzer -->
+      <div class="section-card">
+        <div class="section-title">🔍 Symbol Analysis</div>
+        <div style="display:flex;gap:8px;margin-bottom:16px;">
+          <input type="text" id="mf-symbol-input" placeholder="e.g. AAPL" maxlength="10"
+            style="flex:1;padding:8px 12px;background:#161b22;border:1px solid #30363d;border-radius:6px;color:#fff;font-size:14px;text-transform:uppercase;">
+          <button onclick="runMirrorFishAnalysis()" style="padding:8px 16px;background:#1d4ed8;border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:14px;">
+            Analyze
+          </button>
+        </div>
+        <div id="mf-analysis-result" style="min-height:200px;">
+          <div style="color:#555;font-size:13px;padding:20px 0;">Enter a symbol and click Analyze to get MirrorFish AI prediction.</div>
+        </div>
+      </div>
+
+      <!-- Portfolio Analysis -->
+      <div class="section-card">
+        <div class="section-title">📊 Portfolio Health</div>
+        <button onclick="runPortfolioAnalysis()" style="padding:8px 16px;background:#0f766e;border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:14px;margin-bottom:16px;">
+          Analyze My Portfolio
+        </button>
+        <div id="mf-portfolio-result" style="min-height:200px;">
+          <div style="color:#555;font-size:13px;padding:20px 0;">Click to get AI analysis of your full portfolio health.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MirrorFish Chat -->
+    <div class="section-card">
+      <div class="section-title">💬 Ask MirrorFish</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div id="mf-chat-history" style="min-height:200px;max-height:350px;overflow-y:auto;padding:12px;background:#0d1117;border-radius:6px;border:1px solid #21262d;font-size:13px;"></div>
+        <div style="display:flex;gap:8px;">
+          <input type="text" id="mf-chat-input" placeholder="Ask anything about markets, your positions, strategy..." 
+            style="flex:1;padding:10px 14px;background:#161b22;border:1px solid #30363d;border-radius:6px;color:#fff;font-size:14px;"
+            onkeydown="if(event.key==='Enter') sendMirrorFishChat()">
+          <button onclick="sendMirrorFishChat()" style="padding:10px 18px;background:#7c3aed;border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:14px;">
+            Send ↗
+          </button>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button onclick="quickChat('What stocks look bullish today?')" class="mf-quick-btn">Bullish stocks?</button>
+          <button onclick="quickChat('How is my win rate compared to a good algo trader?')" class="mf-quick-btn">Rate my win rate</button>
+          <button onclick="quickChat('What risk management improvements would you suggest for my strategy?')" class="mf-quick-btn">Risk management tips</button>
+          <button onclick="quickChat('What are the main market risks this week?')" class="mf-quick-btn">Market risks</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<style>
+.mf-quick-btn {
+  padding: 4px 10px; font-size: 11px; background: #161b22;
+  border: 1px solid #30363d; border-radius: 12px; color: #aaa;
+  cursor: pointer; transition: border-color 0.2s;
+}
+.mf-quick-btn:hover { border-color: #7c3aed; color: #fff; }
+.mf-chat-msg { margin-bottom: 12px; }
+.mf-chat-msg.user { color: #79c0ff; }
+.mf-chat-msg.ai { color: #e6edf3; }
+.mf-chat-msg.ai::before { content: '🐟 '; }
+.mf-chat-msg.user::before { content: '👤 '; }
+.mf-prediction-badge {
+  display: inline-block; padding: 4px 12px; border-radius: 12px;
+  font-size: 12px; font-weight: 600; margin-right: 8px;
+}
+.mf-bull { background: #16382355; color: #4ade80; border: 1px solid #4ade8044; }
+.mf-bear { background: #38160055; color: #f87171; border: 1px solid #f8717144; }
+.mf-neutral { background: #2a2a2a; color: #aaa; border: 1px solid #444; }
+</style>
+
+<script>
+let mfProviderReady = false;
+
+function loadMirrorFish() {
+  fetch('/api/mirrorfish/status')
+    .then(r => r.json())
+    .then(status => {
+      const banner = document.getElementById('mf-provider-banner');
+      const guide = document.getElementById('mf-setup-guide');
+      const hasAny = Object.values(status).some(p => p.configured);
+      if (hasAny) {
+        const active = Object.entries(status).find(([,p]) => p.configured);
+        banner.style.background = '#1a2a1a';
+        banner.style.borderColor = '#2a4a2a';
+        banner.innerHTML = `<span style="color:#4ade80">✅ MirrorFish active — Provider: <strong>${active[1].name}</strong> (${active[1].key_hint})</span>
+          <span style="color:#666;font-size:11px;margin-left:12px;">Model: ${active[1].models[0]}</span>`;
+        mfProviderReady = true;
+        guide.style.display = 'none';
+      } else {
+        banner.style.background = '#2a1a1a';
+        banner.style.borderColor = '#4a2a2a';
+        banner.innerHTML = `<span style="color:#f87171">⚠️ MirrorFish not configured — add a free API key to enable AI predictions. See setup guide below.</span>`;
+        guide.style.display = 'block';
+      }
+    })
+    .catch(() => {
+      document.getElementById('mf-provider-banner').innerHTML = '<span style="color:#888">Could not reach MirrorFish API.</span>';
+    });
+}
+
+function runMirrorFishAnalysis() {
+  const sym = document.getElementById('mf-symbol-input').value.toUpperCase().trim();
+  if (!sym) return;
+  const el = document.getElementById('mf-analysis-result');
+  el.innerHTML = '<div style="color:#888;padding:20px 0;">🐟 MirrorFish is thinking...</div>';
+
+  fetch('/api/mirrorfish/analyze', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({symbol: sym, market_data: {}, signals: {}})
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.error && !data.prediction) {
+      el.innerHTML = `<div style="color:#f87171;padding:12px;">${data.error}</div>`;
+      return;
+    }
+    const pred = data.prediction || 'NEUTRAL';
+    const cls = pred === 'BULLISH' ? 'mf-bull' : pred === 'BEARISH' ? 'mf-bear' : 'mf-neutral';
+    const biasColor = data.short_term_bias === 'UP' ? '#4ade80' : data.short_term_bias === 'DOWN' ? '#f87171' : '#aaa';
+    el.innerHTML = `
+      <div style="margin-bottom:12px;">
+        <span class="mf-prediction-badge ${cls}">${pred}</span>
+        <span style="font-size:22px;font-weight:700;">${sym}</span>
+        <span style="font-size:13px;color:#888;margin-left:8px;">Confidence: ${data.confidence ?? '—'}%</span>
+      </div>
+      <div style="margin-bottom:10px;font-size:13px;color:#ccc;line-height:1.6;">${data.reasoning || ''}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">
+        <div style="padding:8px;background:#161b22;border-radius:6px;font-size:12px;">
+          <div style="color:#888">Short-term</div>
+          <div style="color:${biasColor};font-weight:600;">${data.short_term_bias || '—'}</div>
+        </div>
+        <div style="padding:8px;background:#161b22;border-radius:6px;font-size:12px;">
+          <div style="color:#888">Support</div>
+          <div style="color:#fff;">${data.key_levels?.support ? '$'+data.key_levels.support : '—'}</div>
+        </div>
+        <div style="padding:8px;background:#161b22;border-radius:6px;font-size:12px;">
+          <div style="color:#888">Resistance</div>
+          <div style="color:#fff;">${data.key_levels?.resistance ? '$'+data.key_levels.resistance : '—'}</div>
+        </div>
+      </div>
+      ${data.suggested_action ? `<div style="margin-bottom:8px;font-size:13px;">
+        Suggested: <strong style="color:${data.suggested_action==='BUY'?'#4ade80':data.suggested_action==='SELL'?'#f87171':'#aaa'}">${data.suggested_action}</strong>
+      </div>` : ''}
+      <div style="font-size:11px;color:#888;border-top:1px solid #21262d;padding-top:8px;margin-top:4px;">
+        ⚠️ ${data.risk_note || 'Educational purposes only.'} &nbsp;|&nbsp; via ${data.provider || '—'}
+      </div>`;
+  })
+  .catch(e => {
+    el.innerHTML = `<div style="color:#f87171">Error: ${e.message}</div>`;
+  });
+}
+
+function runPortfolioAnalysis() {
+  const el = document.getElementById('mf-portfolio-result');
+  el.innerHTML = '<div style="color:#888;padding:20px 0;">🐟 Analyzing portfolio...</div>';
+
+  // Get current positions from the page if available
+  const positions = window._currentPositions || [];
+
+  fetch('/api/mirrorfish/portfolio', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({positions})
+  })
+  .then(r => r.json())
+  .then(data => {
+    const health = data.portfolio_health || 'UNKNOWN';
+    const hColor = health === 'STRONG' ? '#4ade80' : health === 'HEALTHY' ? '#86efac' : health === 'WEAK' ? '#f87171' : '#aaa';
+    el.innerHTML = `
+      <div style="margin-bottom:12px;">
+        <span class="mf-prediction-badge" style="background:#11182755;border:1px solid ${hColor}44;color:${hColor}">${health}</span>
+        <span style="font-size:16px;font-weight:600;color:#fff;">Portfolio Health</span>
+      </div>
+      <div style="font-size:13px;color:#ccc;margin-bottom:10px;line-height:1.6;">${data.summary || ''}</div>
+      ${data.strategy_assessment ? `<div style="margin-bottom:8px;font-size:12px;color:#aaa;"><strong style="color:#ddd;">Strategy:</strong> ${data.strategy_assessment}</div>` : ''}
+      ${data.win_rate_comment ? `<div style="margin-bottom:8px;font-size:12px;color:#aaa;"><strong style="color:#ddd;">Win Rate:</strong> ${data.win_rate_comment}</div>` : ''}
+      ${data.top_suggestion ? `<div style="padding:8px 12px;background:#1a2a1a;border-radius:6px;font-size:12px;color:#86efac;border:1px solid #2a4a2a;">💡 ${data.top_suggestion}</div>` : ''}
+      <div style="font-size:11px;color:#888;margin-top:10px;">via ${data.provider || '—'} | Educational purposes only.</div>`;
+  })
+  .catch(e => {
+    el.innerHTML = `<div style="color:#f87171">Error: ${e.message}</div>`;
+  });
+}
+
+const mfChatHistory = [];
+function sendMirrorFishChat() {
+  const inp = document.getElementById('mf-chat-input');
+  const msg = inp.value.trim();
+  if (!msg) return;
+  inp.value = '';
+  quickChat(msg);
+}
+
+function quickChat(msg) {
+  const histEl = document.getElementById('mf-chat-history');
+  mfChatHistory.push({role:'user', content: msg});
+  histEl.innerHTML += `<div class="mf-chat-msg user">${msg}</div>`;
+  histEl.innerHTML += `<div class="mf-chat-msg ai" id="mf-thinking">thinking...</div>`;
+  histEl.scrollTop = histEl.scrollHeight;
+
+  fetch('/api/mirrorfish/chat', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({message: msg, context: {}})
+  })
+  .then(r => r.json())
+  .then(data => {
+    const thinking = document.getElementById('mf-thinking');
+    if (thinking) thinking.remove();
+    const response = data.response || data.error || 'No response.';
+    histEl.innerHTML += `<div class="mf-chat-msg ai">${response.replace(/\n/g,'<br>')}</div>`;
+    histEl.scrollTop = histEl.scrollHeight;
+  })
+  .catch(e => {
+    const thinking = document.getElementById('mf-thinking');
+    if (thinking) thinking.textContent = 'Error: ' + e.message;
+  });
+}
+
+// Hook: call loadMirrorFish() when mirrorfish tab is shown
+// Add to switchTab: if (tab === 'mirrorfish') loadMirrorFish();
+</script>

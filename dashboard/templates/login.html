@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trading Bot — Login</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0d1117; color: #e6edf3; font-family: -apple-system, sans-serif;
+         display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+          padding: 40px; width: 360px; text-align: center; }
+  h1 { font-size: 1.4rem; margin-bottom: 8px; }
+  p  { color: #8b949e; font-size: 0.9rem; margin-bottom: 28px; }
+  input { width: 100%; padding: 10px 14px; background: #0d1117; border: 1px solid #30363d;
+          border-radius: 8px; color: #e6edf3; font-size: 1rem; margin-bottom: 16px; }
+  button { width: 100%; padding: 11px; background: #238636; border: none; border-radius: 8px;
+           color: white; font-size: 1rem; cursor: pointer; font-weight: 600; }
+  button:hover { background: #2ea043; }
+  .error { color: #f85149; font-size: 0.85rem; margin-bottom: 12px; }
+  .logo { font-size: 2.5rem; margin-bottom: 16px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">📈</div>
+  <h1>Trading Bot</h1>
+  <p>OptiTrade AI → Alpaca Automation</p>
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <form method="POST">
+    <input type="password" name="password" placeholder="Dashboard password" autofocus>
+    <button type="submit">Login</button>
+  </form>
+</div>
+</body>
+</html>
