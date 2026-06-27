@@ -2177,27 +2177,39 @@ async function loadPortfolioAnalytics(force) {
   var pos  = data.positions        || [];
   var secs = data.sector_breakdown || {};
 
+  console.log('[Portfolio] Rendering - equity:'+acc.portfolio_value+' count:'+sum.open_count+' pos:'+pos.length);
+
   // ── Helpers ────────────────────────────────────────────────────────
   function f$(v)   { return '$'+Number(v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
   function fpct(v) { return (Number(v||0)>=0?'+':'')+Number(v||0).toFixed(2)+'%'; }
-  function setV(id,txt,cls) { var el=$(id); if(!el) return; el.textContent=txt; if(cls) el.className='val '+cls; }
 
-  // ── KPI Cards ──────────────────────────────────────────────────────
-  setV('port-equity',   f$(acc.portfolio_value));
-  setV('port-cash',     f$(acc.cash));
-  setV('port-invested', fpct(sum.invested_pct));
-  setV('port-count',    sum.open_count !== undefined ? sum.open_count : '—');
+  // ── KPI Cards — direct DOM writes, no helper ────────────────────────
+  var elEq = document.getElementById('port-equity');
+  if(elEq) { elEq.textContent = f$(acc.portfolio_value); console.log('[Portfolio] Set equity: '+f$(acc.portfolio_value)); }
+  else { console.error('[Portfolio] port-equity NOT FOUND in DOM'); }
+
+  var elCa = document.getElementById('port-cash');
+  if(elCa) elCa.textContent = f$(acc.cash);
+
+  var elIn = document.getElementById('port-invested');
+  if(elIn) elIn.textContent = fpct(sum.invested_pct);
+
+  var elCt = document.getElementById('port-count');
+  if(elCt) elCt.textContent = sum.open_count !== undefined ? sum.open_count : '—';
 
   var uplv = Number(sum.total_unrealized_pl||0);
-  var uplEl = $('port-upl');
-  if(uplEl){ uplEl.textContent=(uplv>=0?'+':'')+f$(uplv); uplEl.className='val '+(uplv>=0?'g':'r'); }
+  var elUp = document.getElementById('port-upl');
+  if(elUp){ elUp.textContent=(uplv>=0?'+':'')+f$(uplv); elUp.className='val '+(uplv>=0?'g':'r'); }
 
   var roiv = Number(sum.roi_pct||0);
-  var roiEl = $('port-roi');
-  if(roiEl){ roiEl.textContent=fpct(roiv); roiEl.className='val '+(roiv>=0?'g':'r'); }
+  var elRo = document.getElementById('port-roi');
+  if(elRo){ elRo.textContent=fpct(roiv); elRo.className='val '+(roiv>=0?'g':'r'); }
 
-  setV('port-best',  (sum.best_symbol||'—')+' '+(sum.best_symbol?fpct(sum.best_pct):''),  'g');
-  setV('port-worst', (sum.worst_symbol||'—')+' '+(sum.worst_symbol?fpct(sum.worst_pct):''), 'r');
+  var elBe = document.getElementById('port-best');
+  if(elBe){ elBe.textContent=(sum.best_symbol||'—')+' '+(sum.best_symbol?fpct(sum.best_pct):''); elBe.className='val g'; }
+
+  var elWo = document.getElementById('port-worst');
+  if(elWo){ elWo.textContent=(sum.worst_symbol||'—')+' '+(sum.worst_symbol?fpct(sum.worst_pct):''); elWo.className='val r'; }
 
   // ── Color palette ──────────────────────────────────────────────────
   var PAL=['#4f8ef7','#68d391','#f6e05e','#fc8181','#a78bfa','#f6ad55','#63b3ed','#76e4f7','#fbb6ce','#9ae6b4'];
