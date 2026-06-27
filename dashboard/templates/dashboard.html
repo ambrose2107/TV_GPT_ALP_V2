@@ -1779,7 +1779,7 @@ updateClock();
 setInterval(updateClock, 1000);
 
 // ── AUTO-REFRESH ──────────────────────────────────────────────────────────────
-let refreshTimer=null, rCountdown=30, rSecs=30;
+var refreshTimer=null, rCountdown=30, rSecs=30;
 function setAutoRefresh() {
   const sel=$('refresh-select'); if(!sel) return;
   rSecs=parseInt(sel.value)||0; rCountdown=rSecs;
@@ -2106,8 +2106,8 @@ function renderSectors(d) {
 // ═══════════════════════════════════════════════════════════════
 // LIVE PORTFOLIO ANALYTICS
 // ═══════════════════════════════════════════════════════════════
-let portLoaded = false;
-let portSectorPieInst = null, portAllocBarInst = null, portPnlBarInst = null;
+var portLoaded = false;
+var portSectorPieInst = null, portAllocBarInst = null, portPnlBarInst = null;
 
 function switchAnalyticsView(view) {
   const portfolio = document.getElementById('av-portfolio');
@@ -2342,8 +2342,8 @@ function drawPortfolioCharts() {
 }
 
 
-let anLoaded=false;
-let anEquityInst=null, anDrawdownInst=null, anTradesInst=null;
+var anLoaded=false;
+var anEquityInst=null, anDrawdownInst=null, anTradesInst=null;
 let anPnlInst=null, anWinInst=null, anMonthlyInst=null;
 let anPieInst=null, anRoiInst=null;
 
