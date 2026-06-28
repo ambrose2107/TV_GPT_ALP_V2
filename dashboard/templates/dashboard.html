@@ -312,6 +312,9 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
       <div class="row" style="margin-bottom:10px;flex-wrap:wrap">
         <input type="text" id="ema-sym" placeholder="Symbol e.g. AAPL" style="max-width:140px" value="AAPL">
         <select id="ema-period">
+          <option value="1D">1 Day (15m)</option>
+          <option value="1W">1 Week (1h)</option>
+          <option value="1mo">1 Month</option>
           <option value="3mo">3 Months</option>
           <option value="6mo">6 Months</option>
           <option value="1y" selected>1 Year</option>
@@ -326,7 +329,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
         <label style="font-size:12px;display:flex;align-items:center;gap:4px">
           <input type="checkbox" id="ema-63"  checked> <span style="color:#ef4444">EMA 63</span></label>
         <label style="font-size:12px;display:flex;align-items:center;gap:4px">
-          <input type="checkbox" id="ema-200"> <span style="color:#8b5cf6">EMA 200</span></label>
+          <input type="checkbox" id="ema-200" checked> <span style="color:#8b5cf6">EMA 200</span></label>
         <button class="btn btn-b" onclick="loadEmaChart()" id="ema-btn">📉 Show EMA Chart</button>
       </div>
       <div id="ema-info" style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;font-size:12px"></div>
@@ -525,7 +528,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
       <div class="sec">
         <div class="sec-hdr"><h2>💼 Position Sizing — % &amp; $ Invested</h2></div>
-        <div id="portAllocBar" style="height:240px;overflow-y:auto;overflow-x:hidden;padding:4px 0"></div>
+        <div id="portAllocBar" style="height:240px;overflow-y:auto;overflow-x:hidden;padding:4px 8px 4px 0"></div>
       </div>
       <div class="sec">
         <div class="sec-hdr"><h2>📉 Win/Loss Heatmap — ROI by Position</h2></div>
@@ -2455,8 +2458,8 @@ function drawPortfolioCharts() {
         +'<div style="width:38px;text-align:right;font-size:9px;color:#8b949e;flex-shrink:0">'+p.symbol+'</div>'
         +'<div style="flex:1;background:#1a1d27;border-radius:3px;height:14px;overflow:hidden">'
         +'<div style="width:'+w+'%;height:100%;background:'+c+';border-radius:3px"></div></div>'
-        +'<div style="width:36px;font-size:9px;color:#8b949e;text-align:right">'+Number(p.allocation_pct||0).toFixed(1)+'%</div>'
-        +'<div style="width:52px;font-size:9px;color:#63b3ed;text-align:right">$'+invested.toFixed(0)+'</div>'
+        +'<div style="width:32px;font-size:9px;color:#8b949e;text-align:right;flex-shrink:0">'+Number(p.allocation_pct||0).toFixed(1)+'%</div>'
+        +'<div style="width:44px;font-size:9px;color:#63b3ed;text-align:right;flex-shrink:0;padding-right:4px">$'+invested.toFixed(0)+'</div>'
         +'</div>';
     }).join('');
   }
@@ -2478,7 +2481,8 @@ function drawPortfolioCharts() {
           +'style="background:'+bg+';border-radius:6px;padding:6px 4px;text-align:center;cursor:pointer;border:1px solid '+(roi>=0?'#2d6a4f':'#6b1a1a')+'30">'
           +'<div style="font-size:10px;font-weight:800;color:#e6edf3">'+p.symbol+'</div>'
           +'<div style="font-size:11px;font-weight:700;color:'+tc+'">'+(roi>=0?'+':'')+roi.toFixed(1)+'%</div>'
-          +'<div style="font-size:9px;color:#8b949e">$'+Math.abs(p.unrealized_pl||0).toFixed(1)+'</div>'
+          +'<div style="font-size:9px;color:'+tc+';font-weight:700">'+(Number(p.unrealized_pl||0)>=0?'+':'')+'$'+Math.abs(p.unrealized_pl||0).toFixed(1)+'</div>'
+          +'<div style="font-size:9px;color:#4a5568;margin-top:1px">in:$'+Number(p.cost_basis||0).toFixed(0)+'</div>'
           +'</div>';
       }).join('')+'</div>';
   }
@@ -2562,7 +2566,11 @@ async function loadEmaSignals() {
           for(var j=0;j<n;j++){s=closes[j]*k+s*(1-k);arr.push(s);}
           return arr;
         }
-        var e9=ema(9),e21=ema(21),e50=ema(50),e200=n>=200?ema(200):null;
+        var e9=ema(9),e21=ema(21),e50=ema(50);
+        // For 200 EMA we need 200+ bars — use 1y period data if 3mo isn't enough
+        var e200=n>=50?ema(Math.min(200,Math.floor(n*0.8))):null;
+        // Flag if we have true 200 EMA or approximation
+        var has200=(n>=200);
         var price=closes[n-1];
         var score=0;
         var signals=[];
@@ -2578,6 +2586,8 @@ async function loadEmaSignals() {
         results.push({
           sym:p.symbol,sector:p.sector,price:price,
           e9:e9[n-1],e21:e21[n-1],e50:e50[n-1],e200:e200?e200[n-1]:null,
+          vs200: e200?((price-e200[n-1])/e200[n-1]*100).toFixed(2):null,
+          has200:has200,
           score:score,overall:overall,signals:signals,
           upl:p.unrealized_pl,roi:p.unrealized_pct,
           priceVsE9:priceVsE9
@@ -2597,7 +2607,7 @@ async function loadEmaSignals() {
   el.innerHTML='<div style="overflow-x:auto"><table>'
     +'<thead><tr><th>Symbol</th><th>Sector</th><th>Price</th>'
     +'<th>EMA9</th><th>EMA21</th><th>EMA50</th><th>EMA200</th>'
-    +'<th>vs EMA9%</th><th>Score</th><th>Signal</th><th>Notes</th><th>ROI%</th></tr></thead><tbody>'
+    +'<th>vs EMA9%</th><th>vs EMA200%</th><th>Score</th><th>Signal</th><th>Notes</th><th>ROI%</th></tr></thead><tbody>'
     +results.map(function(r){
       var sc=signalColor(r.overall);
       var roic=(r.roi||0)>=0?'#68d391':'#fc8181';
@@ -2610,8 +2620,9 @@ async function loadEmaSignals() {
         +'<td style="'+pc(r.price,r.e9)+'">'+f(r.e9)+'</td>'
         +'<td style="'+pc(r.price,r.e21)+'">'+f(r.e21)+'</td>'
         +'<td style="'+pc(r.price,r.e50)+'">'+f(r.e50)+'</td>'
-        +'<td style="'+pc(r.price,r.e200)+'">'+f(r.e200)+'</td>'
+        +'<td style="'+pc(r.price,r.e200)+'">'+f(r.e200)+(r.has200?'':' <span style="font-size:8px;color:#4a5568">~</span>')+'</td>'
         +'<td style="color:'+(Number(r.priceVsE9)>=0?'#68d391':'#fc8181')+';font-weight:700">'+(Number(r.priceVsE9)>=0?'+':'')+r.priceVsE9+'%</td>'
+        +'<td style="color:'+(r.vs200!=null?(Number(r.vs200)>=0?'#68d391':'#fc8181'):'#4a5568')+';font-weight:700">'+(r.vs200!=null?(Number(r.vs200)>=0?'+':'')+r.vs200+'%':'—')+'</td>'
         +'<td style="text-align:center;font-weight:800;color:'+(r.score>0?'#68d391':r.score<0?'#fc8181':'#a0aec0')+'">'+(r.score>0?'+':'')+r.score+'</td>'
         +'<td><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:800;color:'+sc+';border:1px solid '+sc+'44;background:'+sc+'11">'+r.overall+'</span></td>'
         +'<td style="font-size:10px;color:#8b949e">'+r.signals.join(' ')+'</td>'
@@ -2632,12 +2643,27 @@ async function loadSignalsTab() {
   var status=$('sig-status'); if(status) status.textContent='⏳ Running…';
 
   if(!window.__PORTFOLIO__||!window.__PORTFOLIO__.positions||!window.__PORTFOLIO__.positions.length){
-    el.innerHTML='<div style="color:#8b949e;padding:20px;text-align:center">No positions loaded. Go to Analytics tab and click Refresh first.</div>';
-    if(status) status.textContent=''; return;
+    // Try to fetch portfolio data first
+    el.innerHTML='<div style="color:#58a6ff;padding:20px;text-align:center">⏳ Fetching portfolio data…</div>';
+    try {
+      var pr=await fetch('/api/analytics/portfolio',{credentials:'include'});
+      var pd=await pr.json();
+      if(pd&&pd.positions&&pd.positions.length){
+        window.__PORTFOLIO__=pd;
+      } else {
+        el.innerHTML='<div style="color:#8b949e;padding:20px;text-align:center">No open positions found. Make sure you have positions in your Alpaca account.</div>';
+        if(status) status.textContent=''; return;
+      }
+    } catch(fe){
+      el.innerHTML='<div style="color:#f85149;padding:20px;text-align:center">Could not load portfolio: '+fe.message+'</div>';
+      if(status) status.textContent=''; return;
+    }
   }
 
-  // If EMA results already computed, use them. Otherwise run now.
-  if(!window.__emaResults__) await loadEmaSignals();
+  el.innerHTML='<div style="color:#58a6ff;padding:10px">⏳ Computing EMA signals for '+window.__PORTFOLIO__.positions.length+' positions…</div>';
+
+  // Always re-run EMA analysis for signals tab
+  await loadEmaSignals();
 
   var results=window.__emaResults__||[];
   if(!results.length){ el.innerHTML='<div style="color:#8b949e;padding:20px">No EMA data available.</div>'; return; }
