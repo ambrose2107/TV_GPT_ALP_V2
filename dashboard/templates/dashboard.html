@@ -2355,8 +2355,9 @@ async function loadPortfolioAnalytics(force) {
     else if(roi>-2){signal='HOLD ➡️';sigColor='#a0aec0';}
     else if(roi>-10){signal='WATCH ⚠️';sigColor='#f6ad55';}
     else{signal='SELL 🔻';sigColor='#fc8181';}
-    var html='<tr style="cursor:pointer" onclick="openEmaFromTable(''+p.symbol+'')" title="Click to open EMA chart">'
-      +'<td style="font-weight:800;color:#e6edf3">'+p.symbol+'</td>'
+    var sym=p.symbol;
+    var html='<tr data-sym="'+sym+'" style="cursor:pointer" onclick="portRowClick(this)" title="Click to open EMA chart">'
+      +'<td style="font-weight:800;color:#e6edf3">'+sym+'</td>'
       +'<td style="color:#8b949e;font-size:10px">'+(p.sector||'—')+'</td>'
       +'<td>'+Number(p.qty||0)+'</td>'
       +'<td style="color:'+sc+';font-size:10px;font-weight:600;text-transform:uppercase">'+(p.side||'—')+'</td>'
@@ -2368,7 +2369,7 @@ async function loadPortfolioAnalytics(force) {
       +'<td style="'+roic+';font-weight:600">'+(roi>=0?'+':'')+roi.toFixed(3)+'%</td>'
       +'<td style="color:#8b949e">'+alloc.toFixed(2)+'%</td>'
       +'<td><span style="font-size:10px;font-weight:700;color:'+sigColor+'">'+signal+'</span></td>'
-      +'<td><button onclick="event.stopPropagation();openEmaFromTable(''+p.symbol+'')" class="btn btn-n btn-s" style="font-size:9px;padding:2px 6px">📉 EMA</button></td>'
+      +'<td><button data-sym="'+sym+'" onclick="portBtnClick(event,this)" class="btn btn-n btn-s" style="font-size:9px;padding:2px 6px">📉 EMA</button></td>'
       +'</tr>';
     return {sym:p.symbol,sector:p.sector||'Other',side:p.side||'long',upl:upl,roi:roi,alloc:alloc,html:html};
   });
@@ -2473,7 +2474,7 @@ function drawPortfolioCharts() {
           ? 'rgba(104,211,145,'+( 0.1+intensity*0.75)+')'
           : 'rgba(252,129,129,'+( 0.1+intensity*0.75)+')';
         var tc=roi>=0?'#68d391':'#fc8181';
-        return '<div onclick="openEmaFromTable(''+p.symbol+'')" title="$'+Number(p.cost_basis||0).toFixed(2)+' invested | '+Number(p.market_value||0).toFixed(2)+' value" '
+        return '<div data-sym="'+p.symbol+'" onclick="portDivClick(this)" title="$'+Number(p.cost_basis||0).toFixed(2)+' invested | '+Number(p.market_value||0).toFixed(2)+' value" '
           +'style="background:'+bg+';border-radius:6px;padding:6px 4px;text-align:center;cursor:pointer;border:1px solid '+(roi>=0?'#2d6a4f':'#6b1a1a')+'30">'
           +'<div style="font-size:10px;font-weight:800;color:#e6edf3">'+p.symbol+'</div>'
           +'<div style="font-size:11px;font-weight:700;color:'+tc+'">'+(roi>=0?'+':'')+roi.toFixed(1)+'%</div>'
@@ -2533,6 +2534,10 @@ function openEmaFromTable(sym) {
     setTimeout(function(){ loadEmaChart(); }, 300);
   }, 100);
 }
+// Helpers to avoid inline onclick quote issues
+function portRowClick(el) { var s=el.getAttribute('data-sym'); if(s) openEmaFromTable(s); }
+function portBtnClick(ev,el) { ev.stopPropagation(); var s=el.getAttribute('data-sym'); if(s) openEmaFromTable(s); }
+function portDivClick(el) { var s=el.getAttribute('data-sym'); if(s) openEmaFromTable(s); }
 
 // ── EMA Signal analysis for all holdings ──────────────────────────────
 async function loadEmaSignals() {
@@ -2598,7 +2603,7 @@ async function loadEmaSignals() {
       var roic=(r.roi||0)>=0?'#68d391':'#fc8181';
       var f=function(v){return v?'$'+Number(v).toFixed(2):'—';};
       var pc=function(v,ref){return v&&ref?(v>ref?'color:#68d391':'color:#fc8181'):'';};
-      return '<tr style="cursor:pointer" onclick="openEmaFromTable(''+r.sym+'')">'
+      return '<tr data-sym="'+r.sym+'" style="cursor:pointer" onclick="portDivClick(this)">'
         +'<td style="font-weight:800;color:#e6edf3">'+r.sym+'</td>'
         +'<td style="color:#8b949e;font-size:10px">'+r.sector+'</td>'
         +'<td style="font-weight:700">$'+Number(r.price).toFixed(2)+'</td>'
@@ -2689,7 +2694,7 @@ async function loadSignalsTab() {
       var costly=r.priceVsE9>5?'⚠️ '+r.priceVsE9+'% above EMA9 — costly entry':'';
       var cheap=r.priceVsE9<-3?'💡 '+Math.abs(r.priceVsE9)+'% below EMA9 — potential value':'';
       var roic=(r.roi||0)>=0?'#68d391':'#fc8181';
-      html+='<div onclick="openEmaFromTable(''+r.sym+'')" style="background:#0d1117;border:1px solid '+c+'33;border-radius:8px;padding:10px;cursor:pointer" title="Click to open EMA chart">'
+      html+='<div data-sym="'+p.symbol+'" onclick="portDivClick(this)" style="background:#0d1117;border:1px solid '+c+'33;border-radius:8px;padding:10px;cursor:pointer" title="Click to open EMA chart">'
         +'<div style="display:flex;justify-content:space-between;align-items:flex-start">'
         +'<div><span style="font-size:14px;font-weight:800;color:#e6edf3">'+r.sym+'</span>'
         +'<span style="font-size:10px;color:#8b949e;margin-left:6px">'+r.sector+'</span></div>'
