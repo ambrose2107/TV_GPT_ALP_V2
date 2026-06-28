@@ -327,9 +327,9 @@ def api_chart_data():
 
         # ── Smart date label formatting based on period ─────────────────────
         # Intraday periods need time, not just date
-        intraday_periods = ("5m","15m","1h","4h")
+        intraday_periods = ("5m","15m","1h","4h","1D","1W")
         long_periods     = ("3y","5y","10y","3Y","5Y","10Y")
-        mid_periods      = ("1y","1W","1D")
+        mid_periods      = ("1y",)
 
         period_labels = {
             "5m":"5 Min","15m":"15 Min","1h":"1 Hour","4h":"4 Hour",
@@ -377,7 +377,7 @@ def api_chart_data():
         # Max tick limit based on period for clean X-axis
         max_ticks = 8
         if period in intraday_periods:
-            max_ticks = 12
+            max_ticks = 14 if period in ("1D","1W") else 12
         elif period in ("1mo",):
             max_ticks = 8
         elif period in ("3mo","6mo"):
