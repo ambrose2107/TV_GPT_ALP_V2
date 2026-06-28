@@ -191,9 +191,10 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
   <div class="tab"     onclick="switchTab(5,'ses')">🕐 Sessions</div>
   <div class="tab"     onclick="switchTab(6,'eod')">📅 EOD Journal</div>
   <div class="tab"     onclick="switchTab(7,'ana8')">📊 Analytics</div>
-  <div class="tab"     onclick="switchTab(8,'mf')">🐟 MirrorFish AI</div>
-  <div class="tab"     onclick="switchTab(9,'set')">⚙️ Settings</div>
-  <div class="tab"     onclick="switchTab(10,'calc')">🧮 Inv. Calculator</div>
+  <div class="tab"     onclick="switchTab(8,'sig')">🎯 Signals</div>
+  <div class="tab"     onclick="switchTab(9,'mf')">🐟 MirrorFish AI</div>
+  <div class="tab"     onclick="switchTab(10,'set')">⚙️ Settings</div>
+  <div class="tab"     onclick="switchTab(11,'calc')">🧮 Inv. Calculator</div>
 </div>
 
 <!-- DATA SOURCE BANNER -->
@@ -496,50 +497,103 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
   <!-- Live Portfolio View -->
   <div id="av-portfolio">
 
-    <!-- Account KPI Cards -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px">
+    <!-- KPI Cards Row 1: Account -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px">
       <div class="card"><div class="lbl">Portfolio Value</div><div class="val" id="port-equity">—</div></div>
       <div class="card"><div class="lbl">Cash Available</div><div class="val" id="port-cash">—</div></div>
-      <div class="card"><div class="lbl">Invested</div><div class="val" id="port-invested">—</div></div>
+      <div class="card"><div class="lbl">Invested ($)</div><div class="val" id="port-invested-amt">—</div></div>
+      <div class="card"><div class="lbl">Invested (%)</div><div class="val" id="port-invested">—</div></div>
       <div class="card"><div class="lbl">Open Positions</div><div class="val" id="port-count">—</div></div>
+      <div class="card"><div class="lbl">Cost Basis</div><div class="val" id="port-cost">—</div></div>
       <div class="card"><div class="lbl">Unrealized P&L</div><div class="val" id="port-upl">—</div></div>
       <div class="card"><div class="lbl">Overall ROI</div><div class="val" id="port-roi">—</div></div>
       <div class="card"><div class="lbl">Best Performer</div><div class="val g" id="port-best">—</div></div>
       <div class="card"><div class="lbl">Worst Performer</div><div class="val r" id="port-worst">—</div></div>
     </div>
 
-    <!-- Charts row: Sector pie + Allocation bar + P&L bar -->
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px">
+    <!-- Bloomberg-style 4-chart row -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
       <div class="sec">
         <div class="sec-hdr"><h2>🏢 Sector Allocation</h2></div>
-        <div id="portSectorPie" style="height:220px;overflow:hidden;padding:8px"></div>
-      </div>
-      <div class="sec">
-        <div class="sec-hdr"><h2>💼 Position Sizing (% Portfolio)</h2></div>
-        <div id="portAllocBar" style="height:220px;overflow-y:auto;overflow-x:hidden;padding:4px 0"></div>
+        <div id="portSectorPie" style="height:200px;overflow:hidden;padding:8px"></div>
       </div>
       <div class="sec">
         <div class="sec-hdr"><h2>💰 Unrealized P&L by Symbol</h2></div>
-        <div id="portPnlBar" style="height:220px;overflow-y:auto;overflow-x:hidden;padding:4px 0"></div>
+        <div id="portPnlBar" style="height:200px;overflow-y:auto;overflow-x:hidden;padding:4px 0"></div>
       </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+      <div class="sec">
+        <div class="sec-hdr"><h2>💼 Position Sizing — % &amp; $ Invested</h2></div>
+        <div id="portAllocBar" style="height:240px;overflow-y:auto;overflow-x:hidden;padding:4px 0"></div>
+      </div>
+      <div class="sec">
+        <div class="sec-hdr"><h2>📉 Win/Loss Heatmap — ROI by Position</h2></div>
+        <div id="portHeatmap" style="height:240px;overflow-y:auto;overflow-x:hidden;padding:4px 0"></div>
+      </div>
+    </div>
+
+    <!-- EMA Signal Summary -->
+    <div class="sec" style="margin-bottom:14px">
+      <div class="sec-hdr">
+        <h2>📈 EMA Signal Summary — 9 / 21 / 50 / 200</h2>
+        <button class="btn btn-b btn-s" onclick="loadEmaSignals()">⚡ Analyze All Positions</button>
+      </div>
+      <div id="port-ema-signals" style="color:#8b949e;padding:10px;font-size:12px">Click "Analyze All Positions" to load EMA signals for every holding.</div>
     </div>
 
     <!-- Sector breakdown cards -->
     <div class="sec" style="margin-bottom:14px">
-      <div class="sec-hdr"><h2>📊 Sector Breakdown</h2></div>
-      <div id="port-sector-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;padding:10px 0"></div>
+      <div class="sec-hdr"><h2>🗂️ Sector Breakdown</h2></div>
+      <div id="port-sector-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;padding:10px 0"></div>
     </div>
 
-    <!-- Per-symbol positions table -->
+    <!-- Open Positions Table with filters -->
     <div class="sec">
-      <div class="sec-hdr"><h2>📋 Open Positions — Full Breakdown</h2></div>
+      <div class="sec-hdr">
+        <h2>📋 Open Positions — Full Breakdown</h2>
+        <span style="font-size:11px;color:#8b949e">Click any row → opens EMA chart</span>
+      </div>
+      <!-- Filter bar -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:8px 0 10px;border-bottom:1px solid #21262d;margin-bottom:8px">
+        <input id="ptf-search" placeholder="🔍 Symbol / Sector" oninput="filterPortTable()"
+          style="padding:5px 9px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px;width:160px">
+        <select id="ptf-side" onchange="filterPortTable()"
+          style="padding:5px 8px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px">
+          <option value="">All Sides</option>
+          <option value="long">Long</option>
+          <option value="short">Short</option>
+        </select>
+        <select id="ptf-sector" onchange="filterPortTable()"
+          style="padding:5px 8px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px">
+          <option value="">All Sectors</option>
+        </select>
+        <select id="ptf-pnl" onchange="filterPortTable()"
+          style="padding:5px 8px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px">
+          <option value="">All P&amp;L</option>
+          <option value="profit">Profit only</option>
+          <option value="loss">Loss only</option>
+        </select>
+        <select id="ptf-sort" onchange="filterPortTable()"
+          style="padding:5px 8px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px">
+          <option value="pnl_desc">Sort: P&amp;L ↓</option>
+          <option value="pnl_asc">Sort: P&amp;L ↑</option>
+          <option value="roi_desc">Sort: ROI% ↓</option>
+          <option value="roi_asc">Sort: ROI% ↑</option>
+          <option value="alloc_desc">Sort: Size ↓</option>
+          <option value="sym_asc">Sort: Symbol A-Z</option>
+        </select>
+        <span id="ptf-count" style="font-size:11px;color:#8b949e;margin-left:4px"></span>
+        <button class="btn btn-n btn-s" onclick="resetPortFilters()" style="margin-left:auto">✕ Reset</button>
+      </div>
       <div style="overflow-x:auto">
-        <table><thead><tr>
-          <th>Symbol</th><th>Sector</th><th>Qty</th><th>Side</th>
-          <th>Avg Entry</th><th>Current</th><th>Market Value</th>
-          <th>Cost Basis</th><th>Unrealized P&L</th><th>ROI %</th><th>Allocation %</th>
-        </tr></thead>
-        <tbody id="port-tbody"><tr><td colspan="11" style="text-align:center;color:#8b949e">Click Refresh to load positions.</td></tr></tbody>
+        <table id="port-table">
+          <thead><tr>
+            <th>Symbol</th><th>Sector</th><th>Qty</th><th>Side</th>
+            <th>Avg Entry</th><th>Current</th><th>$ Invested</th><th>Market Value</th>
+            <th>Unrealized P&L</th><th>ROI %</th><th>Alloc %</th><th>Signal</th><th>EMA Chart</th>
+          </tr></thead>
+          <tbody id="port-tbody"><tr><td colspan="13" style="text-align:center;color:#8b949e">Click Refresh to load positions.</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -786,6 +840,36 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
   </div>
 </div>
 
+<!-- ═══ SIGNALS TAB ═══ -->
+<div class="pane" id="pane-sig">
+  <div class="sec" style="margin-bottom:14px">
+    <div class="sec-hdr">
+      <h2>🎯 Position Signals — EMA + Sector Intelligence</h2>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-b btn-s" onclick="loadSignalsTab()">⚡ Run Analysis</button>
+        <span id="sig-status" style="font-size:11px;color:#8b949e"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary cards -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px">
+    <div class="card"><div class="lbl">Strong Buy</div><div class="val g" id="sig-strong-buy">—</div></div>
+    <div class="card"><div class="lbl">Buy</div><div class="val g" id="sig-buy">—</div></div>
+    <div class="card"><div class="lbl">Neutral</div><div class="val" id="sig-neutral">—</div></div>
+    <div class="card"><div class="lbl">Sell</div><div class="val r" id="sig-sell">—</div></div>
+    <div class="card"><div class="lbl">Strong Sell</div><div class="val r" id="sig-strong-sell">—</div></div>
+    <div class="card"><div class="lbl">Avg Score</div><div class="val" id="sig-avg-score">—</div></div>
+  </div>
+
+  <!-- Signals table -->
+  <div class="sec">
+    <div id="sig-out" style="color:#8b949e;padding:20px;text-align:center">
+      Click "Run Analysis" to generate EMA + sector signals for all holdings.
+    </div>
+  </div>
+</div>
+
 <!-- CLOSE MODAL -->
 <div class="modal" id="close-modal">
   <div class="modal-box">
@@ -801,10 +885,10 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
 
 <script>
 const $ = id => document.getElementById(id);
-let killOn=false, cmpChart=null, sectChart=null;
-let equityChart=null;
-let anaCharts=[], currentCloseSym='', currentCloseMax=0;
-let lastAnalyzeSymbols=[], lastAnalyzeTFs=[];
+var killOn=false, cmpChart=null, sectChart=null;
+var equityChart=null;
+var anaCharts=[], currentCloseSym='', currentCloseMax=0;
+var lastAnalyzeSymbols=[], lastAnalyzeTFs=[];
 
 const COLORS=['#3b82f6','#22c55e','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#10b981'];
 
@@ -852,7 +936,6 @@ function switchTab(idx, name) {
   if(name==='ana8') {
     portLoaded=false;
     switchAnalyticsView('portfolio');
-    // Pane now visible - draw charts with proper dimensions
     setTimeout(function(){
       if(window.__portChartData__) {
         drawPortfolioCharts();
@@ -860,6 +943,9 @@ function switchTab(idx, name) {
         loadPortfolioAnalytics(false);
       }
     }, 150);
+  }
+  if(name==='sig') {
+    if(window.__PORTFOLIO__ && !window.__sigLoaded__) loadSignalsTab();
   }
   if(name==='mf')   loadMirrorFish();
   if(name==='calc') calcOnOpen();
@@ -2194,6 +2280,12 @@ async function loadPortfolioAnalytics(force) {
   var elIn = document.getElementById('port-invested');
   if(elIn) elIn.textContent = fpct(sum.invested_pct);
 
+  var elInAmt = document.getElementById('port-invested-amt');
+  if(elInAmt) elInAmt.textContent = '$'+Number(sum.total_market_value||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  var elCost = document.getElementById('port-cost');
+  if(elCost) elCost.textContent = '$'+Number(sum.total_cost_basis||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+
   var elCt = document.getElementById('port-count');
   if(elCt) elCt.textContent = sum.open_count !== undefined ? sum.open_count : '—';
 
@@ -2232,29 +2324,57 @@ async function loadPortfolioAnalytics(force) {
       : '<div style="color:#8b949e;padding:10px">No sector data.</div>';
   }
 
-  // ── Positions Table ────────────────────────────────────────────────
-  if(tbody) {
-    tbody.innerHTML = pos.length
-      ? pos.map(function(p){
-          var plc  = (p.unrealized_pl||0)>=0?'color:#68d391':'color:#fc8181';
-          var roic = (p.unrealized_pct||0)>=0?'color:#68d391':'color:#fc8181';
-          var sc   = p.side==='long'?'#68d391':'#fc8181';
-          return '<tr>'
-            +'<td style="font-weight:700;color:#e6edf3">'+p.symbol+'</td>'
-            +'<td style="color:#8b949e;font-size:10px">'+(p.sector||'—')+'</td>'
-            +'<td>'+Number(p.qty||0)+'</td>'
-            +'<td style="color:'+sc+';font-size:10px;font-weight:600;text-transform:uppercase">'+(p.side||'—')+'</td>'
-            +'<td>$'+Number(p.avg_entry||0).toFixed(4)+'</td>'
-            +'<td style="font-weight:600">$'+Number(p.current_price||0).toFixed(4)+'</td>'
-            +'<td>$'+Number(p.market_value||0).toFixed(2)+'</td>'
-            +'<td style="color:#8b949e">$'+Number(p.cost_basis||0).toFixed(2)+'</td>'
-            +'<td style="'+plc+';font-weight:700">'+((p.unrealized_pl||0)>=0?'+':'')+'$'+Math.abs(p.unrealized_pl||0).toFixed(2)+'</td>'
-            +'<td style="'+roic+';font-weight:600">'+((p.unrealized_pct||0)>=0?'+':'')+Number(p.unrealized_pct||0).toFixed(3)+'%</td>'
-            +'<td style="color:#8b949e">'+Number(p.allocation_pct||0).toFixed(2)+'%</td>'
-            +'</tr>';
-        }).join('')
-      : '<tr><td colspan="11" style="text-align:center;color:#8b949e;padding:30px">📭 No open positions.</td></tr>';
+  // ── Positions Table with filters ──────────────────────────────────
+  // Populate sector filter
+  var secSel=$('ptf-sector');
+  if(secSel && pos.length) {
+    var _secs={}; pos.forEach(function(p){_secs[p.sector||'Other']=1;}); var sectors=Object.keys(_secs).sort();
+    var existing=Array.from(secSel.options).map(function(o){return o.value;});
+    sectors.forEach(function(s){
+      if(!existing.includes(s)){
+        var opt=document.createElement('option'); opt.value=s; opt.textContent=s;
+        secSel.appendChild(opt);
+      }
+    });
   }
+
+  _allPortRows = pos.map(function(p){
+    var plc  = (p.unrealized_pl||0)>=0?'color:#68d391':'color:#fc8181';
+    var roic = (p.unrealized_pct||0)>=0?'color:#68d391':'color:#fc8181';
+    var sc   = p.side==='long'?'#68d391':'#fc8181';
+    var upl  = Number(p.unrealized_pl||0);
+    var roi  = Number(p.unrealized_pct||0);
+    var alloc= Number(p.allocation_pct||0);
+    var mv   = Number(p.market_value||0);
+    var cb   = Number(p.cost_basis||0);
+    var signal='—';
+    var sigColor='#8b949e';
+    // Quick EMA-free signal based on ROI
+    if(roi>15){signal='HOT 🔥';sigColor='#48bb78';}
+    else if(roi>5){signal='BUY 📈';sigColor='#68d391';}
+    else if(roi>-2){signal='HOLD ➡️';sigColor='#a0aec0';}
+    else if(roi>-10){signal='WATCH ⚠️';sigColor='#f6ad55';}
+    else{signal='SELL 🔻';sigColor='#fc8181';}
+    var html='<tr style="cursor:pointer" onclick="openEmaFromTable(''+p.symbol+'')" title="Click to open EMA chart">'
+      +'<td style="font-weight:800;color:#e6edf3">'+p.symbol+'</td>'
+      +'<td style="color:#8b949e;font-size:10px">'+(p.sector||'—')+'</td>'
+      +'<td>'+Number(p.qty||0)+'</td>'
+      +'<td style="color:'+sc+';font-size:10px;font-weight:600;text-transform:uppercase">'+(p.side||'—')+'</td>'
+      +'<td>$'+Number(p.avg_entry||0).toFixed(4)+'</td>'
+      +'<td style="font-weight:600">$'+Number(p.current_price||0).toFixed(4)+'</td>'
+      +'<td style="color:#63b3ed">$'+cb.toFixed(2)+'</td>'
+      +'<td>$'+mv.toFixed(2)+'</td>'
+      +'<td style="'+plc+';font-weight:700">'+(upl>=0?'+':'')+'$'+Math.abs(upl).toFixed(2)+'</td>'
+      +'<td style="'+roic+';font-weight:600">'+(roi>=0?'+':'')+roi.toFixed(3)+'%</td>'
+      +'<td style="color:#8b949e">'+alloc.toFixed(2)+'%</td>'
+      +'<td><span style="font-size:10px;font-weight:700;color:'+sigColor+'">'+signal+'</span></td>'
+      +'<td><button onclick="event.stopPropagation();openEmaFromTable(''+p.symbol+'')" class="btn btn-n btn-s" style="font-size:9px;padding:2px 6px">📉 EMA</button></td>'
+      +'</tr>';
+    return {sym:p.symbol,sector:p.sector||'Other',side:p.side||'long',upl:upl,roi:roi,alloc:alloc,html:html};
+  });
+
+  if(tbody) filterPortTable();
+  var cnt=$('ptf-count'); if(cnt) cnt.textContent=pos.length+'/'+pos.length+' positions';
 
   // ── Charts: store data, then draw when visible ──────────────────────────────
   window.__portChartData__ = {pos:pos, secs:secs, PAL:PAL};
@@ -2266,13 +2386,12 @@ function drawPortfolioCharts() {
   if(!d) return;
   var pos=d.pos, secs=d.secs, PAL=d.PAL;
 
-  // Pure HTML/CSS charts — work in any visibility state, no canvas needed
   var secNames = Object.keys(secs);
   var secVals  = secNames.map(function(s){ return Number(secs[s].allocation_pct||0); });
   var secColors= secNames.map(function(_,i){ return PAL[i%PAL.length]; });
   var total    = secVals.reduce(function(a,b){return a+b;},0)||1;
 
-  // ── Sector Donut (CSS conic-gradient) ───────────────────────────────
+  // ── Sector Donut ─────────────────────────────────────────────────────
   var pieEl = document.getElementById('portSectorPie');
   if(pieEl && secNames.length) {
     var grad='', angle=0;
@@ -2286,37 +2405,20 @@ function drawPortfolioCharts() {
     var legend=secNames.map(function(s,i){
       var sd=secs[s];
       var plc=(sd.unrealized_pl||0)>=0?'#68d391':'#fc8181';
-      return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'
+      return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">'
         +'<div style="width:10px;height:10px;border-radius:50%;background:'+secColors[i]+';flex-shrink:0"></div>'
         +'<span style="font-size:10px;color:#8b949e;flex:1">'+s+'</span>'
         +'<span style="font-size:10px;font-weight:700;color:'+plc+'">'+Number(sd.allocation_pct||0).toFixed(1)+'%</span>'
+        +'<span style="font-size:9px;color:'+plc+';margin-left:4px">'+((sd.unrealized_pl||0)>=0?'+':'')+'$'+Math.abs(sd.unrealized_pl||0).toFixed(0)+'</span>'
         +'</div>';
     }).join('');
     pieEl.innerHTML='<div style="display:flex;align-items:center;gap:12px;height:100%">'
-      +'<div style="width:120px;height:120px;border-radius:50%;background:conic-gradient('+grad+');flex-shrink:0"></div>'
-      +'<div style="flex:1;overflow-y:auto;max-height:200px">'+legend+'</div>'
+      +'<div style="width:110px;height:110px;border-radius:50%;background:conic-gradient('+grad+');flex-shrink:0;box-shadow:0 0 0 4px #0d1117 inset"></div>'
+      +'<div style="flex:1;overflow-y:auto;max-height:190px">'+legend+'</div>'
       +'</div>';
   }
 
-  // ── Allocation horizontal bars ──────────────────────────────────────
-  var allocEl=document.getElementById('portAllocBar');
-  if(allocEl && pos.length) {
-    var byAlloc=[].concat(pos).sort(function(a,b){return (b.allocation_pct||0)-(a.allocation_pct||0);});
-    var maxA=byAlloc[0]?byAlloc[0].allocation_pct||1:1;
-    allocEl.innerHTML=byAlloc.map(function(p,i){
-      var w=Math.round(Number(p.allocation_pct||0)/maxA*100);
-      var c=PAL[i%PAL.length];
-      return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">'
-        +'<div style="width:42px;text-align:right;font-size:9px;color:#8b949e;flex-shrink:0">'+p.symbol+'</div>'
-        +'<div style="flex:1;background:#1a1d27;border-radius:3px;height:14px;overflow:hidden">'
-        +'<div style="width:'+w+'%;height:100%;background:'+c+';border-radius:3px;transition:width 0.3s"></div>'
-        +'</div>'
-        +'<div style="width:36px;font-size:9px;color:#8b949e;text-align:right">'+Number(p.allocation_pct||0).toFixed(1)+'%</div>'
-        +'</div>';
-    }).join('');
-  }
-
-  // ── P&L horizontal bars ────────────────────────────────────────────
+  // ── P&L Bar ───────────────────────────────────────────────────────────
   var pnlEl=document.getElementById('portPnlBar');
   if(pnlEl && pos.length) {
     var byPnl=[].concat(pos).sort(function(a,b){return (b.unrealized_pl||0)-(a.unrealized_pl||0);});
@@ -2328,17 +2430,284 @@ function drawPortfolioCharts() {
       var w=Math.round(Math.abs(v)/maxP*100);
       var c=v>=0?'rgba(104,211,145,0.85)':'rgba(252,129,129,0.85)';
       var tc=v>=0?'#68d391':'#fc8181';
-      return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">'
-        +'<div style="width:42px;text-align:right;font-size:9px;color:#8b949e;flex-shrink:0">'+p.symbol+'</div>'
-        +'<div style="flex:1;background:#1a1d27;border-radius:3px;height:14px;overflow:hidden">'
-        +'<div style="width:'+w+'%;height:100%;background:'+c+';border-radius:3px"></div>'
-        +'</div>'
-        +'<div style="width:56px;font-size:9px;color:'+tc+';text-align:right;font-weight:700">'
+      return '<div style="display:flex;align-items:center;gap:5px;margin-bottom:3px">'
+        +'<div style="width:38px;text-align:right;font-size:9px;color:#8b949e;flex-shrink:0">'+p.symbol+'</div>'
+        +'<div style="flex:1;background:#1a1d27;border-radius:3px;height:13px;overflow:hidden">'
+        +'<div style="width:'+w+'%;height:100%;background:'+c+';border-radius:3px"></div></div>'
+        +'<div style="width:58px;font-size:9px;color:'+tc+';text-align:right;font-weight:700">'
         +(v>=0?'+':'')+'$'+Math.abs(v).toFixed(2)+'</div>'
+        +'<div style="width:40px;font-size:9px;color:'+tc+';text-align:right">'+(pct>=0?'+':'')+pct.toFixed(1)+'%</div>'
         +'</div>';
     }).join('');
   }
+
+  // ── Allocation Bar — shows both % AND $ invested ───────────────────────
+  var allocEl=document.getElementById('portAllocBar');
+  if(allocEl && pos.length) {
+    var byAlloc=[].concat(pos).sort(function(a,b){return (b.allocation_pct||0)-(a.allocation_pct||0);});
+    var maxA=byAlloc[0]?byAlloc[0].allocation_pct||1:1;
+    allocEl.innerHTML=byAlloc.map(function(p,i){
+      var w=Math.round(Number(p.allocation_pct||0)/maxA*100);
+      var c=PAL[i%PAL.length];
+      var invested=Number(p.cost_basis||0);
+      return '<div style="display:flex;align-items:center;gap:5px;margin-bottom:4px">'
+        +'<div style="width:38px;text-align:right;font-size:9px;color:#8b949e;flex-shrink:0">'+p.symbol+'</div>'
+        +'<div style="flex:1;background:#1a1d27;border-radius:3px;height:14px;overflow:hidden">'
+        +'<div style="width:'+w+'%;height:100%;background:'+c+';border-radius:3px"></div></div>'
+        +'<div style="width:36px;font-size:9px;color:#8b949e;text-align:right">'+Number(p.allocation_pct||0).toFixed(1)+'%</div>'
+        +'<div style="width:52px;font-size:9px;color:#63b3ed;text-align:right">$'+invested.toFixed(0)+'</div>'
+        +'</div>';
+    }).join('');
+  }
+
+  // ── ROI Heatmap ───────────────────────────────────────────────────────
+  var hmEl=document.getElementById('portHeatmap');
+  if(hmEl && pos.length) {
+    var sorted=[].concat(pos).sort(function(a,b){return (b.unrealized_pct||0)-(a.unrealized_pct||0);});
+    hmEl.innerHTML='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:4px;padding:4px">'
+      +sorted.map(function(p){
+        var roi=Number(p.unrealized_pct||0);
+        var absRoi=Math.abs(roi);
+        var intensity=Math.min(absRoi/30,1);
+        var bg=roi>=0
+          ? 'rgba(104,211,145,'+( 0.1+intensity*0.75)+')'
+          : 'rgba(252,129,129,'+( 0.1+intensity*0.75)+')';
+        var tc=roi>=0?'#68d391':'#fc8181';
+        return '<div onclick="openEmaFromTable(''+p.symbol+'')" title="$'+Number(p.cost_basis||0).toFixed(2)+' invested | '+Number(p.market_value||0).toFixed(2)+' value" '
+          +'style="background:'+bg+';border-radius:6px;padding:6px 4px;text-align:center;cursor:pointer;border:1px solid '+(roi>=0?'#2d6a4f':'#6b1a1a')+'30">'
+          +'<div style="font-size:10px;font-weight:800;color:#e6edf3">'+p.symbol+'</div>'
+          +'<div style="font-size:11px;font-weight:700;color:'+tc+'">'+(roi>=0?'+':'')+roi.toFixed(1)+'%</div>'
+          +'<div style="font-size:9px;color:#8b949e">$'+Math.abs(p.unrealized_pl||0).toFixed(1)+'</div>'
+          +'</div>';
+      }).join('')+'</div>';
+  }
+
   console.log('[Portfolio] CSS charts drawn — sectors:'+secNames.length+' positions:'+pos.length);
+}
+
+// ── Filter & sort the positions table ────────────────────────────────────
+var _allPortRows = [];
+function filterPortTable() {
+  var q     = ($('ptf-search')&&$('ptf-search').value||'').toUpperCase().trim();
+  var side  = $('ptf-side')  &&$('ptf-side').value  ||'';
+  var sec   = $('ptf-sector')&&$('ptf-sector').value ||'';
+  var pnl   = $('ptf-pnl')   &&$('ptf-pnl').value   ||'';
+  var sort  = $('ptf-sort')  &&$('ptf-sort').value   ||'pnl_desc';
+  var rows  = _allPortRows.slice();
+
+  if(q)    rows = rows.filter(function(r){ return r.sym.toUpperCase().includes(q)||r.sector.toUpperCase().includes(q); });
+  if(side) rows = rows.filter(function(r){ return r.side===side; });
+  if(sec)  rows = rows.filter(function(r){ return r.sector===sec; });
+  if(pnl==='profit') rows=rows.filter(function(r){return r.upl>=0;});
+  if(pnl==='loss')   rows=rows.filter(function(r){return r.upl<0;});
+
+  rows.sort(function(a,b){
+    if(sort==='pnl_desc')  return b.upl-a.upl;
+    if(sort==='pnl_asc')   return a.upl-b.upl;
+    if(sort==='roi_desc')  return b.roi-a.roi;
+    if(sort==='roi_asc')   return a.roi-b.roi;
+    if(sort==='alloc_desc')return b.alloc-a.alloc;
+    if(sort==='sym_asc')   return a.sym.localeCompare(b.sym);
+    return 0;
+  });
+
+  var cnt=$('ptf-count'); if(cnt) cnt.textContent=rows.length+'/'+_allPortRows.length+' positions';
+  var tbody=$('port-tbody'); if(!tbody) return;
+  tbody.innerHTML = rows.length ? rows.map(function(r){ return r.html; }).join('') 
+    : '<tr><td colspan="13" style="text-align:center;color:#8b949e;padding:20px">No positions match filter.</td></tr>';
+}
+
+function resetPortFilters() {
+  ['ptf-search','ptf-side','ptf-sector','ptf-pnl'].forEach(function(id){var el=$(id);if(el)el.value='';});
+  var s=$('ptf-sort'); if(s) s.value='pnl_desc';
+  filterPortTable();
+}
+
+// ── Open EMA chart for a symbol ────────────────────────────────────────
+function openEmaFromTable(sym) {
+  var emaInput = $('ema-sym');
+  if(emaInput) emaInput.value = sym;
+  switchTab(3,'ana');
+  setTimeout(function(){
+    anaSub('ema',2);
+    setTimeout(function(){ loadEmaChart(); }, 300);
+  }, 100);
+}
+
+// ── EMA Signal analysis for all holdings ──────────────────────────────
+async function loadEmaSignals() {
+  var el=$('port-ema-signals'); if(!el) return;
+  var data=window.__PORTFOLIO__; if(!data||!data.positions||!data.positions.length){
+    el.innerHTML='<div style="color:#8b949e;padding:10px">No positions loaded. Click Refresh first.</div>'; return;
+  }
+  el.innerHTML='<div style="color:#58a6ff;padding:10px">⏳ Fetching EMA data for '+data.positions.length+' positions…</div>';
+  var results=[];
+  for(var i=0;i<data.positions.length;i++){
+    var p=data.positions[i];
+    try {
+      var r=await fetch('/api/chart_data',{method:'POST',credentials:'include',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({symbol:p.symbol,period:'3mo'})});
+      var d=await r.json();
+      if(d.close&&d.close.length>20){
+        var closes=d.close.filter(function(v){return v!=null;});
+        var n=closes.length;
+        function ema(span){
+          var k=2/(span+1),s=closes[0],arr=[];
+          for(var j=0;j<n;j++){s=closes[j]*k+s*(1-k);arr.push(s);}
+          return arr;
+        }
+        var e9=ema(9),e21=ema(21),e50=ema(50),e200=n>=200?ema(200):null;
+        var price=closes[n-1];
+        var score=0;
+        var signals=[];
+        if(price>e9[n-1]){score+=1;}else{score-=1;}
+        if(price>e21[n-1]){score+=1;}else{score-=1;}
+        if(price>e50[n-1]){score+=1;}else{score-=1;}
+        if(e200&&price>e200[n-1]){score+=1;signals.push('Above 200EMA ✅');}
+        else if(e200){score-=1;signals.push('Below 200EMA ⚠️');}
+        if(e9[n-1]>e21[n-1]&&e21[n-1]>e50[n-1]){signals.push('EMA Bull Stack 🚀');}
+        else if(e9[n-1]<e21[n-1]&&e21[n-1]<e50[n-1]){signals.push('EMA Bear Stack 🔻');}
+        var priceVsE9=((price-e9[n-1])/e9[n-1]*100).toFixed(2);
+        var overall = score>=3?'STRONG BUY':score>=1?'BUY':score<=-3?'STRONG SELL':score<=-1?'SELL':'NEUTRAL';
+        results.push({
+          sym:p.symbol,sector:p.sector,price:price,
+          e9:e9[n-1],e21:e21[n-1],e50:e50[n-1],e200:e200?e200[n-1]:null,
+          score:score,overall:overall,signals:signals,
+          upl:p.unrealized_pl,roi:p.unrealized_pct,
+          priceVsE9:priceVsE9
+        });
+      }
+    } catch(err){ console.warn('EMA failed for '+p.symbol,err); }
+  }
+  // Render results
+  results.sort(function(a,b){return b.score-a.score;});
+  var signalColor=function(s){
+    if(s==='STRONG BUY') return '#48bb78';
+    if(s==='BUY')        return '#68d391';
+    if(s==='STRONG SELL')return '#fc3030';
+    if(s==='SELL')       return '#fc8181';
+    return '#a0aec0';
+  };
+  el.innerHTML='<div style="overflow-x:auto"><table>'
+    +'<thead><tr><th>Symbol</th><th>Sector</th><th>Price</th>'
+    +'<th>EMA9</th><th>EMA21</th><th>EMA50</th><th>EMA200</th>'
+    +'<th>vs EMA9%</th><th>Score</th><th>Signal</th><th>Notes</th><th>ROI%</th></tr></thead><tbody>'
+    +results.map(function(r){
+      var sc=signalColor(r.overall);
+      var roic=(r.roi||0)>=0?'#68d391':'#fc8181';
+      var f=function(v){return v?'$'+Number(v).toFixed(2):'—';};
+      var pc=function(v,ref){return v&&ref?(v>ref?'color:#68d391':'color:#fc8181'):'';};
+      return '<tr style="cursor:pointer" onclick="openEmaFromTable(''+r.sym+'')">'
+        +'<td style="font-weight:800;color:#e6edf3">'+r.sym+'</td>'
+        +'<td style="color:#8b949e;font-size:10px">'+r.sector+'</td>'
+        +'<td style="font-weight:700">$'+Number(r.price).toFixed(2)+'</td>'
+        +'<td style="'+pc(r.price,r.e9)+'">'+f(r.e9)+'</td>'
+        +'<td style="'+pc(r.price,r.e21)+'">'+f(r.e21)+'</td>'
+        +'<td style="'+pc(r.price,r.e50)+'">'+f(r.e50)+'</td>'
+        +'<td style="'+pc(r.price,r.e200)+'">'+f(r.e200)+'</td>'
+        +'<td style="color:'+(Number(r.priceVsE9)>=0?'#68d391':'#fc8181')+';font-weight:700">'+(Number(r.priceVsE9)>=0?'+':'')+r.priceVsE9+'%</td>'
+        +'<td style="text-align:center;font-weight:800;color:'+(r.score>0?'#68d391':r.score<0?'#fc8181':'#a0aec0')+'">'+(r.score>0?'+':'')+r.score+'</td>'
+        +'<td><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:800;color:'+sc+';border:1px solid '+sc+'44;background:'+sc+'11">'+r.overall+'</span></td>'
+        +'<td style="font-size:10px;color:#8b949e">'+r.signals.join(' ')+'</td>'
+        +'<td style="color:'+roic+';font-weight:700">'+(r.roi>=0?'+':'')+Number(r.roi||0).toFixed(2)+'%</td>'
+        +'</tr>';
+    }).join('')
+    +'</tbody></table></div>'
+    +'<div style="font-size:10px;color:#4a5568;margin-top:8px">Click any row to open EMA chart. Score = sum of price vs EMA9/21/50/200 alignment.</div>';
+
+  // Store in signals tab too
+  window.__emaResults__ = results;
+}
+
+// ── Signals Tab ────────────────────────────────────────────────────────
+async function loadSignalsTab() {
+  window.__sigLoaded__ = true;
+  var el=$('sig-out'); if(!el) return;
+  var status=$('sig-status'); if(status) status.textContent='⏳ Running…';
+
+  if(!window.__PORTFOLIO__||!window.__PORTFOLIO__.positions||!window.__PORTFOLIO__.positions.length){
+    el.innerHTML='<div style="color:#8b949e;padding:20px;text-align:center">No positions loaded. Go to Analytics tab and click Refresh first.</div>';
+    if(status) status.textContent=''; return;
+  }
+
+  // If EMA results already computed, use them. Otherwise run now.
+  if(!window.__emaResults__) await loadEmaSignals();
+
+  var results=window.__emaResults__||[];
+  if(!results.length){ el.innerHTML='<div style="color:#8b949e;padding:20px">No EMA data available.</div>'; return; }
+
+  // Also pull sector rotation data for context
+  var sectorBias={};
+  try {
+    var sr=await fetch('/api/research/sectors',{credentials:'include'});
+    var srd=await sr.json();
+    var ranked=srd.ranked||[];
+    ranked.forEach(function(r){ sectorBias[r[0]]=r[1]||0; });
+  } catch(e){}
+
+  // Update summary cards
+  var counts={STRONG_BUY:0,BUY:0,NEUTRAL:0,SELL:0,STRONG_SELL:0};
+  results.forEach(function(r){
+    if(r.overall==='STRONG BUY')  counts.STRONG_BUY++;
+    else if(r.overall==='BUY')    counts.BUY++;
+    else if(r.overall==='NEUTRAL')counts.NEUTRAL++;
+    else if(r.overall==='SELL')   counts.SELL++;
+    else if(r.overall==='STRONG SELL') counts.STRONG_SELL++;
+  });
+  var setC=function(id,v){ var e=$(id); if(e) e.textContent=v; };
+  setC('sig-strong-buy',counts.STRONG_BUY);
+  setC('sig-buy',counts.BUY);
+  setC('sig-neutral',counts.NEUTRAL);
+  setC('sig-sell',counts.SELL);
+  setC('sig-strong-sell',counts.STRONG_SELL);
+  var avgScore=(results.reduce(function(a,r){return a+r.score;},0)/results.length).toFixed(1);
+  setC('sig-avg-score',(avgScore>0?'+':'')+avgScore);
+
+  // Build recommendation cards
+  var html='';
+  // Group by signal
+  var groups={
+    'STRONG BUY':[],'BUY':[],'NEUTRAL':[],'SELL':[],'STRONG SELL':[]
+  };
+  results.forEach(function(r){ if(groups[r.overall]) groups[r.overall].push(r); });
+
+  var groupColors={'STRONG BUY':'#48bb78','BUY':'#68d391','NEUTRAL':'#a0aec0','SELL':'#fc8181','STRONG SELL':'#fc3030'};
+  var groupIcons= {'STRONG BUY':'🚀','BUY':'📈','NEUTRAL':'➡️','SELL':'📉','STRONG SELL':'🔻'};
+  var groupAdvice={'STRONG BUY':'All EMA alignments bullish. Consider adding to position.','BUY':'Mostly bullish EMA alignment. Hold or add on dips.','NEUTRAL':'Mixed signals. Monitor for breakout direction.','SELL':'EMA structure weakening. Consider trimming position.','STRONG SELL':'Bearish EMA stack. Consider exiting or cutting exposure.'};
+
+  Object.keys(groups).forEach(function(g){
+    var items=groups[g]; if(!items.length) return;
+    var c=groupColors[g];
+    html+='<div class="sec" style="margin-bottom:14px;border-left:3px solid '+c+'">';
+    html+='<div class="sec-hdr"><h2 style="color:'+c+'">'+groupIcons[g]+' '+g+' &nbsp;<span style="font-size:11px;font-weight:400;color:#8b949e">('+items.length+' positions)</span></h2></div>';
+    html+='<div style="font-size:11px;color:#8b949e;margin-bottom:10px;padding:0 4px">'+groupAdvice[g]+'</div>';
+    html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;padding:4px">';
+    items.forEach(function(r){
+      var sb=sectorBias[r.sector];
+      var sectorNote=sb!=null?(sb>1?'🔥 Hot sector +'+sb.toFixed(1)+'%':sb<-1?'❄️ Cold sector '+sb.toFixed(1)+'%':''):'';
+      var costly=r.priceVsE9>5?'⚠️ '+r.priceVsE9+'% above EMA9 — costly entry':'';
+      var cheap=r.priceVsE9<-3?'💡 '+Math.abs(r.priceVsE9)+'% below EMA9 — potential value':'';
+      var roic=(r.roi||0)>=0?'#68d391':'#fc8181';
+      html+='<div onclick="openEmaFromTable(''+r.sym+'')" style="background:#0d1117;border:1px solid '+c+'33;border-radius:8px;padding:10px;cursor:pointer" title="Click to open EMA chart">'
+        +'<div style="display:flex;justify-content:space-between;align-items:flex-start">'
+        +'<div><span style="font-size:14px;font-weight:800;color:#e6edf3">'+r.sym+'</span>'
+        +'<span style="font-size:10px;color:#8b949e;margin-left:6px">'+r.sector+'</span></div>'
+        +'<div style="text-align:right"><div style="color:'+roic+';font-size:12px;font-weight:700">'+(r.roi>=0?'+':'')+Number(r.roi||0).toFixed(2)+'%</div>'
+        +'<div style="color:'+roic+';font-size:10px">'+(r.upl>=0?'+':'')+'$'+Math.abs(r.upl||0).toFixed(2)+'</div></div>'
+        +'</div>'
+        +'<div style="margin:6px 0;font-size:10px;color:#8b949e">$'+Number(r.price).toFixed(2)+' | Score: <strong style="color:'+c+'">'+(r.score>0?'+':'')+r.score+'</strong></div>'
+        +(sectorNote?'<div style="font-size:10px;color:#f6ad55;margin-bottom:4px">'+sectorNote+'</div>':'')
+        +(costly?'<div style="font-size:10px;color:#fc8181">'+costly+'</div>':'')
+        +(cheap ?'<div style="font-size:10px;color:#68d391">'+cheap +'</div>':'')
+        +'<div style="font-size:10px;color:#8b949e;margin-top:4px">'+r.signals.join(' · ')+'</div>'
+        +'</div>';
+    });
+    html+='</div></div>';
+  });
+
+  el.innerHTML=html;
+  if(status) status.textContent='✅ '+results.length+' signals · '+new Date().toLocaleTimeString();
 }
 
 
@@ -2900,5 +3269,7 @@ async function calcFetchPrices() {
 }
 
 </script>
+
+
 </body>
 </html>
