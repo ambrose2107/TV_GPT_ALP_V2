@@ -2,8 +2,26 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
 <title>OptiTrade Bot</title>
+
+<!-- PWA: makes this installable as a home-screen app on Android/iOS -->
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#0d1117">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="OptiTrade">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+<link rel="icon" href="/static/icons/icon-192.png">
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/static/service-worker.js').catch(console.error);
+  });
+}
+</script>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -497,8 +515,22 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
     </div>
   </div>
 
+  <!-- AI Analysis + Kronos Prediction -->
+  <div class="sec" style="margin-bottom:14px">
+    <div class="sec-hdr"><h2>🤖 AI Analysis &amp; 📈 Kronos Forecast</h2></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 14px">
+      <input id="ai-symbol-input" type="text" placeholder="Symbol e.g. AAPL"
+             style="background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:7px 10px;font-size:13px;width:140px;text-transform:uppercase">
+      <button class="btn btn-b btn-s" onclick="runAiAnalysis()">🤖 AI Analysis</button>
+      <button class="btn btn-b btn-s" onclick="runKronosForecast()">📈 Kronos Forecast</button>
+      <span id="ai-spinner" style="display:none;font-size:11px;color:#58a6ff">⏳ Working… (first call can be slow)</span>
+    </div>
+    <div id="ai-result-box" style="padding:0 14px 14px;font-size:13px;color:#e6edf3;white-space:pre-wrap;line-height:1.5"></div>
+  </div>
+
   <!-- Live Portfolio View -->
   <div id="av-portfolio">
+
 
     <!-- KPI Cards Row 1: Account -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px">
@@ -1823,6 +1855,62 @@ async function apiPost(url, body) {
   const r = await fetch(url, {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
   if(!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
+}
+
+// __ AI ANALYSIS + KRONOS FORECAST
+function _aiGetSymbol() {
+  const sym = ($('ai-symbol-input')?.value || '').trim().toUpperCase();
+  if(!sym) { alert('Enter a symbol first, e.g. AAPL'); return null; }
+  return sym;
+}
+function _aiSetLoading(on) {
+  const sp = $('ai-spinner');
+  if(sp) sp.style.display = on ? 'inline' : 'none';
+}
+async function runAiAnalysis() {
+  const sym = _aiGetSymbol();
+  if(!sym) return;
+  const box = $('ai-result-box');
+  box.textContent = '';
+  _aiSetLoading(true);
+  try {
+    const data = await apiFetch(`/api/analytics/ai-analysis/${sym}?timeframes=15m,1h,1D`);
+    if(data.error) { box.textContent = `⚠️ ${data.error}`; return; }
+    const p = data.indicators?.price ?? '—';
+    box.textContent = `${sym} @ ${p}  (model: ${data.model})\n\n${data.analysis}`;
+  } catch(e) {
+    box.textContent = `⚠️ Request failed: ${e.message}`;
+  } finally {
+    _aiSetLoading(false);
+  }
+}
+async function runKronosForecast() {
+  const sym = _aiGetSymbol();
+  if(!sym) return;
+  const box = $('ai-result-box');
+  box.textContent = '';
+  _aiSetLoading(true);
+  try {
+    const data = await apiFetch(`/api/analytics/kronos-predict/${sym}?period=1D&pred_len=20&lookback=400`);
+    if(data.error) { box.textContent = `⚠️ ${data.error}`; return; }
+    const dir = data.implied_move_pct >= 0 ? '🟢 +' : '🔴 ';
+    let lines = [
+      `${sym} — Kronos Forecast (${data.model})`,
+      `Last close: ${data.last_close}`,
+      `Implied move over ${data.forecast.length} bars: ${dir}${data.implied_move_pct}%`,
+      '',
+      'Forecast (first 10 bars):',
+    ];
+    data.forecast.slice(0, 10).forEach(b => {
+      lines.push(`  ${b.t.slice(0,10)}  O:${b.o}  H:${b.h}  L:${b.l}  C:${b.c}`);
+    });
+    lines.push('', data.note || '');
+    box.textContent = lines.join('\n');
+  } catch(e) {
+    box.textContent = `⚠️ Request failed: ${e.message}`;
+  } finally {
+    _aiSetLoading(false);
+  }
 }
 
 // __ DATA STATUS
