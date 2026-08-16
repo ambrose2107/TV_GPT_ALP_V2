@@ -78,9 +78,18 @@ def alpaca_get_bars(symbol: str, timeframe: str = "1Day",
         elif timeframe in ("1Week",):
             start = (now - timedelta(weeks=int(limit * 1.5))).strftime("%Y-%m-%dT%H:%M:%SZ")
         elif timeframe in ("1Hour", "4Hour"):
-            start = (now - timedelta(hours=int(limit * 1.8))).strftime("%Y-%m-%dT%H:%M:%SZ")
+            # A tight window (limit-based) can land entirely outside market
+            # hours/on a weekend and come back empty. Use a generous
+            # calendar-day floor (matches the ~30-60d window Yahoo gets for
+            # these same periods) so there's always a real trading session
+            # inside the range regardless of when this runs.
+            start = (now - timedelta(days=max(10, int(limit / 6)))).strftime("%Y-%m-%dT%H:%M:%SZ")
         elif timeframe in ("5Min", "15Min"):
-            start = (now - timedelta(minutes=int(limit * 2))).strftime("%Y-%m-%dT%H:%M:%SZ")
+            # Same issue, worse: a 390-bar 15Min request only spans ~13h by
+            # the old (limit*2 minutes) formula -- can miss the entire most
+            # recent trading day outside market hours. Floor at several
+            # calendar days, matching Yahoo's 5d window for these periods.
+            start = (now - timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
         else:
             start = (now - timedelta(days=int(limit * 1.5))).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -358,12 +367,30 @@ ALPACA_TF_MAP = {k: (v[0], v[1]) for k, v in PERIOD_CONFIG.items()}
 YAHOO_MAP     = {k: (v[2], v[3]) for k, v in PERIOD_CONFIG.items()}
 
 
+_BARS_CACHE = {}       # (symbol, period) -> (fetched_at_epoch, bars)
+_BARS_CACHE_TTL = 45   # seconds -- long enough to cover one AI-analysis click
+                        # (which fetches 3 timeframes back-to-back) without
+                        # serving meaningfully stale prices
+
+
 def get_bars(symbol: str, period: str = "1y"):
     """
-    Unified bar fetcher. period = any key in PERIOD_CONFIG.
-    e.g: "1mo","3mo","6mo","1y","3y","5y","10y","5m","15m","1h","1D","1W"
+    Unified bar fetcher, with a short TTL cache. period = any key in
+    PERIOD_CONFIG. e.g: "1mo","3mo","6mo","1y","3y","5y","10y","5m","15m","1h","1D","1W"
     Returns list of dicts: {t, o, h, l, c, v, source}
     """
+    symbol = symbol.upper()
+    cache_key = (symbol, period)
+    cached = _BARS_CACHE.get(cache_key)
+    if cached and (time.time() - cached[0]) < _BARS_CACHE_TTL:
+        return cached[1]
+
+    bars = _get_bars_uncached(symbol, period)
+    _BARS_CACHE[cache_key] = (time.time(), bars)
+    return bars
+
+
+def _get_bars_uncached(symbol: str, period: str = "1y"):
     symbol = symbol.upper()
     cfg    = PERIOD_CONFIG.get(period, PERIOD_CONFIG["1y"])
     alp_tf, alp_limit, yh_interval, yh_period = cfg
