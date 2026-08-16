@@ -40,6 +40,15 @@ def get_kronos_forecast(symbol: str, period: str = "1D",
     if not bars or len(bars) < 50:
         return {"error": f"Not enough bar data for {symbol} ({len(bars) if bars else 0} bars)"}
 
+    demo_count = sum(1 for b in bars if b.get("source") == "demo")
+    if demo_count > 0:
+        return {
+            "error": f"Refusing to forecast: {demo_count}/{len(bars)} bars for {symbol} are "
+                     f"synthetic DEMO data (real market data unavailable right now — likely "
+                     f"Alpaca/Yahoo rate limits). A forecast built on fake prices would be "
+                     f"meaningless. Wait a bit and retry, or check your Alpaca API key."
+        }
+
     if len(bars) > lookback:
         bars = bars[-lookback:]
 
