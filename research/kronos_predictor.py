@@ -52,7 +52,7 @@ def get_kronos_forecast(symbol: str, period: str = "1D",
     }
 
     try:
-        resp = requests.post(f"{KRONOS_API_URL}/predict", json=payload, timeout=90)
+        resp = requests.post(f"{KRONOS_API_URL}/predict", json=payload, timeout=180)
     except requests.exceptions.ConnectionError:
         return {"error": f"Could not reach Kronos API at {KRONOS_API_URL}. "
                           f"Is the Hugging Face Space awake? (free Spaces sleep when idle — "
