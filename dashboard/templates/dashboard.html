@@ -1858,6 +1858,16 @@ async function apiPost(url, body) {
 }
 
 // __ AI ANALYSIS + KRONOS FORECAST
+// (uses its own fetch helper, unlike apiFetch, so real error messages
+// from the server -- not just "HTTP 400" -- reach the result box)
+async function aiApiFetch(url) {
+  const r = await fetch(url, {credentials: 'same-origin'});
+  let data;
+  try { data = await r.json(); } catch(e) { data = null; }
+  if(!data) data = {};
+  if(!r.ok && !data.error) data.error = `HTTP ${r.status} (no error detail returned)`;
+  return data;
+}
 function _aiGetSymbol() {
   const sym = ($('ai-symbol-input')?.value || '').trim().toUpperCase();
   if(!sym) { alert('Enter a symbol first, e.g. AAPL'); return null; }
@@ -1874,7 +1884,7 @@ async function runAiAnalysis() {
   box.textContent = '';
   _aiSetLoading(true);
   try {
-    const data = await apiFetch(`/api/analytics/ai-analysis/${sym}?timeframes=15m,1h,1D`);
+    const data = await aiApiFetch(`/api/analytics/ai-analysis/${sym}?timeframes=15m,1h,1D`);
     if(data.error) { box.textContent = `⚠️ ${data.error}`; return; }
     const p = data.indicators?.price ?? '—';
     box.textContent = `${sym} @ ${p}  (model: ${data.model})\n\n${data.analysis}`;
@@ -1891,7 +1901,7 @@ async function runKronosForecast() {
   box.textContent = '';
   _aiSetLoading(true);
   try {
-    const data = await apiFetch(`/api/analytics/kronos-predict/${sym}?period=1D&pred_len=20&lookback=400`);
+    const data = await aiApiFetch(`/api/analytics/kronos-predict/${sym}?period=1D&pred_len=20&lookback=400`);
     if(data.error) { box.textContent = `⚠️ ${data.error}`; return; }
     const dir = data.implied_move_pct >= 0 ? '🟢 +' : '🔴 ';
     let lines = [
