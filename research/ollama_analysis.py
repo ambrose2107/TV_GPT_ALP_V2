@@ -29,7 +29,7 @@ from core.analyzer import analyze_symbol
 logger = get_logger(__name__)
 
 OLLAMA_URL   = os.environ.get("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:latest")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.1")
 
 
 def _ollama_reachable() -> bool:
@@ -61,7 +61,7 @@ def _call_ollama(prompt: str, system: str = None, max_tokens: int = 700) -> str:
         "options": {"num_predict": max_tokens, "temperature": 0.3},
     }
     try:
-        resp = requests.post(f"{OLLAMA_URL}/api/chat", json=body, timeout=180)
+        resp = requests.post(f"{OLLAMA_URL}/api/chat", json=body, timeout=300)
         resp.raise_for_status()
         data = resp.json()
         return data.get("message", {}).get("content", "").strip()
@@ -123,13 +123,14 @@ def get_local_ai_analysis(symbol: str, timeframes: list = None) -> dict:
     )
     prompt = (
         f"{indicator_block}\n\n"
-        "Write a concise (150-250 word) analysis:\n"
+        "Write a concise (100-150 word) analysis:\n"
         "1) What the current technical picture suggests\n"
         "2) Where timeframes agree or disagree\n"
         "3) Key level/momentum risk to watch\n"
+        "Be brief and direct.\n"
     )
 
-    text = _call_ollama(prompt, system=system, max_tokens=600)
+    text = _call_ollama(prompt, system=system, max_tokens=350)
 
     return {
         "symbol": analysis.get("symbol"),
