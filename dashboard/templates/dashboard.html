@@ -528,6 +528,42 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
     <div id="ai-result-box" style="padding:0 14px 14px;font-size:13px;color:#e6edf3;white-space:pre-wrap;line-height:1.5"></div>
   </div>
 
+  <!-- Batch AI + Kronos Signal Scanner -->
+  <div class="sec" style="margin-bottom:14px">
+    <div class="sec-hdr"><h2>📡 Signal Scanner — Positions, Watchlist &amp; Candidates</h2></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:10px 14px">
+      <label style="font-size:12px;color:#8b949e">Auto-scan:</label>
+      <select id="sig-interval-select" onchange="setSignalSchedule()"
+              style="background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:6px 8px;font-size:12px">
+        <option value="0">Off</option>
+        <option value="3">Every 3h</option>
+        <option value="6">Every 6h</option>
+        <option value="12">Every 12h</option>
+      </select>
+      <button class="btn btn-b btn-s" onclick="runSignalScanNow()">▶️ Execute Now</button>
+      <span id="sig-status-line" style="font-size:11px;color:#8b949e"></span>
+    </div>
+    <div style="overflow-x:auto;padding:0 14px 14px">
+      <table style="width:100%;border-collapse:collapse;font-size:12px" id="sig-table">
+        <thead>
+          <tr style="text-align:left;color:#8b949e;border-bottom:1px solid #30363d">
+            <th style="padding:6px 8px">Symbol</th>
+            <th style="padding:6px 8px">Category</th>
+            <th style="padding:6px 8px">Price</th>
+            <th style="padding:6px 8px">AI Label</th>
+            <th style="padding:6px 8px">Kronos 1-2wk %</th>
+            <th style="padding:6px 8px">Confluence</th>
+            <th style="padding:6px 8px">Updated</th>
+          </tr>
+        </thead>
+        <tbody id="sig-table-body">
+          <tr><td colspan="7" style="padding:10px 8px;color:#8b949e">No scans yet — click "Execute Now" or set an auto-scan interval.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+
   <!-- Live Portfolio View -->
   <div id="av-portfolio">
 
@@ -971,6 +1007,8 @@ function switchTab(idx, name) {
   if(name==='ana8') {
     portLoaded=false;
     switchAnalyticsView('portfolio');
+    loadSignalsTable();
+    loadSignalsStatus();
     setTimeout(function(){
       if(window.__portChartData__) {
         drawPortfolioCharts();
@@ -1920,6 +1958,95 @@ async function runKronosForecast() {
     box.textContent = `⚠️ Request failed: ${e.message}`;
   } finally {
     _aiSetLoading(false);
+  }
+}
+
+// __ SIGNAL SCANNER TABLE
+function _confluenceColor(label) {
+  const map = {
+    'Strong Buy':  '#2ea043', 'Buy':  '#3fb950',
+    'Strong Sell': '#da3633', 'Sell': '#f85149',
+    'Mixed':       '#d29922', 'Neutral': '#8b949e', 'Unknown': '#6e7681',
+  };
+  return map[label] || '#8b949e';
+}
+function _pctColor(pct) {
+  if(pct === null || pct === undefined) return '#8b949e';
+  if(pct > 0) return '#3fb950';
+  if(pct < 0) return '#f85149';
+  return '#8b949e';
+}
+function renderSignalsTable(rows) {
+  const tbody = $('sig-table-body');
+  if(!rows || rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="padding:10px 8px;color:#8b949e">No scans yet — click "Execute Now" or set an auto-scan interval.</td></tr>';
+    return;
+  }
+  const catLabel = {position:'📍 Position', watchlist:'👁 Watchlist', candidate:'🎯 Candidate'};
+  tbody.innerHTML = rows.map(r => {
+    const pct = r.kronos_implied_pct;
+    const pctStr = (pct === null || pct === undefined) ? '—' : `${pct >= 0 ? '+' : ''}${pct}%`;
+    const updated = (r.generated_at || '').replace('T', ' ').slice(0, 16);
+    return `<tr style="border-bottom:1px solid #21262d">
+      <td style="padding:6px 8px;font-weight:600">${r.symbol}</td>
+      <td style="padding:6px 8px;color:#8b949e">${catLabel[r.category] || r.category}</td>
+      <td style="padding:6px 8px">${r.price ?? '—'}</td>
+      <td style="padding:6px 8px">${r.ai_label ?? '—'}</td>
+      <td style="padding:6px 8px;color:${_pctColor(pct)};font-weight:600">${pctStr}</td>
+      <td style="padding:6px 8px;color:${_confluenceColor(r.confluence_label)};font-weight:700">${r.confluence_label}</td>
+      <td style="padding:6px 8px;color:#8b949e;font-size:11px">${updated}</td>
+    </tr>`;
+  }).join('');
+}
+async function loadSignalsTable() {
+  try {
+    const data = await aiApiFetch('/api/analytics/signals');
+    renderSignalsTable(data.signals || []);
+  } catch(e) { /* silent -- table just stays as-is */ }
+}
+async function loadSignalsStatus() {
+  try {
+    const s = await aiApiFetch('/api/analytics/signals/status');
+    const sel = $('sig-interval-select');
+    if(sel) sel.value = String(s.interval_hours ?? 0);
+    const line = $('sig-status-line');
+    if(line) {
+      if(s.scan_in_progress) {
+        line.textContent = '⏳ Scan in progress…';
+      } else if(s.last_scan_finished_at) {
+        const t = s.last_scan_finished_at.replace('T',' ').slice(0,16);
+        line.textContent = `Last scan: ${t} UTC${s.next_run_at ? ' · Next: ' + s.next_run_at.replace('T',' ').slice(0,16) + ' UTC' : ''}`;
+      } else {
+        line.textContent = 'No scan run yet';
+      }
+    }
+  } catch(e) { /* silent */ }
+}
+async function runSignalScanNow() {
+  const line = $('sig-status-line');
+  try {
+    const r = await apiPost('/api/analytics/signals/run-now', {});
+    if(line) line.textContent = r.started ? '⏳ Scan started…' : `⚠️ ${r.reason || 'Could not start'}`;
+    // Poll status + table every 5s for up to ~10 minutes while it runs
+    let polls = 0;
+    const iv = setInterval(async () => {
+      polls++;
+      await loadSignalsStatus();
+      await loadSignalsTable();
+      const s = await aiApiFetch('/api/analytics/signals/status');
+      if(!s.scan_in_progress || polls > 120) clearInterval(iv);
+    }, 5000);
+  } catch(e) {
+    if(line) line.textContent = `⚠️ ${e.message}`;
+  }
+}
+async function setSignalSchedule() {
+  const hours = parseInt($('sig-interval-select').value, 10);
+  try {
+    await apiPost('/api/analytics/signals/schedule', {interval_hours: hours});
+    await loadSignalsStatus();
+  } catch(e) {
+    alert(`Failed to set schedule: ${e.message}`);
   }
 }
 
