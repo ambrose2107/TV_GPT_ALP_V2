@@ -703,3 +703,63 @@ def kronos_predict(symbol):
     except Exception as ex:
         logger.error(f"kronos-predict {symbol}: {ex}")
         return jsonify({"error": str(ex)}), 500
+
+
+# ── Batch AI + Kronos signal scanner (positions, watchlist, candidates) ─────
+@analytics_bp.route("/api/analytics/signals", methods=["GET"])
+def get_signals():
+    """
+    Latest stored signal per (symbol, category). Fast -- reads from the DB,
+    never triggers a live scan (that's what run-now / the scheduler do).
+    """
+    e = _auth()
+    if e: return e
+    from core.database import get_latest_signals
+    category = request.args.get("category")  # optional: position/watchlist/candidate
+    try:
+        rows = get_latest_signals(category)
+        return jsonify({"signals": rows, "count": len(rows)})
+    except Exception as ex:
+        logger.error(f"get_signals: {ex}")
+        return jsonify({"error": str(ex)}), 500
+
+
+@analytics_bp.route("/api/analytics/signals/run-now", methods=["POST"])
+def run_signals_now():
+    """
+    Kicks off a full scan in a background thread and returns immediately --
+    never blocks this request or trade webhook handling while it runs.
+    Poll GET /api/analytics/signals/status to see progress/completion.
+    """
+    e = _auth()
+    if e: return e
+    from core.scheduler import run_now_async
+    result = run_now_async()
+    status = 200 if result.get("started") else 409
+    return jsonify(result), status
+
+
+@analytics_bp.route("/api/analytics/signals/status", methods=["GET"])
+def signals_status():
+    e = _auth()
+    if e: return e
+    from core.scheduler import get_status
+    return jsonify(get_status())
+
+
+@analytics_bp.route("/api/analytics/signals/schedule", methods=["POST"])
+def set_signals_schedule():
+    """Body: {"interval_hours": 0|3|6|12}"""
+    e = _auth()
+    if e: return e
+    from core.scheduler import set_interval_hours, VALID_INTERVALS
+    data = request.get_json(silent=True) or {}
+    hours = data.get("interval_hours")
+    try:
+        hours = int(hours)
+        if hours not in VALID_INTERVALS:
+            return jsonify({"error": f"interval_hours must be one of {list(VALID_INTERVALS)}"}), 400
+        set_interval_hours(hours)
+        return jsonify({"ok": True, "interval_hours": hours, "interval_label": VALID_INTERVALS[hours]})
+    except (TypeError, ValueError):
+        return jsonify({"error": "interval_hours must be an integer"}), 400
