@@ -76,6 +76,30 @@ def init_db():
             alpaca_id    TEXT
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS ai_signals (
+            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+            generated_at          TEXT    DEFAULT (datetime('now')),
+            symbol                TEXT    NOT NULL,
+            category              TEXT    NOT NULL,
+            price                 REAL,
+            ai_label              TEXT,
+            ai_score              REAL,
+            ai_text               TEXT,
+            kronos_last_close     REAL,
+            kronos_implied_pct    REAL,
+            kronos_forecast_json  TEXT,
+            confluence_label      TEXT,
+            confluence_score      REAL,
+            note                  TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS scheduler_settings (
+            key    TEXT PRIMARY KEY,
+            value  TEXT
+        )
+    """)
     conn.commit()
     _close(conn)
 
@@ -208,3 +232,52 @@ def get_closed_summary():
     """).fetchone()
     _close(conn)
     return dict(row) if row else {}
+
+
+# ── ai_signals helpers (AI + Kronos batch signal scanner) ──────────────────
+def save_signal(row: dict):
+    conn = get_conn()
+    conn.execute("""
+        INSERT INTO ai_signals (symbol, category, price, ai_label, ai_score, ai_text,
+                                 kronos_last_close, kronos_implied_pct, kronos_forecast_json,
+                                 confluence_label, confluence_score, note)
+        VALUES (:symbol, :category, :price, :ai_label, :ai_score, :ai_text,
+                :kronos_last_close, :kronos_implied_pct, :kronos_forecast_json,
+                :confluence_label, :confluence_score, :note)
+    """, row)
+    conn.commit()
+    _close(conn)
+
+
+def get_latest_signals(category: str = None):
+    """One row per (symbol, category) -- the most recent scan result, newest first."""
+    conn = get_conn()
+    where = "WHERE category = ?" if category else ""
+    params = (category,) if category else ()
+    rows = conn.execute(f"""
+        SELECT s.* FROM ai_signals s
+        INNER JOIN (
+            SELECT symbol, category, MAX(id) AS max_id
+            FROM ai_signals
+            {where}
+            GROUP BY symbol, category
+        ) latest ON s.id = latest.max_id
+        ORDER BY s.generated_at DESC
+    """, params).fetchall()
+    _close(conn)
+    return [dict(r) for r in rows]
+
+
+def set_setting(key: str, value: str):
+    conn = get_conn()
+    conn.execute("INSERT INTO scheduler_settings (key, value) VALUES (?, ?) "
+                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, str(value)))
+    conn.commit()
+    _close(conn)
+
+
+def get_setting(key: str, default=None):
+    conn = get_conn()
+    row = conn.execute("SELECT value FROM scheduler_settings WHERE key = ?", (key,)).fetchone()
+    _close(conn)
+    return row["value"] if row else default
