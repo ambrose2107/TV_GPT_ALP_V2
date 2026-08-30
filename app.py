@@ -9,6 +9,7 @@ from webhook.routes import webhook_bp
 from dashboard.routes import dashboard_bp
 from mirrorfish.routes import mirrorfish_bp
 from core.analytics_routes import analytics_bp
+from core.scheduler import init_scheduler
 import os
 
 logger = get_logger(__name__)
@@ -25,5 +26,6 @@ def create_app():
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(mirrorfish_bp)
     app.register_blueprint(analytics_bp)
+    init_scheduler()
     logger.info("OptiTrade AI v8 app created.")
     return app
