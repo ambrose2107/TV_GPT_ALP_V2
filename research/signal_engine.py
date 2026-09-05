@@ -148,27 +148,38 @@ def _get_candidate_symbols(limit: int = 5) -> list:
 
 
 def run_full_scan(watchlist: list = None, include_positions: bool = True,
-                   include_candidates: bool = True, throttle_seconds: float = 2.0) -> dict:
+                   include_candidates: bool = True, throttle_seconds: float = 2.0,
+                   symbols: list = None) -> dict:
     """
     The actual batch job. SLOW by design (real LLM + real Kronos calls per
     symbol) -- always run this from a background thread, never inline in a
     request handler. throttle_seconds paces requests to stay under Groq's
     free-tier rate limit when AI_PROVIDER=groq.
+
+    If `symbols` is given, skips the position/watchlist/candidate discovery
+    entirely and scans exactly those symbols instead (used by the dashboard's
+    "Rescan Selected" button). Each symbol keeps whatever category it was
+    last scanned under (falls back to "watchlist" if never seen before).
     """
     started = time.time()
-    watchlist = watchlist or DEFAULT_WATCHLIST
 
-    plan = []  # list of (symbol, category, note)
-    if include_positions:
-        for sym in _get_open_position_symbols():
-            plan.append((sym, "position", None))
-    for sym in watchlist:
-        if sym not in [p[0] for p in plan]:
-            plan.append((sym, "watchlist", None))
-    if include_candidates:
-        for sym in _get_candidate_symbols():
+    if symbols:
+        from core.database import get_latest_signals
+        prior = {r["symbol"]: r["category"] for r in get_latest_signals()}
+        plan = [(s.upper(), prior.get(s.upper(), "watchlist"), None) for s in symbols]
+    else:
+        watchlist = watchlist or DEFAULT_WATCHLIST
+        plan = []  # list of (symbol, category, note)
+        if include_positions:
+            for sym in _get_open_position_symbols():
+                plan.append((sym, "position", None))
+        for sym in watchlist:
             if sym not in [p[0] for p in plan]:
-                plan.append((sym, "candidate", "Flagged by options flow / insider buys"))
+                plan.append((sym, "watchlist", None))
+        if include_candidates:
+            for sym in _get_candidate_symbols():
+                if sym not in [p[0] for p in plan]:
+                    plan.append((sym, "candidate", "Flagged by options flow / insider buys"))
 
     results = []
     for i, (sym, category, note) in enumerate(plan):
