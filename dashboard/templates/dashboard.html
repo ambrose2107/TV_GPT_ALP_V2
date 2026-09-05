@@ -299,7 +299,8 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
       <div class="stab on" onclick="anaSub('signals',0)">📊 Signal Grid</div>
       <div class="stab"    onclick="anaSub('charts',1)">📈 Charts</div>
       <div class="stab"    onclick="anaSub('ema',2)">📉 EMA Overlay</div>
-      <div class="stab"    onclick="anaSub('compare',3)">⚖️ Compare</div>
+      <div class="stab"    onclick="anaSub('bb',3)">📊 Bollinger Bands</div>
+      <div class="stab"    onclick="anaSub('compare',4)">⚖️ Compare</div>
     </div>
 
     <!-- SIGNAL GRID -->
@@ -348,6 +349,10 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
           <input type="checkbox" id="ema-63"  checked> <span style="color:#ef4444">EMA 63</span></label>
         <label style="font-size:12px;display:flex;align-items:center;gap:4px">
           <input type="checkbox" id="ema-200" checked> <span style="color:#8b5cf6">EMA 200</span></label>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="ema-vwap" checked> <span style="color:#38bdf8">VWAP</span></label>
+        <label style="font-size:12px;display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="ema-candles" checked> <span style="color:#e6edf3">🕯️ Candles</span></label>
         <button class="btn btn-b" onclick="loadEmaChart()" id="ema-btn">📉 Show EMA Chart</button>
       </div>
       <div id="ema-info" style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;font-size:12px"></div>
@@ -356,6 +361,53 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
       </div>
       <div style="font-size:11px;color:#8b949e;margin-top:8px">
         💡 EMA 9 = short trend | EMA 21 = medium trend | EMA 63 = quarterly trend | EMA 200 = long-term trend
+      </div>
+    </div>
+
+    <!-- BOLLINGER BANDS TAB — two independent side-by-side panels -->
+    <div id="ana-bb" style="display:none">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(340px, 1fr));gap:14px" id="bb-grid">
+        <div class="bb-panel" data-panel="a">
+          <div class="row" style="margin-bottom:8px;flex-wrap:wrap">
+            <input type="text" class="bb-sym" placeholder="Symbol e.g. AAPL" style="max-width:130px" value="AAPL">
+            <select class="bb-period">
+              <option value="1m">1m</option><option value="2m">2m</option>
+              <option value="5m">5m</option><option value="15m" selected>15m</option>
+              <option value="30m">30m</option><option value="1h">1hr</option>
+              <option value="4h">4hr</option><option value="1D">1D</option>
+              <option value="1W">1W</option><option value="1M">1M</option>
+            </select>
+            <label style="font-size:11px;display:flex;align-items:center;gap:3px">
+              <input type="checkbox" class="bb-candles" checked> 🕯️</label>
+            <button class="btn btn-b btn-s bb-load">📊 Load</button>
+          </div>
+          <div class="bb-info" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px;font-size:11px"></div>
+          <div style="position:relative;height:300px;background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:8px">
+            <canvas class="bb-chart" aria-label="Bollinger Bands chart A"></canvas>
+          </div>
+        </div>
+        <div class="bb-panel" data-panel="b">
+          <div class="row" style="margin-bottom:8px;flex-wrap:wrap">
+            <input type="text" class="bb-sym" placeholder="Symbol e.g. MSFT" style="max-width:130px" value="MSFT">
+            <select class="bb-period">
+              <option value="1m">1m</option><option value="2m">2m</option>
+              <option value="5m">5m</option><option value="15m" selected>15m</option>
+              <option value="30m">30m</option><option value="1h">1hr</option>
+              <option value="4h">4hr</option><option value="1D">1D</option>
+              <option value="1W">1W</option><option value="1M">1M</option>
+            </select>
+            <label style="font-size:11px;display:flex;align-items:center;gap:3px">
+              <input type="checkbox" class="bb-candles" checked> 🕯️</label>
+            <button class="btn btn-b btn-s bb-load">📊 Load</button>
+          </div>
+          <div class="bb-info" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px;font-size:11px"></div>
+          <div style="position:relative;height:300px;background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:8px">
+            <canvas class="bb-chart" aria-label="Bollinger Bands chart B"></canvas>
+          </div>
+        </div>
+      </div>
+      <div style="font-size:11px;color:#8b949e;margin-top:8px">
+        💡 Bollinger Bands: 20-period SMA ± 2 standard deviations. Price near the upper band = overbought stretch; near the lower band = oversold stretch. Bands squeezing tight often precede a volatility breakout.
       </div>
     </div>
 
@@ -530,36 +582,43 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
 
   <!-- Batch AI + Kronos Signal Scanner -->
   <div class="sec" style="margin-bottom:14px">
-    <div class="sec-hdr"><h2>📡 Signal Scanner — Positions, Watchlist &amp; Candidates</h2></div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:10px 14px">
-      <label style="font-size:12px;color:#8b949e">Auto-scan:</label>
-      <select id="sig-interval-select" onchange="setSignalSchedule()"
-              style="background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:6px 8px;font-size:12px">
-        <option value="0">Off</option>
-        <option value="3">Every 3h</option>
-        <option value="6">Every 6h</option>
-        <option value="12">Every 12h</option>
-      </select>
-      <button class="btn btn-b btn-s" onclick="runSignalScanNow()">▶️ Execute Now</button>
-      <span id="sig-status-line" style="font-size:11px;color:#8b949e"></span>
+    <div class="sec-hdr" style="display:flex;justify-content:space-between;align-items:center">
+      <h2>📡 Signal Scanner — Positions, Watchlist &amp; Candidates</h2>
+      <button class="btn btn-n btn-s" id="sig-collapse-btn" onclick="toggleSignalPanel()" title="Minimize/Maximize">▾</button>
     </div>
-    <div style="overflow-x:auto;padding:0 14px 14px">
-      <table style="width:100%;border-collapse:collapse;font-size:12px" id="sig-table">
-        <thead>
-          <tr style="text-align:left;color:#8b949e;border-bottom:1px solid #30363d">
-            <th style="padding:6px 8px">Symbol</th>
-            <th style="padding:6px 8px">Category</th>
-            <th style="padding:6px 8px">Price</th>
-            <th style="padding:6px 8px">AI Label</th>
-            <th style="padding:6px 8px">Kronos 1-2wk %</th>
-            <th style="padding:6px 8px">Confluence</th>
-            <th style="padding:6px 8px">Updated</th>
-          </tr>
-        </thead>
-        <tbody id="sig-table-body">
-          <tr><td colspan="7" style="padding:10px 8px;color:#8b949e">No scans yet — click "Execute Now" or set an auto-scan interval.</td></tr>
-        </tbody>
-      </table>
+    <div id="sig-panel-body">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:10px 14px">
+        <label style="font-size:12px;color:#8b949e">Auto-scan:</label>
+        <select id="sig-interval-select" onchange="setSignalSchedule()"
+                style="background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:6px 8px;font-size:12px">
+          <option value="0">Off</option>
+          <option value="3">Every 3h</option>
+          <option value="6">Every 6h</option>
+          <option value="12">Every 12h</option>
+        </select>
+        <button class="btn btn-b btn-s" onclick="runSignalScanNow()">▶️ Execute Now</button>
+        <button class="btn btn-n btn-s" id="sig-rescan-selected-btn" onclick="rescanSelectedSignals()" disabled>🔁 Rescan Selected (<span id="sig-selected-count">0</span>)</button>
+        <span id="sig-status-line" style="font-size:11px;color:#8b949e"></span>
+      </div>
+      <div style="overflow-x:auto;padding:0 14px 14px">
+        <table style="width:100%;border-collapse:collapse;font-size:12px" id="sig-table">
+          <thead>
+            <tr style="text-align:left;color:#8b949e;border-bottom:1px solid #30363d">
+              <th style="padding:6px 8px"><input type="checkbox" id="sig-select-all" onchange="toggleSelectAllSignals(this)"></th>
+              <th style="padding:6px 8px;cursor:pointer;user-select:none" onclick="sortSignals('symbol')">Symbol <span class="sig-sort-ind" data-col="symbol"></span></th>
+              <th style="padding:6px 8px;cursor:pointer;user-select:none" onclick="sortSignals('category')">Category <span class="sig-sort-ind" data-col="category"></span></th>
+              <th style="padding:6px 8px;cursor:pointer;user-select:none" onclick="sortSignals('price')">Price <span class="sig-sort-ind" data-col="price"></span></th>
+              <th style="padding:6px 8px;cursor:pointer;user-select:none" onclick="sortSignals('ai_label')">AI Label <span class="sig-sort-ind" data-col="ai_label"></span></th>
+              <th style="padding:6px 8px;cursor:pointer;user-select:none" onclick="sortSignals('kronos_implied_pct')">Kronos 1-2wk % <span class="sig-sort-ind" data-col="kronos_implied_pct"></span></th>
+              <th style="padding:6px 8px;cursor:pointer;user-select:none" onclick="sortSignals('confluence_score')">Confluence <span class="sig-sort-ind" data-col="confluence_score"></span></th>
+              <th style="padding:6px 8px;cursor:pointer;user-select:none" onclick="sortSignals('generated_at')">Updated <span class="sig-sort-ind" data-col="generated_at"></span></th>
+            </tr>
+          </thead>
+          <tbody id="sig-table-body">
+            <tr><td colspan="8" style="padding:10px 8px;color:#8b949e">No scans yet — click "Execute Now" or set an auto-scan interval.</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -1024,7 +1083,7 @@ function switchTab(idx, name) {
   if(name==='calc') calcOnOpen();
 }
 function anaSub(name, idx) {
-  ['signals','charts','ema','compare'].forEach(n=>{
+  ['signals','charts','ema','bb','compare'].forEach(n=>{
     const el=$('ana-'+n); if(el) el.style.display=n===name?'block':'none';
   });
   document.querySelectorAll('#ana-subtabs .stab').forEach((t,i)=>t.classList.toggle('on',i===idx));
@@ -1411,6 +1470,93 @@ async function loadCharts() {
   }
 }
 
+// ── SHARED OVERLAY CHART RENDERER (used by EMA tab + Bollinger Bands tab) ───
+// overlayConfigs: [{key, label, color, dash}] -- keys must exist in the
+// /api/chart_data response (ema9, vwap, bb_upper, etc).
+function renderOverlayChart(canvasEl, d, overlayConfigs, infoElId, showCandles) {
+  const existing = Chart.getChart(canvasEl);
+  if(existing) existing.destroy();
+
+  const labels = d.dates||[];
+  const closes = d.close||[];
+  const opens  = d.open||[];
+  const highs  = d.high||[];
+  const lows   = d.low||[];
+
+  const datasets = [];
+
+  if(showCandles) {
+    // Candlesticks via Chart.js core floating bars -- no extra library.
+    const wickData = labels.map((_,i)=> (highs[i]==null||lows[i]==null) ? null : [lows[i], highs[i]]);
+    const bodyData = labels.map((_,i)=> (opens[i]==null||closes[i]==null) ? null : [Math.min(opens[i],closes[i]), Math.max(opens[i],closes[i])]);
+    const bodyColors = labels.map((_,i)=> (closes[i]>=opens[i]) ? '#3fb950' : '#f85149');
+
+    datasets.push({
+      type:'bar', label:'Wick', data:wickData,
+      backgroundColor:'#8b949e', barPercentage:0.15, categoryPercentage:0.9,
+      order:2, grouped:false,
+    });
+    datasets.push({
+      type:'bar', label:'Candle', data:bodyData,
+      backgroundColor:bodyColors, barPercentage:0.6, categoryPercentage:0.9,
+      order:1, grouped:false,
+    });
+  } else {
+    datasets.push({
+      type:'line', label:'Price', data:closes,
+      borderColor:'#94a3b8', backgroundColor:'#94a3b822',
+      borderWidth:1, pointRadius:0, fill:true, tension:0.2, order:10,
+    });
+  }
+
+  let infoHtml = `<span style="color:#8b949e">Symbol: <strong style="color:#e6edf3">${d.symbol||''}</strong></span>
+    <span style="color:#8b949e">Bars: ${d.bar_count||closes.length}</span>
+    <span style="color:#8b949e">Source: <strong class="${d.source==='demo'?'y':'g'}">${d.source}</strong></span>`;
+
+  overlayConfigs.forEach((cfg,i)=>{
+    if(!cfg.show || !d[cfg.key]?.length) return;
+    datasets.push({
+      type:'line', label:cfg.label, data:d[cfg.key],
+      borderColor:cfg.color, backgroundColor:'transparent',
+      borderWidth:1.5, pointRadius:0, tension:0.2, order:i,
+      borderDash: cfg.dash||[],
+    });
+    const last = d[cfg.key].filter(Boolean).slice(-1)[0];
+    const price= closes.filter(Boolean).slice(-1)[0];
+    const diff = last && price ? ((price-last)/last*100).toFixed(2) : null;
+    infoHtml += `<span>${cfg.label}: <strong style="color:${cfg.color}">$${last?.toFixed(2)||'N/A'}</strong>
+      ${diff!=null?`<span class="${parseFloat(diff)>=0?'g':'r'}">(${parseFloat(diff)>=0?'+':''}${diff}%)</span>`:''}
+    </span>`;
+  });
+
+  if(infoElId && $(infoElId)) $(infoElId).innerHTML = infoHtml;
+
+  return new Chart(canvasEl,{
+    type: showCandles ? 'bar' : 'line',
+    data:{labels, datasets},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      interaction:{mode:'index',intersect:false},
+      plugins:{
+        legend:{display:true, position:'top',
+          labels:{color:'#8b949e',font:{size:11},boxWidth:12,padding:12,
+            filter: item => !['Wick'].includes(item.text)}},
+        tooltip:{callbacks:{
+          label:c=> c.dataset.label==='Candle'
+            ? `O:${opens[c.dataIndex]} H:${highs[c.dataIndex]} L:${lows[c.dataIndex]} C:${closes[c.dataIndex]}`
+            : (c.dataset.label==='Wick' ? null : `${c.dataset.label}: $${(Array.isArray(c.raw)?c.raw[1]:c.raw||0)?.toFixed?.(2) ?? c.raw}`)
+        }}
+      },
+      scales:{
+        x:{ticks:{maxTicksLimit:d.max_ticks||8,maxRotation:d.is_intraday?45:0,minRotation:d.is_intraday?45:0,font:{size:9},color:'#8b949e'},
+           grid:{color:'#21262d'}},
+        y:{ticks:{callback:v=>'$'+v.toFixed(0),font:{size:10},color:'#8b949e'},
+           grid:{color:'#21262d'}}
+      }
+    }
+  });
+}
+
 // ── EMA OVERLAY TAB ──────────────────────────────────────────────────────────
 let emaChart = null;
 async function loadEmaChart() {
@@ -1425,78 +1571,58 @@ async function loadEmaChart() {
   try {
     const d = await apiPost('/api/chart_data',{symbol:sym, period});
     if(d.error){ alert('Error: '+d.error); return; }
+    d.symbol = sym;
 
-    const ctx = $('ema-chart');
-    // Destroy existing chart on this canvas
-    const existing = Chart.getChart(ctx);
-    if(existing) existing.destroy();
-    emaChart = null;
-
-    const labels   = d.dates||[];
-    const closes   = d.close||[];
-    const datasets = [{
-      label:'Price', data:closes,
-      borderColor:'#94a3b8', backgroundColor:'#94a3b822',
-      borderWidth:1, pointRadius:0, fill:true, tension:0.2, order:10,
-    }];
-
-    const emaConfig = [
+    const overlays = [
       {key:'ema9',  label:'EMA 9',   color:'#f59e0b', show:$('ema-9')?.checked},
       {key:'ema21', label:'EMA 21',  color:'#22c55e', show:$('ema-21')?.checked},
       {key:'ema63', label:'EMA 63',  color:'#ef4444', show:$('ema-63')?.checked},
-      {key:'ema200',label:'EMA 200', color:'#8b5cf6', show:$('ema-200')?.checked},
+      {key:'ema200',label:'EMA 200', color:'#8b5cf6', show:$('ema-200')?.checked, dash:[4,4]},
+      {key:'vwap',  label:'VWAP',    color:'#38bdf8', show:$('ema-vwap')?.checked, dash:[2,2]},
     ];
-
-    let infoHtml = `<span style="color:#8b949e">Symbol: <strong style="color:#e6edf3">${sym}</strong></span>
-      <span style="color:#8b949e">Bars: ${d.bar_count||closes.length}</span>
-      <span style="color:#8b949e">Source: <strong class="${d.source==='demo'?'y':'g'}">${d.source}</strong></span>`;
-
-    emaConfig.forEach((cfg,i)=>{
-      if(!cfg.show || !d[cfg.key]?.length) return;
-      datasets.push({
-        label:cfg.label, data:d[cfg.key],
-        borderColor:cfg.color, backgroundColor:'transparent',
-        borderWidth:1.5, pointRadius:0, tension:0.2, order:i,
-        borderDash: cfg.key==='ema200'?[4,4]:[],
-      });
-      // Last EMA value
-      const last = d[cfg.key].filter(Boolean).slice(-1)[0];
-      const price= closes.filter(Boolean).slice(-1)[0];
-      const diff = last && price ? ((price-last)/last*100).toFixed(2) : null;
-      infoHtml += `<span>${cfg.label}: <strong style="color:${cfg.color}">$${last?.toFixed(2)||'N/A'}</strong>
-        ${diff!=null?`<span class="${parseFloat(diff)>=0?'g':'r'}">(${parseFloat(diff)>=0?'+':''}${diff}%)</span>`:''}
-      </span>`;
-    });
-
-    $('ema-info').innerHTML = infoHtml;
-
-    emaChart = new Chart(ctx,{
-      type:'line',
-      data:{labels, datasets},
-      options:{
-        responsive:true, maintainAspectRatio:false,
-        interaction:{mode:'index',intersect:false},
-        plugins:{
-          legend:{display:true, position:'top',
-            labels:{color:'#8b949e',font:{size:11},boxWidth:12,padding:12}},
-          tooltip:{callbacks:{
-            label:c=>`${c.dataset.label}: $${(c.raw||0).toFixed(2)}`
-          }}
-        },
-        scales:{
-          x:{ticks:{maxTicksLimit:d.max_ticks||8,maxRotation:d.is_intraday?45:0,minRotation:d.is_intraday?45:0,font:{size:9},color:'#8b949e'},
-             grid:{color:'#21262d'}},
-          y:{ticks:{callback:v=>'$'+v.toFixed(0),font:{size:10},color:'#8b949e'},
-             grid:{color:'#21262d'}}
-        }
-      }
-    });
+    emaChart = renderOverlayChart($('ema-chart'), d, overlays, 'ema-info', $('ema-candles')?.checked);
   } catch(e){
     $('ema-info').innerHTML=`<span style="color:#f85149">Error: ${e.message}</span>`;
   } finally {
     btn.disabled=false; btn.textContent='📉 Show EMA Chart';
   }
 }
+
+// ── BOLLINGER BANDS TAB (two independent panels) ────────────────────────────
+const _bbCharts = {};  // 'a'|'b' -> Chart instance
+async function loadBbPanel(panelEl) {
+  const which = panelEl.dataset.panel;
+  const sym    = (panelEl.querySelector('.bb-sym').value||'').trim().toUpperCase();
+  const period = panelEl.querySelector('.bb-period').value;
+  const showCandles = panelEl.querySelector('.bb-candles').checked;
+  const btn = panelEl.querySelector('.bb-load');
+  const infoEl = panelEl.querySelector('.bb-info');
+  const canvas = panelEl.querySelector('.bb-chart');
+  if(!sym){ alert('Enter a symbol'); return; }
+
+  btn.disabled = true; const origText = btn.textContent; btn.innerHTML='<span class="spin"></span>';
+  try {
+    const d = await apiPost('/api/chart_data', {symbol:sym, period});
+    if(d.error){ infoEl.innerHTML = `<span style="color:#f85149">Error: ${d.error}</span>`; return; }
+    d.symbol = sym;
+
+    const overlays = [
+      {key:'bb_upper', label:'BB Upper', color:'#f59e0b'},
+      {key:'bb_mid',    label:'BB Mid (SMA20)', color:'#8b949e', dash:[3,3]},
+      {key:'bb_lower', label:'BB Lower', color:'#f59e0b'},
+    ];
+    // give the info box a unique id so renderOverlayChart can target it
+    if(!infoEl.id) infoEl.id = `bb-info-${which}-${Date.now()}`;
+    _bbCharts[which] = renderOverlayChart(canvas, d, overlays, infoEl.id, showCandles);
+  } catch(e) {
+    infoEl.innerHTML = `<span style="color:#f85149">Error: ${e.message}</span>`;
+  } finally {
+    btn.disabled = false; btn.textContent = origText;
+  }
+}
+document.querySelectorAll('.bb-panel .bb-load').forEach(btn=>{
+  btn.addEventListener('click', ()=> loadBbPanel(btn.closest('.bb-panel')));
+});
 
 // ── COMPARE TAB ───────────────────────────────────────────────────────────────
 async function runCompare() {
@@ -1976,18 +2102,79 @@ function _pctColor(pct) {
   if(pct < 0) return '#f85149';
   return '#8b949e';
 }
+
+let _sigRows = [];               // last-loaded rows, kept for client-side sort
+let _sigSort = {col:'confluence_score', dir:'desc'};
+const _sigSelected = new Set();  // selected symbols
+
+function toggleSignalPanel() {
+  const body = $('sig-panel-body');
+  const btn = $('sig-collapse-btn');
+  const collapsed = body.style.display === 'none';
+  body.style.display = collapsed ? 'block' : 'none';
+  btn.textContent = collapsed ? '▾' : '▸';
+}
+
+function sortSignals(col) {
+  if(_sigSort.col === col) {
+    _sigSort.dir = _sigSort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    _sigSort = {col, dir: 'desc'};
+  }
+  renderSignalsTable(_sigRows);
+}
+
+function toggleSelectAllSignals(cb) {
+  if(cb.checked) _sigRows.forEach(r => _sigSelected.add(r.symbol));
+  else _sigSelected.clear();
+  renderSignalsTable(_sigRows);
+}
+
+function toggleSignalRow(symbol, checked) {
+  if(checked) _sigSelected.add(symbol); else _sigSelected.delete(symbol);
+  const btn = $('sig-rescan-selected-btn');
+  const count = $('sig-selected-count');
+  count.textContent = _sigSelected.size;
+  btn.disabled = _sigSelected.size === 0;
+}
+
+function _sortedRows(rows) {
+  const {col, dir} = _sigSort;
+  const mult = dir === 'asc' ? 1 : -1;
+  return [...rows].sort((a,b) => {
+    let av = a[col], bv = b[col];
+    if(av === null || av === undefined) av = (typeof bv === 'number') ? -Infinity : '';
+    if(bv === null || bv === undefined) bv = (typeof av === 'number') ? -Infinity : '';
+    if(typeof av === 'string') av = av.toLowerCase();
+    if(typeof bv === 'string') bv = bv.toLowerCase();
+    if(av < bv) return -1 * mult;
+    if(av > bv) return 1 * mult;
+    return 0;
+  });
+}
+
 function renderSignalsTable(rows) {
+  _sigRows = rows || [];
   const tbody = $('sig-table-body');
-  if(!rows || rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" style="padding:10px 8px;color:#8b949e">No scans yet — click "Execute Now" or set an auto-scan interval.</td></tr>';
+
+  // update sort indicator arrows
+  document.querySelectorAll('.sig-sort-ind').forEach(el => {
+    el.textContent = el.dataset.col === _sigSort.col ? (_sigSort.dir === 'asc' ? '▲' : '▼') : '';
+  });
+
+  if(_sigRows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" style="padding:10px 8px;color:#8b949e">No scans yet — click "Execute Now" or set an auto-scan interval.</td></tr>';
     return;
   }
   const catLabel = {position:'📍 Position', watchlist:'👁 Watchlist', candidate:'🎯 Candidate'};
-  tbody.innerHTML = rows.map(r => {
+  const sorted = _sortedRows(_sigRows);
+  tbody.innerHTML = sorted.map(r => {
     const pct = r.kronos_implied_pct;
     const pctStr = (pct === null || pct === undefined) ? '—' : `${pct >= 0 ? '+' : ''}${pct}%`;
     const updated = (r.generated_at || '').replace('T', ' ').slice(0, 16);
+    const checked = _sigSelected.has(r.symbol) ? 'checked' : '';
     return `<tr style="border-bottom:1px solid #21262d">
+      <td style="padding:6px 8px"><input type="checkbox" ${checked} onchange="toggleSignalRow('${r.symbol}', this.checked)"></td>
       <td style="padding:6px 8px;font-weight:600">${r.symbol}</td>
       <td style="padding:6px 8px;color:#8b949e">${catLabel[r.category] || r.category}</td>
       <td style="padding:6px 8px">${r.price ?? '—'}</td>
@@ -2027,18 +2214,31 @@ async function runSignalScanNow() {
   try {
     const r = await apiPost('/api/analytics/signals/run-now', {});
     if(line) line.textContent = r.started ? '⏳ Scan started…' : `⚠️ ${r.reason || 'Could not start'}`;
-    // Poll status + table every 5s for up to ~10 minutes while it runs
-    let polls = 0;
-    const iv = setInterval(async () => {
-      polls++;
-      await loadSignalsStatus();
-      await loadSignalsTable();
-      const s = await aiApiFetch('/api/analytics/signals/status');
-      if(!s.scan_in_progress || polls > 120) clearInterval(iv);
-    }, 5000);
+    _pollSignalScan();
   } catch(e) {
     if(line) line.textContent = `⚠️ ${e.message}`;
   }
+}
+async function rescanSelectedSignals() {
+  if(_sigSelected.size === 0) return;
+  const line = $('sig-status-line');
+  try {
+    const r = await apiPost('/api/analytics/signals/run-now', {symbols: Array.from(_sigSelected)});
+    if(line) line.textContent = r.started ? `⏳ Rescanning ${_sigSelected.size} selected…` : `⚠️ ${r.reason || 'Could not start'}`;
+    _pollSignalScan();
+  } catch(e) {
+    if(line) line.textContent = `⚠️ ${e.message}`;
+  }
+}
+function _pollSignalScan() {
+  let polls = 0;
+  const iv = setInterval(async () => {
+    polls++;
+    await loadSignalsStatus();
+    await loadSignalsTable();
+    const s = await aiApiFetch('/api/analytics/signals/status');
+    if(!s.scan_in_progress || polls > 120) clearInterval(iv);
+  }, 5000);
 }
 async function setSignalSchedule() {
   const hours = parseInt($('sig-interval-select').value, 10);
