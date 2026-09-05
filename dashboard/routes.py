@@ -327,7 +327,7 @@ def api_chart_data():
 
         # ── Smart date label formatting based on period ─────────────────────
         # Intraday periods need time, not just date
-        intraday_periods = ("5m","15m","1h","4h","1D","1W")
+        intraday_periods = ("1m","2m","5m","15m","30m","1h","4h","1D","1W")
         long_periods     = ("3y","5y","10y","3Y","5Y","10Y")
         mid_periods      = ("1y",)
 
@@ -374,6 +374,49 @@ def api_chart_data():
         ema63  = ema_series(c_valid, 63)
         ema200 = ema_series(c_valid, 200) if len(c_valid) >= 200 else []
 
+        # ── VWAP (cumulative typical-price*volume / cumulative volume) ──────
+        # Resets each session for intraday periods (standard VWAP behavior);
+        # for daily+ periods it's a running VWAP over the whole series.
+        def vwap_series(bars_list, reset_daily: bool):
+            out, cum_pv, cum_vol, last_day = [], 0.0, 0.0, None
+            for b in bars_list:
+                o, h, l, c, v = b.get("o"), b.get("h"), b.get("l"), b.get("c"), b.get("v") or 0
+                if None in (o, h, l, c):
+                    out.append(None)
+                    continue
+                if reset_daily:
+                    day = (b.get("t") or "")[:10]
+                    if day != last_day:
+                        cum_pv, cum_vol, last_day = 0.0, 0.0, day
+                typical = (h + l + c) / 3
+                cum_pv += typical * v
+                cum_vol += v
+                out.append(round(cum_pv / cum_vol, 2) if cum_vol else round(c, 2))
+            return out
+
+        vwap = vwap_series(bars, reset_daily=(period in intraday_periods))
+
+        # ── Bollinger Bands (20-period SMA ± 2 std dev, standard default) ───
+        def bollinger_bands(data, window=20, num_std=2):
+            upper, mid, lower = [], [], []
+            for i in range(len(data)):
+                if i < window - 1 or data[i] is None:
+                    upper.append(None); mid.append(None); lower.append(None)
+                    continue
+                window_vals = [x for x in data[i-window+1:i+1] if x is not None]
+                if len(window_vals) < window:
+                    upper.append(None); mid.append(None); lower.append(None)
+                    continue
+                mean = sum(window_vals) / window
+                variance = sum((x - mean) ** 2 for x in window_vals) / window
+                std = variance ** 0.5
+                mid.append(round(mean, 2))
+                upper.append(round(mean + num_std * std, 2))
+                lower.append(round(mean - num_std * std, 2))
+            return upper, mid, lower
+
+        bb_upper, bb_mid, bb_lower = bollinger_bands(closes)
+
         # Max tick limit based on period for clean X-axis
         max_ticks = 8
         if period in intraday_periods:
@@ -397,6 +440,8 @@ def api_chart_data():
             "volume":     [b.get("v") for b in bars],
             "ema9":       ema9, "ema21": ema21,
             "ema63":      ema63, "ema200": ema200,
+            "vwap":       vwap,
+            "bb_upper":   bb_upper, "bb_mid": bb_mid, "bb_lower": bb_lower,
             "source":     bars[0].get("source","demo") if bars else "demo",
             "bar_count":  len(bars),
             "max_ticks":  max_ticks,
