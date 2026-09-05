@@ -77,14 +77,14 @@ def alpaca_get_bars(symbol: str, timeframe: str = "1Day",
             start = (now - timedelta(days=int(limit * 1.5))).strftime("%Y-%m-%dT%H:%M:%SZ")
         elif timeframe in ("1Week",):
             start = (now - timedelta(weeks=int(limit * 1.5))).strftime("%Y-%m-%dT%H:%M:%SZ")
-        elif timeframe in ("1Hour", "4Hour"):
+        elif timeframe in ("1Hour", "4Hour", "30Min"):
             # A tight window (limit-based) can land entirely outside market
             # hours/on a weekend and come back empty. Use a generous
             # calendar-day floor (matches the ~30-60d window Yahoo gets for
             # these same periods) so there's always a real trading session
             # inside the range regardless of when this runs.
             start = (now - timedelta(days=max(10, int(limit / 6)))).strftime("%Y-%m-%dT%H:%M:%SZ")
-        elif timeframe in ("5Min", "15Min"):
+        elif timeframe in ("1Min", "2Min", "5Min", "15Min"):
             # Same issue, worse: a 390-bar 15Min request only spans ~13h by
             # the old (limit*2 minutes) formula -- can miss the entire most
             # recent trading day outside market hours. Floor at several
@@ -341,8 +341,11 @@ def demo_bars(symbol: str, n: int = 200, weekly: bool = False,
 # Maps UI period key → (alpaca_timeframe, bar_count, yahoo_interval, yahoo_period)
 PERIOD_CONFIG = {
     # Intraday
+    "1m":   ("1Min",  200,  "1m",  "5d"),
+    "2m":   ("2Min",  200,  "2m",  "5d"),
     "5m":   ("5Min",  100,  "5m",  "5d"),
     "15m":  ("15Min", 200,  "15m", "5d"),
+    "30m":  ("30Min", 300,  "30m", "1mo"),
     "1h":   ("1Hour", 300,  "1h",  "30d"),
     "4h":   ("1Hour", 500,  "1h",  "60d"),
     # Daily
@@ -353,6 +356,7 @@ PERIOD_CONFIG = {
     # Short-view periods for chart selector
     "1D":   ("15Min", 390,  "15m", "5d"),   # today in 15m bars
     "1W":   ("1Hour", 200,  "1h",  "5d"),   # 1 week hourly bars
+    "1M":   ("1Day",  22,   "1d",  "1mo"),  # alias of 1mo, for period dropdowns labeled "1M"
     # Weekly
     "3y":   ("1Day",  756,  "1d",  "3y"),
     "5y":   ("1Day",  1260, "1d",  "5y"),
