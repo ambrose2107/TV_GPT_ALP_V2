@@ -734,7 +734,9 @@ def run_signals_now():
     e = _auth()
     if e: return e
     from core.scheduler import run_now_async
-    result = run_now_async()
+    data = request.get_json(silent=True) or {}
+    symbols = data.get("symbols")  # optional: list of specific symbols to rescan
+    result = run_now_async(symbols=symbols)
     status = 200 if result.get("started") else 409
     return jsonify(result), status
 

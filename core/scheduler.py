@@ -28,13 +28,13 @@ _JOB_ID = "signal_scan_job"
 VALID_INTERVALS = {0: "Off", 3: "Every 3h", 6: "Every 6h", 12: "Every 12h"}
 
 
-def _run_scan_guarded():
+def _run_scan_guarded(symbols: list = None):
     if not _scan_lock.acquire(blocking=False):
         logger.info("scheduler: scan already in progress, skipping this trigger")
         return
     try:
         set_setting("last_scan_started_at", datetime.utcnow().isoformat() + "Z")
-        summary = run_full_scan()
+        summary = run_full_scan(symbols=symbols)
         set_setting("last_scan_summary", str(summary))
         set_setting("last_scan_finished_at", datetime.utcnow().isoformat() + "Z")
     except Exception as e:
@@ -44,11 +44,11 @@ def _run_scan_guarded():
         _scan_lock.release()
 
 
-def run_now_async():
+def run_now_async(symbols: list = None):
     """Kick off a scan immediately in a background thread, return instantly."""
     if _scan_lock.locked():
         return {"started": False, "reason": "A scan is already running"}
-    t = threading.Thread(target=_run_scan_guarded, daemon=True)
+    t = threading.Thread(target=_run_scan_guarded, kwargs={"symbols": symbols}, daemon=True)
     t.start()
     return {"started": True}
 
