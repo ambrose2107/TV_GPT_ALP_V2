@@ -161,6 +161,11 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
 /* LEGEND */
 .legend{display:flex;flex-wrap:wrap;gap:12px;font-size:11px;margin-top:8px}
 .legend-dot{width:10px;height:10px;border-radius:2px;display:inline-block;margin-right:4px}
+
+/* Bollinger Bands 2x2 grid: stack to 1 column on narrow/mobile screens */
+@media (max-width: 780px) {
+  .bb-grid-2x2 { grid-template-columns: 1fr !important; }
+}
 </style>
 <!-- Server-injected portfolio data — no fetch needed -->
 <script>
@@ -366,7 +371,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
 
     <!-- BOLLINGER BANDS TAB — two independent side-by-side panels -->
     <div id="ana-bb" style="display:none">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(340px, 1fr));gap:14px" id="bb-grid">
+      <div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:14px" id="bb-grid" class="bb-grid-2x2">
         <div class="bb-panel" data-panel="a">
           <div class="row" style="margin-bottom:8px;flex-wrap:wrap">
             <input type="text" class="bb-sym" placeholder="Symbol e.g. AAPL" style="max-width:130px" value="AAPL">
@@ -403,6 +408,44 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
           <div class="bb-info" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px;font-size:11px"></div>
           <div style="position:relative;height:300px;background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:8px">
             <canvas class="bb-chart" aria-label="Bollinger Bands chart B"></canvas>
+          </div>
+        </div>
+        <div class="bb-panel" data-panel="c">
+          <div class="row" style="margin-bottom:8px;flex-wrap:wrap">
+            <input type="text" class="bb-sym" placeholder="Symbol e.g. NVDA" style="max-width:130px" value="NVDA">
+            <select class="bb-period">
+              <option value="1m">1m</option><option value="2m">2m</option>
+              <option value="5m">5m</option><option value="15m" selected>15m</option>
+              <option value="30m">30m</option><option value="1h">1hr</option>
+              <option value="4h">4hr</option><option value="1D">1D</option>
+              <option value="1W">1W</option><option value="1M">1M</option>
+            </select>
+            <label style="font-size:11px;display:flex;align-items:center;gap:3px">
+              <input type="checkbox" class="bb-candles" checked> 🕯️</label>
+            <button class="btn btn-b btn-s bb-load">📊 Load</button>
+          </div>
+          <div class="bb-info" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px;font-size:11px"></div>
+          <div style="position:relative;height:300px;background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:8px">
+            <canvas class="bb-chart" aria-label="Bollinger Bands chart C"></canvas>
+          </div>
+        </div>
+        <div class="bb-panel" data-panel="d">
+          <div class="row" style="margin-bottom:8px;flex-wrap:wrap">
+            <input type="text" class="bb-sym" placeholder="Symbol e.g. TSLA" style="max-width:130px" value="TSLA">
+            <select class="bb-period">
+              <option value="1m">1m</option><option value="2m">2m</option>
+              <option value="5m">5m</option><option value="15m" selected>15m</option>
+              <option value="30m">30m</option><option value="1h">1hr</option>
+              <option value="4h">4hr</option><option value="1D">1D</option>
+              <option value="1W">1W</option><option value="1M">1M</option>
+            </select>
+            <label style="font-size:11px;display:flex;align-items:center;gap:3px">
+              <input type="checkbox" class="bb-candles" checked> 🕯️</label>
+            <button class="btn btn-b btn-s bb-load">📊 Load</button>
+          </div>
+          <div class="bb-info" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:6px;font-size:11px"></div>
+          <div style="position:relative;height:300px;background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:8px">
+            <canvas class="bb-chart" aria-label="Bollinger Bands chart D"></canvas>
           </div>
         </div>
       </div>
@@ -672,6 +715,24 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
         <button class="btn btn-b btn-s" onclick="loadEmaSignals()">⚡ Analyze All Positions</button>
       </div>
       <div id="port-ema-signals" style="color:#8b949e;padding:10px;font-size:12px">Click "Analyze All Positions" to load EMA signals for every holding.</div>
+    </div>
+
+    <!-- Strategy Backtester -->
+    <div class="sec" style="margin-bottom:14px">
+      <div class="sec-hdr"><h2>🧪 Strategy Backtester — validate before trusting a signal</h2></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 14px">
+        <input type="text" id="bt-sym" placeholder="Symbol e.g. AAPL" style="max-width:130px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:7px 10px;font-size:13px;text-transform:uppercase">
+        <select id="bt-period" style="background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:7px 10px;font-size:13px">
+          <option value="1y">1 year</option>
+          <option value="3y" selected>3 years</option>
+          <option value="5y">5 years</option>
+        </select>
+        <button class="btn btn-b btn-s" onclick="runBacktest()">🧪 Run Backtest</button>
+      </div>
+      <div id="bt-result-box" style="padding:0 14px 14px;font-size:12px;color:#e6edf3"></div>
+      <div style="font-size:11px;color:#8b949e;padding:0 14px 10px">
+        💡 Simulates the exact same 9/21/50 EMA rule the live Signal Scanner uses, against real historical bars — no look-ahead. Past results don't guarantee future ones, but a strategy that's never actually beaten buy-and-hold shouldn't be trusted live either.
+      </div>
     </div>
 
     <!-- Sector breakdown cards -->
@@ -2299,6 +2360,50 @@ function _pollSignalScan() {
     if(!s.scan_in_progress || polls > 120) clearInterval(iv);
   }, 5000);
 }
+async function runBacktest() {
+  const sym = ($('bt-sym').value || '').trim().toUpperCase();
+  const period = $('bt-period').value;
+  const box = $('bt-result-box');
+  if(!sym) { alert('Enter a symbol first, e.g. AAPL'); return; }
+  box.innerHTML = '⏳ Running backtest…';
+  try {
+    const d = await aiApiFetch(`/api/analytics/backtest/${sym}?period=${period}`);
+    if(d.error) { box.innerHTML = `⚠️ ${d.error}`; return; }
+    if(d.total_trades === 0) {
+      box.innerHTML = `<strong>${sym}</strong>: No completed buy-setup trades in this window. ` +
+        `Buy-and-hold over the same period: <span style="color:${d.buy_hold_return_pct>=0?'#3fb950':'#f85149'}">${d.buy_hold_return_pct}%</span>`;
+      return;
+    }
+    const beatColor = d.beat_buy_hold ? '#3fb950' : '#f85149';
+    const beatText = d.beat_buy_hold ? '✅ Beat buy-and-hold' : '❌ Did NOT beat buy-and-hold';
+    let html = `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px">
+      <span>Trades: <strong>${d.total_trades}</strong> (${d.wins}W / ${d.losses}L)</span>
+      <span>Win rate: <strong>${d.win_rate_pct}%</strong></span>
+      <span>Avg return/trade: <strong style="color:${d.avg_return_pct>=0?'#3fb950':'#f85149'}">${d.avg_return_pct>=0?'+':''}${d.avg_return_pct}%</strong></span>
+      <span>Avg win: <strong style="color:#3fb950">+${d.avg_win_pct}%</strong></span>
+      <span>Avg loss: <strong style="color:#f85149">${d.avg_loss_pct}%</strong></span>
+    </div>
+    <div style="margin-bottom:8px">
+      Strategy total return (compounded): <strong style="color:${d.total_strategy_return_pct>=0?'#3fb950':'#f85149'}">${d.total_strategy_return_pct}%</strong>
+      &nbsp;vs&nbsp; Buy &amp; Hold: <strong style="color:${d.buy_hold_return_pct>=0?'#3fb950':'#f85149'}">${d.buy_hold_return_pct}%</strong>
+      &nbsp; <strong style="color:${beatColor}">${beatText}</strong>
+    </div>
+    <details><summary style="cursor:pointer;color:#8b949e">Show all ${d.trades.length} trades</summary>
+      <table style="width:100%;margin-top:6px;font-size:11px;border-collapse:collapse">
+        <thead><tr style="color:#8b949e;text-align:left"><th>Entry</th><th>Entry $</th><th>Exit</th><th>Exit $</th><th>Return</th></tr></thead>
+        <tbody>${d.trades.map(t => `<tr style="border-top:1px solid #21262d">
+          <td>${(t.entry_date||'').slice(0,10)}</td><td>$${t.entry_price}</td>
+          <td>${(t.exit_date||'').slice(0,10)}${t.status?' ('+t.status+')':''}</td><td>$${t.exit_price}</td>
+          <td style="color:${t.return_pct>=0?'#3fb950':'#f85149'}">${t.return_pct>=0?'+':''}${t.return_pct}%</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </details>`;
+    box.innerHTML = html;
+  } catch(e) {
+    box.innerHTML = `⚠️ Request failed: ${e.message}`;
+  }
+}
+
 async function runResearchNow() {
   const line = $('sig-status-line');
   try {
