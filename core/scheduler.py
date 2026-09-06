@@ -18,6 +18,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from core.logger import get_logger
 from core.database import get_setting, set_setting
 from research.signal_engine import run_full_scan
+from research.ai_stock_picker import run_research_scan
 
 logger = get_logger(__name__)
 
@@ -42,6 +43,42 @@ def _run_scan_guarded(symbols: list = None):
         set_setting("last_scan_summary", f"error: {e}")
     finally:
         _scan_lock.release()
+
+
+def _run_research_guarded(symbols: list = None):
+    # Shares _scan_lock with the main signal scan deliberately: both are
+    # heavy (LLM + external API calls per symbol) and running two at once
+    # would double up on Groq's free-tier rate limit for no benefit.
+    if not _scan_lock.acquire(blocking=False):
+        logger.info("scheduler: a scan is already in progress, skipping this research trigger")
+        return
+    try:
+        set_setting("last_research_started_at", datetime.utcnow().isoformat() + "Z")
+        summary = run_research_scan(symbols=symbols)
+        set_setting("last_research_summary", str(summary))
+        set_setting("last_research_finished_at", datetime.utcnow().isoformat() + "Z")
+    except Exception as e:
+        logger.error(f"scheduler: research scan failed: {e}")
+        set_setting("last_research_summary", f"error: {e}")
+    finally:
+        _scan_lock.release()
+
+
+def run_research_now_async(symbols: list = None):
+    if _scan_lock.locked():
+        return {"started": False, "reason": "A scan is already running"}
+    t = threading.Thread(target=_run_research_guarded, kwargs={"symbols": symbols}, daemon=True)
+    t.start()
+    return {"started": True}
+
+
+def get_research_status() -> dict:
+    return {
+        "last_research_started_at": get_setting("last_research_started_at"),
+        "last_research_finished_at": get_setting("last_research_finished_at"),
+        "last_research_summary": get_setting("last_research_summary"),
+        "scan_in_progress": _scan_lock.locked(),
+    }
 
 
 def run_now_async(symbols: list = None):

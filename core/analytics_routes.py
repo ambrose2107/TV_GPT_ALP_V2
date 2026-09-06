@@ -765,3 +765,30 @@ def set_signals_schedule():
         return jsonify({"ok": True, "interval_hours": hours, "interval_label": VALID_INTERVALS[hours]})
     except (TypeError, ValueError):
         return jsonify({"error": "interval_hours must be an integer"}), 400
+
+
+# ── AI Stock Research Tracker (news + insider transactions via Finnhub) ────
+@analytics_bp.route("/api/analytics/research/run-now", methods=["POST"])
+def run_research_now():
+    """
+    Scans a symbol universe for news + insider Form 4 activity via Finnhub,
+    asks the LLM for a BUY/WATCH/AVOID verdict grounded in that real data.
+    Runs in a background thread -- never blocks trade webhook handling.
+    Requires FINNHUB_API_KEY to be set.
+    """
+    e = _auth()
+    if e: return e
+    from core.scheduler import run_research_now_async
+    data = request.get_json(silent=True) or {}
+    symbols = data.get("symbols")
+    result = run_research_now_async(symbols=symbols)
+    status = 200 if result.get("started") else 409
+    return jsonify(result), status
+
+
+@analytics_bp.route("/api/analytics/research/status", methods=["GET"])
+def research_status():
+    e = _auth()
+    if e: return e
+    from core.scheduler import get_research_status
+    return jsonify(get_research_status())
