@@ -584,7 +584,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
   <div class="sec" style="margin-bottom:14px">
     <div class="sec-hdr" style="display:flex;justify-content:space-between;align-items:center">
       <h2>📡 Signal Scanner — Positions, Watchlist &amp; Candidates</h2>
-      <button class="btn btn-n btn-s" id="sig-collapse-btn" onclick="toggleSignalPanel()" title="Minimize/Maximize">▾</button>
+      <button class="btn btn-n btn-s collapse-toggle" id="sig-collapse-btn" onclick="toggleSignalPanel()" title="Minimize/Maximize">▾</button>
     </div>
     <div id="sig-panel-body">
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:10px 14px">
@@ -598,6 +598,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
         </select>
         <button class="btn btn-b btn-s" onclick="runSignalScanNow()">▶️ Execute Now</button>
         <button class="btn btn-n btn-s" id="sig-rescan-selected-btn" onclick="rescanSelectedSignals()" disabled>🔁 Rescan Selected (<span id="sig-selected-count">0</span>)</button>
+        <button class="btn btn-n btn-s" onclick="runResearchNow()" title="Scans news + insider Form 4 activity for new stock ideas (needs FINNHUB_API_KEY)">🔬 Research New Picks</button>
         <span id="sig-status-line" style="font-size:11px;color:#8b949e"></span>
       </div>
       <div style="overflow-x:auto;padding:0 14px 14px">
@@ -611,11 +612,12 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
               <th style="padding:6px 8px;cursor:pointer;user-select:none" onclick="sortSignals('ai_label')">AI Label <span class="sig-sort-ind" data-col="ai_label"></span></th>
               <th style="padding:6px 8px;cursor:pointer;user-select:none" onclick="sortSignals('kronos_implied_pct')">Kronos 1-2wk % <span class="sig-sort-ind" data-col="kronos_implied_pct"></span></th>
               <th style="padding:6px 8px;cursor:pointer;user-select:none" onclick="sortSignals('confluence_score')">Confluence <span class="sig-sort-ind" data-col="confluence_score"></span></th>
+              <th style="padding:6px 8px;cursor:pointer;user-select:none" onclick="sortSignals('strategy_label')" title="9/21 EMA crossover + 50 EMA trend filter">EMA Strategy <span class="sig-sort-ind" data-col="strategy_label"></span></th>
               <th style="padding:6px 8px;cursor:pointer;user-select:none" onclick="sortSignals('generated_at')">Updated <span class="sig-sort-ind" data-col="generated_at"></span></th>
             </tr>
           </thead>
           <tbody id="sig-table-body">
-            <tr><td colspan="8" style="padding:10px 8px;color:#8b949e">No scans yet — click "Execute Now" or set an auto-scan interval.</td></tr>
+            <tr><td colspan="9" style="padding:10px 8px;color:#8b949e">No scans yet — click "Execute Now" or set an auto-scan interval.</td></tr>
           </tbody>
         </table>
       </div>
@@ -1068,6 +1070,7 @@ function switchTab(idx, name) {
     switchAnalyticsView('portfolio');
     loadSignalsTable();
     loadSignalsStatus();
+    setTimeout(()=>addCollapseToggles('#pane-ana8'), 300);
     setTimeout(function(){
       if(window.__portChartData__) {
         drawPortfolioCharts();
@@ -1531,6 +1534,19 @@ function renderOverlayChart(canvasEl, d, overlayConfigs, infoElId, showCandles) 
 
   if(infoElId && $(infoElId)) $(infoElId).innerHTML = infoHtml;
 
+  // Compute an explicit y-axis range from the actual data (candles/bars in
+  // Chart.js default to starting at 0 unless told otherwise -- that squashes
+  // the visible price range into a sliver at the top of the chart).
+  const allVals = [];
+  [closes, highs, lows].forEach(arr => arr.forEach(v => { if(v!=null) allVals.push(v); }));
+  overlayConfigs.forEach(cfg => { if(cfg.show && d[cfg.key]) d[cfg.key].forEach(v => { if(v!=null) allVals.push(v); }); });
+  let yMin, yMax;
+  if(allVals.length) {
+    const lo = Math.min(...allVals), hi = Math.max(...allVals);
+    const pad = (hi - lo) * 0.08 || hi * 0.02 || 1;
+    yMin = lo - pad; yMax = hi + pad;
+  }
+
   return new Chart(canvasEl,{
     type: showCandles ? 'bar' : 'line',
     data:{labels, datasets},
@@ -1550,7 +1566,8 @@ function renderOverlayChart(canvasEl, d, overlayConfigs, infoElId, showCandles) 
       scales:{
         x:{ticks:{maxTicksLimit:d.max_ticks||8,maxRotation:d.is_intraday?45:0,minRotation:d.is_intraday?45:0,font:{size:9},color:'#8b949e'},
            grid:{color:'#21262d'}},
-        y:{ticks:{callback:v=>'$'+v.toFixed(0),font:{size:10},color:'#8b949e'},
+        y:{beginAtZero:false, min:yMin, max:yMax,
+           ticks:{callback:v=>'$'+v.toFixed(0),font:{size:10},color:'#8b949e'},
            grid:{color:'#21262d'}}
       }
     }
@@ -1607,9 +1624,9 @@ async function loadBbPanel(panelEl) {
     d.symbol = sym;
 
     const overlays = [
-      {key:'bb_upper', label:'BB Upper', color:'#f59e0b'},
-      {key:'bb_mid',    label:'BB Mid (SMA20)', color:'#8b949e', dash:[3,3]},
-      {key:'bb_lower', label:'BB Lower', color:'#f59e0b'},
+      {key:'bb_upper', label:'BB Upper', color:'#f59e0b', show:true},
+      {key:'bb_mid',    label:'BB Mid (SMA20)', color:'#8b949e', dash:[3,3], show:true},
+      {key:'bb_lower', label:'BB Lower', color:'#f59e0b', show:true},
     ];
     // give the info box a unique id so renderOverlayChart can target it
     if(!infoEl.id) infoEl.id = `bb-info-${which}-${Date.now()}`;
@@ -2090,9 +2107,9 @@ async function runKronosForecast() {
 // __ SIGNAL SCANNER TABLE
 function _confluenceColor(label) {
   const map = {
-    'Strong Buy':  '#2ea043', 'Buy':  '#3fb950',
-    'Strong Sell': '#da3633', 'Sell': '#f85149',
-    'Mixed':       '#d29922', 'Neutral': '#8b949e', 'Unknown': '#6e7681',
+    'Strong Buy':  '#2ea043', 'Buy':  '#3fb950', 'BUY': '#2ea043',
+    'Strong Sell': '#da3633', 'Sell': '#f85149', 'AVOID': '#da3633',
+    'Mixed':       '#d29922', 'Neutral': '#8b949e', 'Unknown': '#6e7681', 'WATCH': '#d29922',
   };
   return map[label] || '#8b949e';
 }
@@ -2102,10 +2119,51 @@ function _pctColor(pct) {
   if(pct < 0) return '#f85149';
   return '#8b949e';
 }
+function _strategyColor(label) {
+  if(!label) return '#8b949e';
+  if(label.includes('Buy Setup')) return '#3fb950';
+  if(label.includes('Take-Profit') || label.includes('Reversal Confirmed')) return '#f85149';
+  if(label.includes('Early Reversal')) return '#d29922';
+  if(label.includes('Sell')) return '#da3633';
+  return '#8b949e';
+}
 
 let _sigRows = [];               // last-loaded rows, kept for client-side sort
 let _sigSort = {col:'confluence_score', dir:'desc'};
 const _sigSelected = new Set();  // selected symbols
+
+// ── Generic minimize/maximize toggle for every Analytics section ───────────
+// Idempotent: sections that already manage their own toggle (marked with
+// class "collapse-toggle" on their button, e.g. the Signal Scanner) are
+// left alone. Safe to call repeatedly (e.g. every time the tab opens).
+function addCollapseToggles(containerSelector) {
+  document.querySelectorAll(containerSelector + ' .sec').forEach(sec => {
+    const hdr = sec.querySelector('.sec-hdr');
+    if(!hdr || hdr.querySelector('.collapse-toggle')) return;
+    const bodyWrap = document.createElement('div');
+    bodyWrap.className = 'sec-collapse-body';
+    Array.from(sec.children).forEach(child => {
+      if(child !== hdr) bodyWrap.appendChild(child);
+    });
+    sec.appendChild(bodyWrap);
+    hdr.style.display = 'flex';
+    hdr.style.justifyContent = 'space-between';
+    hdr.style.alignItems = 'center';
+    hdr.style.flexWrap = 'wrap';
+    hdr.style.gap = '8px';
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-n btn-s collapse-toggle';
+    btn.textContent = '▾';
+    btn.title = 'Minimize/Maximize';
+    btn.type = 'button';
+    btn.onclick = () => {
+      const collapsed = bodyWrap.style.display === 'none';
+      bodyWrap.style.display = collapsed ? '' : 'none';
+      btn.textContent = collapsed ? '▾' : '▸';
+    };
+    hdr.appendChild(btn);
+  });
+}
 
 function toggleSignalPanel() {
   const body = $('sig-panel-body');
@@ -2163,10 +2221,10 @@ function renderSignalsTable(rows) {
   });
 
   if(_sigRows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" style="padding:10px 8px;color:#8b949e">No scans yet — click "Execute Now" or set an auto-scan interval.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="padding:10px 8px;color:#8b949e">No scans yet — click "Execute Now" or set an auto-scan interval.</td></tr>';
     return;
   }
-  const catLabel = {position:'📍 Position', watchlist:'👁 Watchlist', candidate:'🎯 Candidate'};
+  const catLabel = {position:'📍 Position', watchlist:'👁 Watchlist', candidate:'🎯 Candidate', research_pick:'🔬 Research'};
   const sorted = _sortedRows(_sigRows);
   tbody.innerHTML = sorted.map(r => {
     const pct = r.kronos_implied_pct;
@@ -2181,6 +2239,7 @@ function renderSignalsTable(rows) {
       <td style="padding:6px 8px">${r.ai_label ?? '—'}</td>
       <td style="padding:6px 8px;color:${_pctColor(pct)};font-weight:600">${pctStr}</td>
       <td style="padding:6px 8px;color:${_confluenceColor(r.confluence_label)};font-weight:700">${r.confluence_label}</td>
+      <td style="padding:6px 8px;color:${_strategyColor(r.strategy_label)};font-weight:600;cursor:help" title="${(r.strategy_reason||'').replace(/"/g,'&quot;')}">${r.strategy_label ?? '—'}</td>
       <td style="padding:6px 8px;color:#8b949e;font-size:11px">${updated}</td>
     </tr>`;
   }).join('');
@@ -2240,6 +2299,23 @@ function _pollSignalScan() {
     if(!s.scan_in_progress || polls > 120) clearInterval(iv);
   }, 5000);
 }
+async function runResearchNow() {
+  const line = $('sig-status-line');
+  try {
+    const r = await apiPost('/api/analytics/research/run-now', {});
+    if(line) line.textContent = r.started ? '⏳ Researching news/insider picks…' : `⚠️ ${r.reason || 'Could not start'}`;
+    let polls = 0;
+    const iv = setInterval(async () => {
+      polls++;
+      await loadSignalsTable();
+      const s = await aiApiFetch('/api/analytics/signals/status');
+      if(!s.scan_in_progress || polls > 60) clearInterval(iv);
+    }, 5000);
+  } catch(e) {
+    if(line) line.textContent = `⚠️ ${e.message}`;
+  }
+}
+
 async function setSignalSchedule() {
   const hours = parseInt($('sig-interval-select').value, 10);
   try {
@@ -2997,6 +3073,8 @@ async function loadEmaSignals() {
         // Flag if we have true 200 EMA or approximation
         var has200=(n>=200);
         var price=closes[n-1];
+        var vwapArr = d.vwap || [];
+        var vwapNow = vwapArr.length ? vwapArr.filter(function(v){return v!=null;}).slice(-1)[0] : null;
         var score=0;
         var signals=[];
         if(price>e9[n-1]){score+=1;}else{score-=1;}
@@ -3007,6 +3085,8 @@ async function loadEmaSignals() {
         if(e9[n-1]>e21[n-1]&&e21[n-1]>e50[n-1]){signals.push('EMA Bull Stack 🚀');}
         else if(e9[n-1]<e21[n-1]&&e21[n-1]<e50[n-1]){signals.push('EMA Bear Stack 🔻');}
         var priceVsE9=((price-e9[n-1])/e9[n-1]*100).toFixed(2);
+        var priceVsE21=((price-e21[n-1])/e21[n-1]*100).toFixed(2);
+        var priceVsE50=((price-e50[n-1])/e50[n-1]*100).toFixed(2);
         var overall = score>=3?'STRONG BUY':score>=1?'BUY':score<=-3?'STRONG SELL':score<=-1?'SELL':'NEUTRAL';
         results.push({
           sym:p.symbol,sector:p.sector,price:price,
@@ -3015,7 +3095,8 @@ async function loadEmaSignals() {
           has200:has200,
           score:score,overall:overall,signals:signals,
           upl:p.unrealized_pl,roi:p.unrealized_pct,
-          priceVsE9:priceVsE9
+          priceVsE9:priceVsE9, priceVsE21:priceVsE21, priceVsE50:priceVsE50,
+          avgEntry:p.avg_entry, vwap:vwapNow
         });
       }
     } catch(err){ console.warn('EMA failed for '+p.symbol,err); }
@@ -3030,9 +3111,9 @@ async function loadEmaSignals() {
     return '#a0aec0';
   };
   el.innerHTML='<div style="overflow-x:auto"><table>'
-    +'<thead><tr><th>Symbol</th><th>Sector</th><th>Price</th>'
+    +'<thead><tr><th>Symbol</th><th>Sector</th><th>Avg Entry</th><th>Price</th><th title="Running VWAP over the 3mo window, not same-day intraday VWAP">VWAP (3mo)</th>'
     +'<th>EMA9</th><th>EMA21</th><th>EMA50</th><th>EMA200</th>'
-    +'<th>vs EMA9%</th><th>vs EMA200%</th><th>Score</th><th>Signal</th><th>Notes</th><th>ROI%</th></tr></thead><tbody>'
+    +'<th>vs EMA9%</th><th>vs EMA21%</th><th>vs EMA50%</th><th>vs EMA200%</th><th>Score</th><th>Signal</th><th>Notes</th><th>ROI%</th></tr></thead><tbody>'
     +results.map(function(r){
       var sc=signalColor(r.overall);
       var roic=(r.roi||0)>=0?'#68d391':'#fc8181';
@@ -3041,12 +3122,16 @@ async function loadEmaSignals() {
       return '<tr data-sym="'+r.sym+'" style="cursor:pointer" onclick="portDivClick(this)">'
         +'<td style="font-weight:800;color:#e6edf3">'+r.sym+'</td>'
         +'<td style="color:#8b949e;font-size:10px">'+r.sector+'</td>'
+        +'<td style="color:#8b949e">'+f(r.avgEntry)+'</td>'
         +'<td style="font-weight:700">$'+Number(r.price).toFixed(2)+'</td>'
+        +'<td style="'+pc(r.price,r.vwap)+'">'+f(r.vwap)+'</td>'
         +'<td style="'+pc(r.price,r.e9)+'">'+f(r.e9)+'</td>'
         +'<td style="'+pc(r.price,r.e21)+'">'+f(r.e21)+'</td>'
         +'<td style="'+pc(r.price,r.e50)+'">'+f(r.e50)+'</td>'
         +'<td style="'+pc(r.price,r.e200)+'">'+f(r.e200)+(r.has200?'':' <span style="font-size:8px;color:#4a5568">~</span>')+'</td>'
         +'<td style="color:'+(Number(r.priceVsE9)>=0?'#68d391':'#fc8181')+';font-weight:700">'+(Number(r.priceVsE9)>=0?'+':'')+r.priceVsE9+'%</td>'
+        +'<td style="color:'+(Number(r.priceVsE21)>=0?'#68d391':'#fc8181')+';font-weight:700">'+(Number(r.priceVsE21)>=0?'+':'')+r.priceVsE21+'%</td>'
+        +'<td style="color:'+(Number(r.priceVsE50)>=0?'#68d391':'#fc8181')+';font-weight:700">'+(Number(r.priceVsE50)>=0?'+':'')+r.priceVsE50+'%</td>'
         +'<td style="color:'+(r.vs200!=null?(Number(r.vs200)>=0?'#68d391':'#fc8181'):'#4a5568')+';font-weight:700">'+(r.vs200!=null?(Number(r.vs200)>=0?'+':'')+r.vs200+'%':'—')+'</td>'
         +'<td style="text-align:center;font-weight:800;color:'+(r.score>0?'#68d391':r.score<0?'#fc8181':'#a0aec0')+'">'+(r.score>0?'+':'')+r.score+'</td>'
         +'<td><span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:800;color:'+sc+';border:1px solid '+sc+'44;background:'+sc+'11">'+r.overall+'</span></td>'
