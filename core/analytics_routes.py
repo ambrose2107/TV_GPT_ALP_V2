@@ -792,3 +792,25 @@ def research_status():
     if e: return e
     from core.scheduler import get_research_status
     return jsonify(get_research_status())
+
+
+# ── Strategy backtester (validates the EMA strategy against real history) ──
+@analytics_bp.route("/api/analytics/backtest/<symbol>", methods=["GET"])
+def backtest_strategy(symbol):
+    """
+    Runs the exact 9/21/50 EMA strategy (same rules as the live signal
+    engine) against real historical bars for `symbol`, reporting win rate
+    and total return vs. buy-and-hold. Fast enough to run inline (pure
+    local computation, no LLM/Kronos calls), unlike the heavy scans.
+    """
+    e = _auth()
+    if e: return e
+    from research.backtester import backtest_symbol
+    period = request.args.get("period", "3y")
+    try:
+        result = backtest_symbol(symbol, period=period)
+        status = 200 if "error" not in result else 400
+        return jsonify(result), status
+    except Exception as ex:
+        logger.error(f"backtest {symbol}: {ex}")
+        return jsonify({"error": str(ex)}), 500
