@@ -1,0 +1,237 @@
+diff --git a/dashboard/templates/dashboard.html b/dashboard/templates/dashboard.html
+index 68286dd..ec17a39 100644
+--- a/dashboard/templates/dashboard.html
++++ b/dashboard/templates/dashboard.html
+@@ -218,6 +218,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
+   <div class="tab"     onclick="switchTab(9,'mf')">🐟 MirrorFish AI</div>
+   <div class="tab"     onclick="switchTab(10,'set')">⚙️ Settings</div>
+   <div class="tab"     onclick="switchTab(11,'calc')">🧮 Inv. Calculator</div>
++  <div class="tab"     onclick="switchTab(12,'bt')">🧪 Backtest</div>
+ </div>
+ 
+ <!-- DATA SOURCE BANNER -->
+@@ -1063,6 +1064,77 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
+   </div>
+ </div>
+ 
++<!-- ── BACKTEST TAB ───────────────────────────────────────────────────────── -->
++<div class="pane" id="pane-bt">
++  <div class="sec">
++    <div class="sec-hdr">
++      <h2>🧪 Strategy Backtest</h2>
++      <span class="sub">Pulls real historical bars via yfinance. Pick one or more strategies to compare on the same symbol/timeframe.</span>
++    </div>
++    <div class="row">
++      <input type="text" id="bt-sym" placeholder="Symbol e.g. GC=F, EURUSD=X, AAPL, BTC-USD" value="GC=F" style="max-width:220px">
++      <select id="bt-interval">
++        <option value="1m">1 minute</option>
++        <option value="2m">2 minute</option>
++        <option value="5m" selected>5 minute</option>
++        <option value="15m">15 minute</option>
++        <option value="1h">1 hour</option>
++        <option value="1d">Daily</option>
++      </select>
++      <select id="bt-period">
++        <option value="">Auto (max available)</option>
++        <option value="7d">7 days</option>
++        <option value="30d">30 days</option>
++        <option value="60d">60 days</option>
++        <option value="1y">1 year</option>
++        <option value="5y">5 years</option>
++      </select>
++      <input type="number" id="bt-equity" placeholder="Initial equity" value="10000" style="max-width:130px">
++      <input type="number" id="bt-risk" placeholder="Risk % / trade" value="0.5" step="0.1" style="max-width:130px">
++    </div>
++    <div class="row" id="bt-strategy-checks" style="margin-bottom:6px">
++      <span class="sub" style="color:#8b949e;font-size:11px">Loading strategies…</span>
++    </div>
++    <div class="row">
++      <button class="btn btn-b" id="bt-run-btn" onclick="runBacktestCompare()">▶ Run Backtest</button>
++      <span id="bt-status" style="font-size:11px;color:#8b949e"></span>
++    </div>
++  </div>
++
++  <div class="sec" id="bt-results-wrap" style="display:none">
++    <div class="sec-hdr"><h2>📊 Results</h2></div>
++    <table id="bt-results-table">
++      <thead>
++        <tr>
++          <th style="text-align:left">Strategy</th><th>Trades</th><th>Win %</th>
++          <th>Profit Factor</th><th>Expectancy (R)</th><th>Max DD %</th>
++          <th>Return %</th><th>Final Equity</th><th></th>
++        </tr>
++      </thead>
++      <tbody id="bt-results-body"></tbody>
++    </table>
++  </div>
++
++  <div class="sec" id="bt-detail-wrap" style="display:none">
++    <div class="sec-hdr">
++      <h2 id="bt-detail-title">📈 Equity Curve</h2>
++      <span class="sub" id="bt-detail-sub"></span>
++    </div>
++    <div style="position:relative;height:260px;margin-bottom:16px">
++      <canvas id="bt-equity-chart"></canvas>
++    </div>
++    <div class="sec-hdr"><h2>Recent Trades</h2></div>
++    <div style="max-height:320px;overflow-y:auto">
++      <table id="bt-trades-table">
++        <thead>
++          <tr><th>Side</th><th>Entry Time</th><th>Entry</th><th>Exit</th><th>Reason</th><th>P&L</th><th>R</th></tr>
++        </thead>
++        <tbody id="bt-trades-body"></tbody>
++      </table>
++    </div>
++  </div>
++</div>
++
+ <!-- CLOSE MODAL -->
+ <div class="modal" id="close-modal">
+   <div class="modal-box">
+@@ -1145,6 +1217,7 @@ function switchTab(idx, name) {
+   }
+   if(name==='mf')   loadMirrorFish();
+   if(name==='calc') calcOnOpen();
++  if(name==='bt')   loadBacktestStrategies();
+ }
+ function anaSub(name, idx) {
+   ['signals','charts','ema','bb','compare'].forEach(n=>{
+@@ -3914,6 +3987,138 @@ async function calcFetchPrices() {
+   calcRecalc();
+ }
+ 
++// ── BACKTEST TAB ──────────────────────────────────────────────────────────
++let btStrategies = [];
++let btLastResults = {};   // strategy_id -> full result (for detail view)
++let btEquityChart = null;
++
++async function loadBacktestStrategies() {
++  if(btStrategies.length) return;  // already loaded
++  try {
++    const r = await apiFetch('/api/backtest/strategies');
++    btStrategies = r.strategies || [];
++    const wrap = $('bt-strategy-checks');
++    wrap.innerHTML = btStrategies.map(s => `
++      <label style="display:flex;align-items:center;gap:5px;font-size:12px;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:6px 10px;cursor:pointer">
++        <input type="checkbox" class="bt-strat-cb" value="${s.id}" checked style="cursor:pointer">
++        ${s.name}
++      </label>
++    `).join('');
++  } catch(e) {
++    $('bt-strategy-checks').innerHTML = `<span style="color:#f85149;font-size:11px">Failed to load strategies: ${e.message}</span>`;
++  }
++}
++
++function fmtMetric(v, suffix) {
++  if(v === null || v === undefined) return '—';
++  return v + (suffix || '');
++}
++
++async function runBacktestCompare() {
++  const symbol = $('bt-sym').value.trim();
++  const interval = $('bt-interval').value;
++  const period = $('bt-period').value;
++  const initial_equity = parseFloat($('bt-equity').value) || 10000;
++  const risk_pct = parseFloat($('bt-risk').value) || 0.5;
++  const strategy_ids = Array.from(document.querySelectorAll('.bt-strat-cb:checked')).map(cb => cb.value);
++
++  if(!symbol) { alert('Enter a symbol first (e.g. GC=F for gold futures).'); return; }
++  if(!strategy_ids.length) { alert('Select at least one strategy.'); return; }
++
++  const btn = $('bt-run-btn');
++  btn.disabled = true;
++  $('bt-status').textContent = '⏳ Fetching data & running backtests…';
++  $('bt-results-wrap').style.display = 'none';
++  $('bt-detail-wrap').style.display = 'none';
++
++  try {
++    const r = await apiPost('/api/backtest/compare', {
++      symbol, interval, period, strategy_ids, initial_equity, risk_pct,
++    });
++    if(r.error) throw new Error(r.error);
++
++    btLastResults = {};
++    r.results.forEach(res => { if(!res.error) btLastResults[res.strategy_id] = res; });
++
++    const rows = r.results.map(res => {
++      if(res.error) {
++        return `<tr><td colspan="9" style="color:#f85149">${res.strategy_id}: ${res.error}</td></tr>`;
++      }
++      const m = res.metrics;
++      const isBest = r.ranking_by_return[0] === res.strategy_id;
++      return `<tr style="${isBest ? 'background:#0d2818' : ''}">
++        <td style="text-align:left">${isBest ? '🏆 ' : ''}${res.strategy_name}</td>
++        <td>${fmtMetric(m.num_trades)}</td>
++        <td>${fmtMetric(m.win_rate,'%')}</td>
++        <td>${fmtMetric(m.profit_factor)}</td>
++        <td>${fmtMetric(m.expectancy_R)}</td>
++        <td style="color:${m.max_drawdown_pct < -20 ? '#f85149':'#8b949e'}">${fmtMetric(m.max_drawdown_pct,'%')}</td>
++        <td style="color:${m.total_return_pct >= 0 ? '#3fb950':'#f85149'}">${fmtMetric(m.total_return_pct,'%')}</td>
++        <td>$${fmtMetric(m.final_equity)}</td>
++        <td><button class="btn btn-n btn-s" onclick="showBacktestDetail('${res.strategy_id}')">View</button></td>
++      </tr>`;
++    }).join('');
++
++    $('bt-results-body').innerHTML = rows;
++    $('bt-results-wrap').style.display = '';
++    $('bt-status').textContent = `✅ Done — ${r.results.length} strategies on ${r.symbol} (${r.interval})`;
++
++    if(r.ranking_by_return.length) showBacktestDetail(r.ranking_by_return[0]);
++  } catch(e) {
++    $('bt-status').textContent = `❌ ${e.message}`;
++  } finally {
++    btn.disabled = false;
++  }
++}
++
++function showBacktestDetail(strategyId) {
++  const res = btLastResults[strategyId];
++  if(!res) return;
++
++  $('bt-detail-title').textContent = `📈 ${res.strategy_name} — Equity Curve`;
++  $('bt-detail-sub').textContent = `${res.symbol} · ${res.interval} · ${res.data_range.start} → ${res.data_range.end} · ${res.num_bars} bars`;
++  $('bt-detail-wrap').style.display = '';
++
++  const ctx = $('bt-equity-chart');
++  btEquityChart = destroyChart(btEquityChart);
++  btEquityChart = new Chart(ctx, {
++    type: 'line',
++    data: {
++      labels: res.equity_curve.t,
++      datasets: [{
++        label: 'Equity ($)',
++        data: res.equity_curve.v,
++        borderColor: '#58a6ff',
++        backgroundColor: 'rgba(88,166,255,0.08)',
++        fill: true,
++        pointRadius: 0,
++        borderWidth: 1.5,
++      }],
++    },
++    options: {
++      responsive: true, maintainAspectRatio: false,
++      plugins: { legend: { display: false } },
++      scales: {
++        x: { ticks: { maxTicksLimit: 10, color: '#8b949e' }, grid: { color: '#21262d' } },
++        y: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } },
++      },
++    },
++  });
++
++  const trades = res.trades.slice().reverse();
++  $('bt-trades-body').innerHTML = trades.length ? trades.map(t => `
++    <tr>
++      <td style="color:${t.side==='LONG'?'#3fb950':'#f85149'}">${t.side}</td>
++      <td>${t.entry_time}</td>
++      <td>${t.entry_price}</td>
++      <td>${t.exit_price}</td>
++      <td>${t.reason}</td>
++      <td style="color:${t.pnl>=0?'#3fb950':'#f85149'}">$${t.pnl}</td>
++      <td>${t.R !== null ? t.R : '—'}</td>
++    </tr>
++  `).join('') : '<tr><td colspan="7" style="color:#8b949e">No trades in this window.</td></tr>';
++}
++
+ </script>
+ 
+ 
