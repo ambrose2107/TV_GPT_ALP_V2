@@ -19,6 +19,13 @@ from flask import Blueprint, render_template, request, jsonify, session
 
 from core.logger import get_logger
 from research.xauusd_v3 import run_backtest, SignalConfig, EngineConfig
+# Imported at module load time (not inside the request handler) so that any
+# failure here (e.g. a missing system dependency for matplotlib on your
+# host) surfaces clearly in the deploy/startup logs, not as a confusing
+# per-request 500 the first time someone clicks "Run".
+from research.xauusd_v3.visualize import (
+    plot_overview, plot_trade_detail, plot_fibonacci_levels, plot_zones, plot_funnel,
+)
 
 logger = get_logger(__name__)
 xauusd_v3_bp = Blueprint("xauusd_v3", __name__)
@@ -51,7 +58,20 @@ def api_xauusd_v3_run():
     if e:
         return e
 
-    body = request.json or {}
+    # ALWAYS return JSON from this endpoint, even for a totally unexpected
+    # server error - the frontend does response.json() on this call, and an
+    # HTML error page there produces exactly the "Unexpected token '<'"
+    # symptom. This outer try/except is the fix for that failure mode
+    # regardless of what the underlying cause turns out to be.
+    try:
+        return _run_impl()
+    except Exception as ex:
+        logger.error(f"xauusd_v3 UNEXPECTED error: {ex}\n{traceback.format_exc()}")
+        return jsonify({"error": f"Unexpected server error: {ex}. Check server logs for the full traceback."}), 500
+
+
+def _run_impl():
+    body = request.get_json(silent=True) or {}
     interval = body.get("interval", "5m")
     n_bars = int(body.get("n_bars", 20000))
     use_live = bool(body.get("use_live", True))
@@ -80,10 +100,6 @@ def api_xauusd_v3_run():
 
     # generate charts to a temp dir, then inline them as base64 so the
     # frontend needs zero extra chart-drawing code
-    from research.xauusd_v3.visualize import (
-        plot_overview, plot_trade_detail, plot_fibonacci_levels, plot_zones, plot_funnel,
-    )
-
     charts = {}
     with tempfile.TemporaryDirectory() as tmp:
         try:
