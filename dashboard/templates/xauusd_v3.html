@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>XAUUSD v3 - Institutional Confluences Backtest</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d;
+    --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --red: #f85149; --gold: #d29922;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text); font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+    margin: 0; padding: 24px; line-height: 1.5;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .sec {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px; margin-bottom: 18px;
+  }
+  .sec h2 { font-size: 15px; margin: 0 0 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; align-items: center; }
+  input[type=text], input[type=number], select {
+    background: #0d1117; border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 7px 10px; font-size: 13px;
+  }
+  label.chk {
+    display: flex; align-items: center; gap: 6px; font-size: 12px;
+    background: #0d1117; border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 10px; cursor: pointer;
+  }
+  .grp-title { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 14px 0 6px; }
+  button.run {
+    background: var(--accent); color: #04101f; border: none; border-radius: 8px;
+    padding: 10px 22px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  button.run:disabled { opacity: .5; cursor: default; }
+  #status { font-size: 12px; color: var(--muted); margin-left: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--border); }
+  th:first-child, td:first-child { text-align: left; }
+  .funnel-row { display: flex; justify-content: space-between; font-size: 12px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+  .funnel-row .drop { color: var(--red); }
+  img.chart { width: 100%; border-radius: 8px; margin-top: 8px; border: 1px solid var(--border); }
+  .warn { background: #3a2a0d; border: 1px solid var(--gold); color: var(--gold); border-radius: 8px; padding: 10px 14px; font-size: 12px; margin-bottom: 14px; }
+  .error { background: #3a0d0d; border: 1px solid var(--red); color: var(--red); border-radius: 8px; padding: 10px 14px; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<h1>XAUUSD v3 - Institutional Confluences Backtest</h1>
+<div class="sub">Standalone page, independent of the main dashboard - runs the full Python confluence engine and renders server-side charts.</div>
+
+<div class="warn">
+  Every confluence filter below is OFF by default. Turning more on only ever
+  <b>reduces</b> trade count. If you get zero trades, check the Signal Funnel
+  after running - it shows exactly which filter caused the drop.
+</div>
+
+<div class="sec">
+  <h2>Data</h2>
+  <div class="row">
+    <input type="text" id="v3-interval" value="5m" placeholder="Interval (1m/2m/5m/15m/1h/1d)" style="max-width:160px">
+    <input type="number" id="v3-nbars" value="20000" placeholder="Bars to load" style="max-width:140px">
+    <label class="chk"><input type="checkbox" id="v3-uselive" checked> Use live data (yfinance)</label>
+  </div>
+
+  <div class="grp-title">A. Signal</div>
+  <div class="row">
+    <input type="number" id="v3-ema-fast" value="20" placeholder="EMA Fast" style="max-width:110px">
+    <input type="number" id="v3-ema-slow" value="50" placeholder="EMA Slow" style="max-width:110px">
+    <input type="number" id="v3-rsi-len" value="14" placeholder="RSI Length" style="max-width:110px">
+    <input type="number" id="v3-rsi-thresh" value="5" step="0.5" placeholder="RSI Band" style="max-width:110px">
+    <input type="number" id="v3-min-spacing" value="8" placeholder="Cooldown (bars)" style="max-width:130px">
+  </div>
+
+  <div class="grp-title">A2. Confluence Filters (all OFF by default)</div>
+  <div class="row">
+    <label class="chk"><input type="checkbox" id="v3-use-fib"> Fibonacci Zone</label>
+    <label class="chk"><input type="checkbox" id="v3-use-liq"> Liquidity Sweep</label>
+    <label class="chk"><input type="checkbox" id="v3-use-sd"> Supply/Demand</label>
+    <label class="chk"><input type="checkbox" id="v3-use-fvg"> FVG (Inefficiency)</label>
+    <label class="chk"><input type="checkbox" id="v3-use-poi"> Volume POI</label>
+    <label class="chk"><input type="checkbox" id="v3-use-dxy"> DXY Correlation</label>
+    <label class="chk"><input type="checkbox" id="v3-use-silver"> Silver Correlation</label>
+  </div>
+  <div class="row">
+    <label class="chk"><input type="checkbox" id="v3-use-score"> Confluence Score (min</label>
+    <input type="number" id="v3-min-score" value="2" min="1" max="5" style="max-width:60px">
+    <span style="font-size:12px;color:var(--muted)">of 5 zone-based confluences)</span>
+  </div>
+
+  <div class="grp-title">Risk / Reward</div>
+  <div class="row">
+    <input type="number" id="v3-sl-atr" value="1.5" step="0.1" placeholder="SL ATR Mult" style="max-width:130px">
+    <input type="number" id="v3-rr" value="2.0" step="0.1" placeholder="Reward:Risk" style="max-width:130px">
+    <input type="number" id="v3-ntargets" value="4" min="1" max="4" placeholder="Num Targets" style="max-width:130px">
+    <input type="number" id="v3-risk-pct" value="0.5" step="0.01" placeholder="Risk % / trade" style="max-width:140px">
+  </div>
+
+  <div class="row">
+    <button class="run" id="v3-run-btn" onclick="runV3Backtest()">Run Backtest</button>
+    <span id="status"></span>
+  </div>
+</div>
+
+<div class="sec" id="v3-funnel-sec" style="display:none">
+  <h2>Signal Funnel</h2>
+  <div id="v3-funnel-body"></div>
+  <img class="chart" id="v3-funnel-img" style="display:none">
+</div>
+
+<div class="sec" id="v3-results-sec" style="display:none">
+  <h2>Results</h2>
+  <table id="v3-metrics-table"></table>
+</div>
+
+<div class="sec" id="v3-charts-sec" style="display:none">
+  <h2>Charts</h2>
+  <img class="chart" id="v3-img-overview" style="display:none">
+  <img class="chart" id="v3-img-trade-detail" style="display:none">
+  <img class="chart" id="v3-img-fib" style="display:none">
+  <img class="chart" id="v3-img-zones" style="display:none">
+</div>
+
+<script>
+function byId(id) {
+  const el = document.getElementById(id);
+  if (!el) console.error('xauusd-v3: element not found:', id);
+  return el;
+}
+
+async function runV3Backtest() {
+  const btn = byId('v3-run-btn');
+  const status = byId('status');
+  btn.disabled = true;
+  status.textContent = 'Running... (first run after server restart may take a few seconds longer - numba JIT compiling)';
+
+  document.getElementById('v3-results-sec').style.display = 'none';
+  document.getElementById('v3-charts-sec').style.display = 'none';
+  document.getElementById('v3-funnel-sec').style.display = 'none';
+
+  const payload = {
+    interval: byId('v3-interval').value.trim() || '5m',
+    n_bars: parseInt(byId('v3-nbars').value) || 20000,
+    use_live: byId('v3-uselive').checked,
+    signal: {
+      ema_fast: parseInt(byId('v3-ema-fast').value),
+      ema_slow: parseInt(byId('v3-ema-slow').value),
+      rsi_len: parseInt(byId('v3-rsi-len').value),
+      rsi_threshold: parseFloat(byId('v3-rsi-thresh').value),
+      min_spacing: parseInt(byId('v3-min-spacing').value),
+      use_fib: byId('v3-use-fib').checked,
+      use_liquidity: byId('v3-use-liq').checked,
+      use_sd: byId('v3-use-sd').checked,
+      use_fvg: byId('v3-use-fvg').checked,
+      use_poi: byId('v3-use-poi').checked,
+      use_dxy: byId('v3-use-dxy').checked,
+      use_silver: byId('v3-use-silver').checked,
+      use_accuracy_score: byId('v3-use-score').checked,
+      min_confluence_score: parseInt(byId('v3-min-score').value),
+    },
+    engine: {
+      sl_atr_mult: parseFloat(byId('v3-sl-atr').value),
+      rr: parseFloat(byId('v3-rr').value),
+      n_targets: parseInt(byId('v3-ntargets').value),
+      risk_pct: parseFloat(byId('v3-risk-pct').value),
+    },
+  };
+
+  try {
+    const r = await fetch('/api/xauusd-v3/run', {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await r.json();
+    if (!r.ok || data.error) throw new Error(data.error || `HTTP ${r.status}`);
+
+    renderFunnel(data.funnel);
+    renderMetrics(data.metrics, data.used_numba);
+    renderCharts(data.charts);
+    status.textContent = 'Done.';
+  } catch (e) {
+    status.innerHTML = `<span style="color:var(--red)">Error: ${e.message}</span>`;
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderFunnel(funnel) {
+  // funnel is an ordered list: [{stage, count}, ...]
+  const sec = byId('v3-funnel-sec');
+  const body = byId('v3-funnel-body');
+  let prev = null;
+  body.innerHTML = funnel.map(({stage, count}) => {
+    const drop = prev !== null ? `<span class="drop">(-${prev - count})</span>` : '';
+    prev = count;
+    return `<div class="funnel-row"><span>${stage}</span><span>${count} ${drop}</span></div>`;
+  }).join('');
+  if (prev === 0) {
+    body.innerHTML += `<div class="error" style="margin-top:10px">Zero final signals - find the stage above where the count first hit 0 and relax that filter.</div>`;
+  }
+  sec.style.display = '';
+}
+
+function renderMetrics(m, usedNumba) {
+  const table = byId('v3-metrics-table');
+  const rows = [
+    ['Trades', m.num_trades], ['Win Rate %', m.win_rate], ['Profit Factor', m.profit_factor],
+    ['Expectancy (R)', m.expectancy_R], ['Total R', m.total_R],
+    ['Max Drawdown %', m.max_drawdown_pct], ['Total Return %', m.total_return_pct],
+    ['Final Equity', m.final_equity], ['Numba accelerated', usedNumba ? 'yes' : 'no (fallback)'],
+  ];
+  table.innerHTML = rows.map(([k, v]) => `<tr><td>${k}</td><td>${v ?? 'n/a'}</td></tr>`).join('');
+  byId('v3-results-sec').style.display = '';
+}
+
+function renderCharts(charts) {
+  const map = {
+    overview: 'v3-img-overview', trade_detail: 'v3-img-trade-detail',
+    fibonacci_levels: 'v3-img-fib', institutional_zones: 'v3-img-zones', funnel: 'v3-funnel-img',
+  };
+  let any = false;
+  for (const [key, imgId] of Object.entries(map)) {
+    const img = byId(imgId);
+    if (charts[key]) {
+      img.src = charts[key];
+      img.style.display = '';
+      any = true;
+    } else {
+      img.style.display = 'none';
+    }
+  }
+  if (any) byId('v3-charts-sec').style.display = '';
+}
+</script>
+
+</body>
+</html>
