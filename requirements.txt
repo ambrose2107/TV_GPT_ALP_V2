@@ -10,3 +10,4 @@ beautifulsoup4==4.12.3
 lxml==5.2.2
 pytz==2024.1
 APScheduler==3.10.4
+numba
