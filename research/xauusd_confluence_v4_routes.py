@@ -23,11 +23,11 @@ def run():
     try:
         fields=V4Config.__dataclass_fields__.keys()
         cfg=V4Config(**{k:v for k,v in (body.get('config') or {}).items() if k in fields})
-        data=load_data(use_live=True,n_bars=int(body.get('n_bars',30000)),symbol=body.get('symbol','GC=F'))
+        symbol=str(body.get('symbol','GLD')).upper().strip()\n        data_source=str(body.get('data_source','alpaca')).lower().strip()\n        data=load_data(use_live=True,n_bars=int(body.get('n_bars',30000)),symbol=symbol,data_source=data_source)
         result=backtest(data,cfg,initial_equity=float(body.get('initial_equity',10000)))
         trades=result['trades'].tail(200).copy()
         for c in ('entry_time','exit_time'):
             if c in trades: trades[c]=trades[c].astype(str)
-        return jsonify({'metrics':result['metrics'],'trades':trades.to_dict('records'),'signals':result['signals'].tail(1000)[['signal','score','sl','tp1','tp2','tp3','reason']].reset_index().rename(columns={'index':'time'}).to_dict('records')})
+        return jsonify({'symbol':symbol,'data_source':data_source,'bars':len(data['m5']),'data_start':str(data['m5'].index.min()),'data_end':str(data['m5'].index.max()),'metrics':result['metrics'],'trades':trades.to_dict('records'),'signals':result['signals'].tail(1000)[['signal','score','sl','tp1','tp2','tp3','reason']].reset_index().rename(columns={'index':'time'}).to_dict('records')})
     except Exception as ex:
         return jsonify({'error':str(ex)}),400
