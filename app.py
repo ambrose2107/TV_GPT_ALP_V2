@@ -11,6 +11,7 @@ from mirrorfish.routes import mirrorfish_bp
 from core.analytics_routes import analytics_bp
 from research.backtest_routes import backtest_bp
 from research.xauusd_v3_routes import xauusd_v3_bp          # <-- ADD THIS
+from research.xauusd_fib_mtf_routes import xauusd_fib_mtf_bp     # <-- ADD THIS
 from core.scheduler import init_scheduler
 import os
 
@@ -30,6 +31,7 @@ def create_app():
     app.register_blueprint(analytics_bp)
     app.register_blueprint(backtest_bp)
     app.register_blueprint(xauusd_v3_bp)
+    app.register_blueprint(xauusd_fib_mtf_bp)
     init_scheduler()
     logger.info("OptiTrade AI v8 app created.")
     return app
