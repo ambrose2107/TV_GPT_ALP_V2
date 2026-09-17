@@ -11,6 +11,7 @@ Routes:
                                       funnel + trades + base64 chart images
 """
 import base64
+import math
 import os
 import tempfile
 import traceback
@@ -29,6 +30,23 @@ from research.xauusd_v3.visualize import (
 
 logger = get_logger(__name__)
 xauusd_v3_bp = Blueprint("xauusd_v3", __name__)
+
+
+def _sanitize_for_json(obj):
+    """
+    Python's json module serializes float('nan')/inf as bare NaN/Infinity
+    tokens, which are NOT valid JSON - browsers' JSON.parse() rejects them
+    with "Unexpected token 'N'...". Metrics like expectancy_R are legitimately
+    NaN with zero/too-few trades, so recursively swap NaN/Infinity for None
+    (-> JSON null) before jsonify.
+    """
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_for_json(v) for v in obj]
+    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    return obj
 
 
 def _auth():
@@ -149,10 +167,10 @@ def _run_impl():
     # ship it as an ordered list of pairs instead of a dict
     funnel_ordered = [{"stage": k, "count": v} for k, v in result["funnel"].items()]
 
-    return jsonify({
+    return jsonify(_sanitize_for_json({
         "metrics": result["metrics"],
         "funnel": funnel_ordered,
         "trades": trades_out.to_dict("records"),
         "used_numba": result["used_numba"],
         "charts": charts,
-    })
+    }))

@@ -14,6 +14,7 @@ Routes:
                                            returns the ranked results table
 """
 import base64
+import math
 import os
 import tempfile
 import traceback
@@ -30,6 +31,25 @@ from research.xauusd_fib_mtf.visualize import plot_overview, plot_fib_and_trade_
 
 logger = get_logger(__name__)
 xauusd_fib_mtf_bp = Blueprint("xauusd_fib_mtf", __name__)
+
+
+def _sanitize_for_json(obj):
+    """
+    Python's json module (and Flask's default JSON provider) serializes
+    float('nan') / inf as the bare tokens NaN/Infinity, which are NOT
+    valid JSON - browsers' JSON.parse() rejects them outright with
+    exactly the "Unexpected token 'N'..." error. Metrics like
+    expectancy_R are genuinely NaN when there are zero/too-few trades, so
+    this is a real, reachable case, not a hypothetical one. Recursively
+    replace any NaN/Infinity with None (-> JSON null) before jsonify.
+    """
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_for_json(v) for v in obj]
+    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    return obj
 
 
 def _auth():
@@ -79,6 +99,10 @@ def _run_impl():
     body = request.get_json(silent=True) or {}
     n_bars = int(body.get("n_bars", 30000))
     use_live = bool(body.get("use_live", True))
+    data_source = body.get("data_source", "yfinance")
+    lookback_days = body.get("lookback_days")
+    lookback_days = int(lookback_days) if lookback_days else None
+    alpaca_symbol = body.get("alpaca_symbol", "GLD")
 
     try:
         mtf_cfg = MTFConfig(**_safe_mtf_kwargs(body.get("mtf") or {}))
@@ -87,7 +111,8 @@ def _run_impl():
         return jsonify({"error": f"Invalid parameter: {ex}"}), 400
 
     try:
-        result = run_backtest(use_live=use_live, n_bars=n_bars, mtf_cfg=mtf_cfg, engine_cfg=engine_cfg)
+        result = run_backtest(use_live=use_live, n_bars=n_bars, mtf_cfg=mtf_cfg, engine_cfg=engine_cfg,
+                               data_source=data_source, lookback_days=lookback_days, alpaca_symbol=alpaca_symbol)
     except Exception as ex:
         logger.warning(f"xauusd_fib_mtf backtest failed: {ex}\n{traceback.format_exc()}")
         return jsonify({"error": str(ex)}), 400
@@ -123,13 +148,13 @@ def _run_impl():
 
     funnel_ordered = [{"stage": k, "count": v} for k, v in result["funnel"].items()]
 
-    return jsonify({
+    return jsonify(_sanitize_for_json({
         "metrics": result["metrics"],
         "funnel": funnel_ordered,
         "trades": trades_out.to_dict("records"),
         "used_numba": result["used_numba"],
         "charts": charts,
-    })
+    }))
 
 
 @xauusd_fib_mtf_bp.route("/api/xauusd-fib-mtf/optimize", methods=["POST"])
@@ -149,6 +174,10 @@ def _optimize_impl():
     n_bars = int(body.get("n_bars", 60000))
     use_live = bool(body.get("use_live", True))
     min_trades = int(body.get("min_trades", 20))
+    data_source = body.get("data_source", "yfinance")
+    lookback_days = body.get("lookback_days")
+    lookback_days = int(lookback_days) if lookback_days else None
+    alpaca_symbol = body.get("alpaca_symbol", "GLD")
 
     try:
         base_cfg = MTFConfig(**_safe_mtf_kwargs(body.get("mtf") or {}))
@@ -166,7 +195,8 @@ def _optimize_impl():
         combos = combos[:32]
 
     try:
-        data = get_mtf_data(use_live=use_live, n_bars=n_bars)
+        data = get_mtf_data(use_live=use_live, n_bars=n_bars, data_source=data_source,
+                             lookback_days=lookback_days, alpaca_symbol=alpaca_symbol)
         results_df = grid_search(data, combos, base_cfg, engine_cfg, min_trades=min_trades)
     except Exception as ex:
         logger.warning(f"xauusd_fib_mtf optimize failed: {ex}\n{traceback.format_exc()}")
@@ -175,8 +205,8 @@ def _optimize_impl():
     if results_df.empty:
         return jsonify({"results": [], "note": "No combinations produced a valid backtest."})
 
-    return jsonify({
+    return jsonify(_sanitize_for_json({
         "results": results_df.head(20).to_dict("records"),
         "n_combos_tried": len(combos),
         "min_trades_threshold": min_trades,
-    })
+    }))

@@ -13,6 +13,7 @@ No arbitrary code execution: strategies are pre-registered Python modules
 in research/strategies/, not user-submitted code strings.
 """
 from flask import Blueprint, request, jsonify, session
+import math
 
 from core.logger import get_logger
 from research.strategies import list_strategies
@@ -20,6 +21,22 @@ from research.backtest_engine import fetch_yf_data, run_backtest
 
 logger = get_logger(__name__)
 backtest_bp = Blueprint("backtest", __name__)
+
+
+def _sanitize_for_json(obj):
+    """
+    Python's json module serializes float('nan')/inf as bare NaN/Infinity
+    tokens, which are NOT valid JSON - browsers' JSON.parse() rejects them
+    with "Unexpected token 'N'...". Recursively swap NaN/Infinity for None
+    (-> JSON null) before jsonify.
+    """
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_for_json(v) for v in obj]
+    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    return obj
 
 
 def _auth():
@@ -61,7 +78,7 @@ def api_backtest_run():
         )
         result["symbol"] = symbol
         result["interval"] = interval
-        return jsonify(result)
+        return jsonify(_sanitize_for_json(result))
     except Exception as ex:
         logger.warning(f"Backtest run failed for {symbol}/{strategy_id}: {ex}")
         return jsonify({"error": str(ex)}), 400
@@ -109,8 +126,8 @@ def api_backtest_compare():
     valid.sort(key=lambda r: r["metrics"].get("total_return_pct", -1e9), reverse=True)
     ranked_ids = [r["strategy_id"] for r in valid]
 
-    return jsonify({
+    return jsonify(_sanitize_for_json({
         "symbol": symbol, "interval": interval,
         "results": results,
         "ranking_by_return": ranked_ids,
-    })
+    }))
