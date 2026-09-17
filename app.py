@@ -10,20 +10,17 @@ from dashboard.routes import dashboard_bp
 from mirrorfish.routes import mirrorfish_bp
 from core.analytics_routes import analytics_bp
 from research.backtest_routes import backtest_bp
-from research.xauusd_v3_routes import xauusd_v3_bp          # <-- ADD THIS
-from research.xauusd_fib_mtf_routes import xauusd_fib_mtf_bp     # <-- ADD THIS
+from research.xauusd_v3_routes import xauusd_v3_bp
+from research.xauusd_fib_mtf_routes import xauusd_fib_mtf_bp
+from research.xauusd_confluence_v4_routes import xauusd_confluence_v4_bp
 from core.scheduler import init_scheduler
 import os
 
 logger = get_logger(__name__)
 
 def create_app():
-    app = Flask(__name__,
-                template_folder="dashboard/templates",
-                static_folder="dashboard/static")
+    app = Flask(__name__, template_folder="dashboard/templates", static_folder="dashboard/static")
     app.secret_key = os.environ.get("APP_SECRET_KEY", "change-me-in-production")
-    # NOTE: Do NOT set SESSION_TYPE="filesystem" without flask-session installed.
-    # Flask's default cookie-based sessions work fine and don't need flask-session.
     init_db()
     app.register_blueprint(webhook_bp)
     app.register_blueprint(dashboard_bp)
@@ -32,6 +29,7 @@ def create_app():
     app.register_blueprint(backtest_bp)
     app.register_blueprint(xauusd_v3_bp)
     app.register_blueprint(xauusd_fib_mtf_bp)
+    app.register_blueprint(xauusd_confluence_v4_bp)
     init_scheduler()
     logger.info("OptiTrade AI v8 app created.")
     return app
