@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>XAUUSD 5m/15m Fibonacci Strategy</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --border: #30363d;
+    --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --red: #f85149; --gold: #d29922;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text); font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+    margin: 0; padding: 24px; line-height: 1.5;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .sec {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px; margin-bottom: 18px;
+  }
+  .sec h2 { font-size: 15px; margin: 0 0 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; align-items: center; }
+  input[type=text], input[type=number], select {
+    background: #0d1117; border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 7px 10px; font-size: 13px;
+  }
+  label.chk {
+    display: flex; align-items: center; gap: 6px; font-size: 12px;
+    background: #0d1117; border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 10px; cursor: pointer;
+  }
+  .grp-title { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 14px 0 6px; }
+  button.run {
+    background: var(--accent); color: #04101f; border: none; border-radius: 8px;
+    padding: 10px 22px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  button.run.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  button.run:disabled { opacity: .5; cursor: default; }
+  #status, #opt-status { font-size: 12px; color: var(--muted); margin-left: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--border); }
+  th:first-child, td:first-child { text-align: left; }
+  .funnel-row { display: flex; justify-content: space-between; font-size: 12px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+  .funnel-row .drop { color: var(--red); }
+  img.chart { width: 100%; border-radius: 8px; margin-top: 8px; border: 1px solid var(--border); }
+  .warn { background: #3a2a0d; border: 1px solid var(--gold); color: var(--gold); border-radius: 8px; padding: 10px 14px; font-size: 12px; margin-bottom: 14px; }
+  .error { background: #3a0d0d; border: 1px solid var(--red); color: var(--red); border-radius: 8px; padding: 10px 14px; font-size: 12px; }
+  .note { font-size: 11px; color: var(--muted); margin-top: 6px; }
+</style>
+</head>
+<body>
+
+<h1>XAUUSD 5m/15m Fibonacci + Liquidity + Structure Strategy</h1>
+<div class="sub">15m bias/impulse/Fibonacci location -> 5m liquidity sweep + BOS confirmation. Standalone page, independent of the main dashboard.</div>
+
+<div class="warn">
+  This strategy is intentionally selective - multiple independent confluences across two timeframes must align.
+  Yahoo Finance's free 5-minute history is capped at ~60 days, which is <b>not enough data</b> to trust results
+  from this specific strategy. For real evaluation, use broker-exported 5-minute history spanning 6-12+ months.
+  Treat anything you see here on a short data window as a pipeline check, not a performance claim.
+</div>
+
+<div class="sec">
+  <h2>Data</h2>
+  <div class="row">
+    <input type="number" id="mtf-nbars" value="30000" placeholder="5m bars to load" style="max-width:150px">
+    <label class="chk"><input type="checkbox" id="mtf-uselive" checked> Use live data (yfinance)</label>
+  </div>
+
+  <div class="grp-title">Impulse Quality (15m)</div>
+  <div class="row">
+    <input type="number" id="mtf-min-eff" value="0.35" step="0.05" placeholder="Min Efficiency" style="max-width:140px">
+    <input type="number" id="mtf-min-atr" value="3.0" step="0.5" placeholder="Min Size (x ATR)" style="max-width:140px">
+    <input type="number" id="mtf-pivot-l15" value="3" placeholder="15m Pivot Left" style="max-width:140px">
+    <input type="number" id="mtf-pivot-r15" value="3" placeholder="15m Pivot Right" style="max-width:140px">
+  </div>
+
+  <div class="grp-title">Fibonacci & Confluence</div>
+  <div class="row">
+    <input type="number" id="mtf-zone-tol" value="0.3" step="0.1" placeholder="Zone Tolerance (x ATR)" style="max-width:170px">
+    <input type="number" id="mtf-min-conf" value="2" min="1" max="3" placeholder="Min Confluences (of 3)" style="max-width:180px">
+  </div>
+
+  <div class="grp-title">5m Confirmation</div>
+  <div class="row">
+    <input type="number" id="mtf-sweep-lookback" value="20" placeholder="Sweep Lookback (bars)" style="max-width:170px">
+    <input type="number" id="mtf-sweep-window" value="6" placeholder="Sweep-to-BOS Window" style="max-width:170px">
+    <input type="number" id="mtf-sl-buffer" value="0.15" step="0.05" placeholder="SL Buffer (x ATR)" style="max-width:150px">
+    <input type="number" id="mtf-min-spacing" value="6" placeholder="Min Spacing (bars)" style="max-width:150px">
+  </div>
+
+  <div class="grp-title">Risk</div>
+  <div class="row">
+    <input type="number" id="mtf-risk-pct" value="0.5" step="0.01" placeholder="Risk % / trade" style="max-width:150px">
+    <label class="chk"><input type="checkbox" id="mtf-allow-longs" checked> Allow Longs</label>
+    <label class="chk"><input type="checkbox" id="mtf-allow-shorts" checked> Allow Shorts</label>
+  </div>
+
+  <div class="row">
+    <button class="run" id="run-btn" onclick="runBacktest()">Run Backtest</button>
+    <button class="run secondary" id="opt-btn" onclick="runOptimize()">Auto-Optimize (grid search)</button>
+    <span id="status"></span>
+  </div>
+</div>
+
+<div class="sec" id="funnel-sec" style="display:none">
+  <h2>Signal Funnel</h2>
+  <div id="funnel-body"></div>
+</div>
+
+<div class="sec" id="results-sec" style="display:none">
+  <h2>Results</h2>
+  <table id="metrics-table"></table>
+</div>
+
+<div class="sec" id="charts-sec" style="display:none">
+  <h2>Charts</h2>
+  <img class="chart" id="img-overview" style="display:none">
+  <img class="chart" id="img-trade-detail" style="display:none">
+  <img class="chart" id="img-funnel" style="display:none">
+</div>
+
+<div class="sec" id="opt-sec" style="display:none">
+  <h2>Auto-Optimizer Results</h2>
+  <div class="row">
+    <input type="number" id="mtf-opt-nbars" value="60000" placeholder="Bars for optimizer" style="max-width:170px">
+    <input type="number" id="mtf-opt-min-trades" value="10" placeholder="Min trades to trust" style="max-width:170px">
+  </div>
+  <div class="note">Grid capped at 2 values per dimension (max 32 combos) to keep a single web request reasonably fast. For a full research-grade sweep, run main.py locally.</div>
+  <span id="opt-status"></span>
+  <table id="opt-table" style="margin-top:10px"></table>
+</div>
+
+<script>
+function byId(id) {
+  const el = document.getElementById(id);
+  if (!el) console.error('xauusd-fib-mtf: element not found:', id);
+  return el;
+}
+
+function buildMtfPayload() {
+  return {
+    min_impulse_efficiency: parseFloat(byId('mtf-min-eff').value),
+    min_impulse_atr_mult: parseFloat(byId('mtf-min-atr').value),
+    pivot_left_15m: parseInt(byId('mtf-pivot-l15').value),
+    pivot_right_15m: parseInt(byId('mtf-pivot-r15').value),
+    zone_tolerance_atr: parseFloat(byId('mtf-zone-tol').value),
+    min_confluences: parseInt(byId('mtf-min-conf').value),
+    sweep_lookback_5m: parseInt(byId('mtf-sweep-lookback').value),
+    sweep_window_5m: parseInt(byId('mtf-sweep-window').value),
+    sl_buffer_atr_mult: parseFloat(byId('mtf-sl-buffer').value),
+    min_spacing_5m: parseInt(byId('mtf-min-spacing').value),
+    allow_longs: byId('mtf-allow-longs').checked,
+    allow_shorts: byId('mtf-allow-shorts').checked,
+  };
+}
+
+async function runBacktest() {
+  const btn = byId('run-btn');
+  const status = byId('status');
+  btn.disabled = true;
+  status.textContent = 'Running... (first run after server restart may take longer - numba JIT compiling)';
+  byId('funnel-sec').style.display = 'none';
+  byId('results-sec').style.display = 'none';
+  byId('charts-sec').style.display = 'none';
+
+  const payload = {
+    n_bars: parseInt(byId('mtf-nbars').value) || 30000,
+    use_live: byId('mtf-uselive').checked,
+    mtf: buildMtfPayload(),
+    engine: { risk_pct: parseFloat(byId('mtf-risk-pct').value) },
+  };
+
+  try {
+    const r = await fetch('/api/xauusd-fib-mtf/run', {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
+    });
+    const data = await r.json();
+    if (!r.ok || data.error) throw new Error(data.error || `HTTP ${r.status}`);
+
+    renderFunnel(data.funnel);
+    renderMetrics(data.metrics, data.used_numba);
+    renderCharts(data.charts);
+    status.textContent = 'Done.';
+  } catch (e) {
+    status.innerHTML = `<span style="color:var(--red)">Error: ${e.message}</span>`;
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderFunnel(funnel) {
+  const sec = byId('funnel-sec');
+  const body = byId('funnel-body');
+  body.innerHTML = funnel.map(({stage, count}) =>
+    `<div class="funnel-row"><span>${stage}</span><span>${count}</span></div>`
+  ).join('');
+  const last = funnel[funnel.length - 1];
+  if (last && last.count === 0) {
+    body.innerHTML += `<div class="error" style="margin-top:10px">Zero final signals - find the stage above where the count first hit 0 and relax that setting.</div>`;
+  }
+  sec.style.display = '';
+}
+
+function renderMetrics(m, usedNumba) {
+  const table = byId('metrics-table');
+  const rows = [
+    ['Trades', m.num_trades], ['Win Rate %', m.win_rate], ['Profit Factor', m.profit_factor],
+    ['Expectancy (R)', m.expectancy_R], ['Total R', m.total_R],
+    ['Max Drawdown %', m.max_drawdown_pct], ['Total Return %', m.total_return_pct],
+    ['Final Equity', m.final_equity], ['Numba accelerated', usedNumba ? 'yes' : 'no (fallback)'],
+  ];
+  table.innerHTML = rows.map(([k, v]) => `<tr><td>${k}</td><td>${v ?? 'n/a'}</td></tr>`).join('');
+  if (m.num_trades < 20) {
+    table.innerHTML += `<tr><td colspan="2" style="color:var(--gold);text-align:center">Fewer than 20 trades - not enough to trust these numbers.</td></tr>`;
+  }
+  byId('results-sec').style.display = '';
+}
+
+function renderCharts(charts) {
+  const map = { overview: 'img-overview', trade_detail: 'img-trade-detail', funnel: 'img-funnel' };
+  let any = false;
+  for (const [key, imgId] of Object.entries(map)) {
+    const img = byId(imgId);
+    if (charts[key]) { img.src = charts[key]; img.style.display = ''; any = true; }
+    else { img.style.display = 'none'; }
+  }
+  if (any) byId('charts-sec').style.display = '';
+}
+
+async function runOptimize() {
+  const btn = byId('opt-btn');
+  const status = byId('opt-status');
+  btn.disabled = true;
+  status.textContent = 'Running grid search... this can take a minute or more.';
+  byId('opt-sec').style.display = '';
+  byId('opt-table').innerHTML = '';
+
+  const payload = {
+    n_bars: parseInt(byId('mtf-opt-nbars').value) || 60000,
+    use_live: byId('mtf-uselive').checked,
+    min_trades: parseInt(byId('mtf-opt-min-trades').value) || 10,
+    mtf: buildMtfPayload(),
+    engine: { risk_pct: parseFloat(byId('mtf-risk-pct').value) },
+  };
+
+  try {
+    const r = await fetch('/api/xauusd-fib-mtf/optimize', {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
+    });
+    const data = await r.json();
+    if (!r.ok || data.error) throw new Error(data.error || `HTTP ${r.status}`);
+
+    if (!data.results.length) {
+      status.textContent = 'No combination produced a valid result at this trade-count threshold.';
+      return;
+    }
+    const cols = Object.keys(data.results[0]);
+    const table = byId('opt-table');
+    table.innerHTML = '<thead><tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr></thead>' +
+      '<tbody>' + data.results.map(row =>
+        '<tr>' + cols.map(c => `<td>${row[c] ?? ''}</td>`).join('') + '</tr>'
+      ).join('') + '</tbody>';
+    status.textContent = `Tried ${data.n_combos_tried} combinations, showing top ${data.results.length} by score.`;
+  } catch (e) {
+    status.innerHTML = `<span style="color:var(--red)">Error: ${e.message}</span>`;
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+</script>
+
+</body>
+</html>
