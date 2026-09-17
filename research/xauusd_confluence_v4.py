@@ -78,14 +78,82 @@ def resample(df, rule):
     return df.resample(rule, label='right', closed='right').agg({'Open':'first','High':'max','Low':'min','Close':'last','Volume':'sum'}).dropna()
 
 
+def _load_yahoo_chart_5m(symbol='GC=F', range_='60d'):
+    """Lightweight Yahoo chart-API fallback for cloud hosts where yfinance is blocked/rate-limited."""
+    import requests
+    from urllib.parse import quote
+
+    headers = {
+        'User-Agent': (
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) '
+            'Chrome/131.0.0.0 Safari/537.36'
+        ),
+        'Accept': 'application/json,text/plain,*/*',
+    }
+    last_error = None
+    for host in ('query2.finance.yahoo.com', 'query1.finance.yahoo.com'):
+        url = f'https://{host}/v8/finance/chart/{quote(symbol, safe="")}'
+        try:
+            r = requests.get(
+                url,
+                params={'range': range_, 'interval': '5m', 'events': 'history'},
+                headers=headers,
+                timeout=25,
+            )
+            r.raise_for_status()
+            payload = r.json()
+            result = (payload.get('chart') or {}).get('result') or []
+            if not result:
+                err = (payload.get('chart') or {}).get('error')
+                raise RuntimeError(f'Yahoo chart returned no result: {err}')
+            result = result[0]
+            ts = result.get('timestamp') or []
+            quote_data = ((result.get('indicators') or {}).get('quote') or [{}])[0]
+            frame = pd.DataFrame({
+                'Open': quote_data.get('open', []),
+                'High': quote_data.get('high', []),
+                'Low': quote_data.get('low', []),
+                'Close': quote_data.get('close', []),
+                'Volume': quote_data.get('volume', []),
+            }, index=pd.to_datetime(ts, unit='s', utc=True))
+            frame = frame.dropna(subset=['Open','High','Low','Close'])
+            if frame.empty:
+                raise RuntimeError('Yahoo chart returned an empty 5m dataset.')
+            return frame
+        except Exception as exc:
+            last_error = exc
+    raise RuntimeError(f'Yahoo 5m chart API failed: {last_error}')
+
+
 def load_data(use_live=True, n_bars=30000, symbol='GC=F'):
     if not use_live:
         raise ValueError('V4 live backtest requires market data; use_live=false is intentionally disabled.')
-    import yfinance as yf
-    raw = yf.download(symbol, period='60d', interval='5m', progress=False, auto_adjust=False)
+
+    raw = None
+    yf_error = None
+    try:
+        import yfinance as yf
+        raw = yf.download(symbol, period='60d', interval='5m', progress=False, auto_adjust=False)
+        if raw is not None and not raw.empty:
+            if isinstance(raw.columns, pd.MultiIndex):
+                raw.columns = raw.columns.get_level_values(0)
+            raw = raw[['Open','High','Low','Close','Volume']].dropna()
+    except Exception as exc:
+        yf_error = exc
+
+    # Render/cloud fallback: yfinance can receive an HTML/rate-limit response from
+    # Yahoo and surface it as JSONDecodeError. The lightweight chart endpoint avoids
+    # yfinance's cookie/crumb path and is used only when the primary fetch fails.
     if raw is None or raw.empty:
-        raise RuntimeError('No 5m data returned by yfinance.')
-    if isinstance(raw.columns, pd.MultiIndex): raw.columns = raw.columns.get_level_values(0)
+        try:
+            raw = _load_yahoo_chart_5m(symbol, '60d')
+        except Exception as chart_error:
+            raise RuntimeError(
+                f'No 5m market data for {symbol}. '
+                f'yfinance={yf_error}; chart_api={chart_error}'
+            ) from chart_error
+
     raw = raw[['Open','High','Low','Close','Volume']].dropna().tail(n_bars)
     raw.index = pd.to_datetime(raw.index)
     return {'m5':raw, 'm15':resample(raw,'15min'), 'h1':resample(raw,'1h'), 'h4':resample(raw,'4h')}
