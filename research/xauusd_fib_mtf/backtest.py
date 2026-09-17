@@ -12,11 +12,16 @@ from .engine import EngineConfig, simulate_trades
 
 def run_backtest(use_live: bool = True, n_bars: int = 20000,
                   mtf_cfg: MTFConfig = None, engine_cfg: EngineConfig = None,
-                  use_numba: bool = True, data: dict = None) -> dict:
+                  use_numba: bool = True, data: dict = None,
+                  data_source: str = "yfinance", lookback_days: int = None,
+                  alpaca_symbol: str = "GLD") -> dict:
     mtf_cfg = mtf_cfg or MTFConfig()
     engine_cfg = engine_cfg or EngineConfig()
 
-    data = data if data is not None else get_mtf_data(use_live=use_live, n_bars=n_bars)
+    data = data if data is not None else get_mtf_data(
+        use_live=use_live, n_bars=n_bars, data_source=data_source,
+        lookback_days=lookback_days, alpaca_symbol=alpaca_symbol,
+    )
     sig_result = build_mtf_signals(data, mtf_cfg)
     engine_result = simulate_trades(sig_result["df5"], engine_cfg, use_numba=use_numba)
 
