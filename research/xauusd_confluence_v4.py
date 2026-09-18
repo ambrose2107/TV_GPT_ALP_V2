@@ -321,6 +321,7 @@ def build_signals(data, cfg=V4Config()):
             valid=score>=cfg.min_score and risk>0 and rr>=cfg.min_rr
             if valid and i-last_trade>=cfg.cooldown_bars:
                 out.iloc[i,out.columns.get_loc('signal')]=-1; out.iloc[i,out.columns.get_loc('score')]=score; diag['signals'] += 1; out.iloc[i,out.columns.get_loc('sl')]=sl; out.iloc[i,out.columns.get_loc('tp1')]=tp1; out.iloc[i,out.columns.get_loc('tp2')]=tp2; out.iloc[i,out.columns.get_loc('tp3')]=tp3; out.iloc[i,out.columns.get_loc('reason')]=' | '.join(reasons); last_trade=i
+    out.attrs['signal_diag'] = diag
     return out
 
 
