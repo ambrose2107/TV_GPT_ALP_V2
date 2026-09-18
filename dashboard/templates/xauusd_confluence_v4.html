@@ -7,7 +7,7 @@ body{font-family:Arial,sans-serif;background:#0d1117;color:#c9d1d9;padding:24px;
 .box{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:18px;margin:14px 0}
 input,select{background:#0d1117;color:#c9d1d9;border:1px solid #30363d;padding:8px;width:90px;margin:4px}
 button{padding:10px 18px;font-weight:bold;cursor:pointer}
-table{width:100%;border-collapse:collapse}td,th{padding:7px;border-bottom:1px solid #30363d;text-align:right}
+table{width:100%;border-collapse:collapse}td,th{padding:7px;border-bottom:1px solid #30363d;text-align:right}th{position:sticky;top:0;background:#161b22;z-index:2;white-space:nowrap}
 td:first-child,th:first-child{text-align:left}.muted{color:#8b949e}.sig{font-weight:bold}
 #status{display:inline-block;margin-left:12px}.error{color:#ff7b72;white-space:pre-wrap;font-family:monospace;background:#210b0b;padding:12px;border-radius:6px;margin-top:12px}
 .ok{color:#7ee787}.warn{color:#d29922}
@@ -25,7 +25,7 @@ td:first-child,th:first-child{text-align:left}.muted{color:#8b949e}.sig{font-wei
 <label>Min RR <input id="rr" type="number" step="0.1" value="1.5"></label>
 <label>Risk % <input id="risk" type="number" step="0.05" value="0.5"></label>\n<label>Min optimizer trades <input id="minTrades" type="number" min="2" value="5"></label>
 <br>
-<button id="runButton" type="submit">Run Alpaca 5m Backtest</button> <button id="optButton" type="button">Optimize Profit Factor</button>
+<button id="runButton" type="submit">Run Alpaca 5m Backtest</button> <button id="optButton" type="button">Optimize Profit Factor</button> <button id="applyButton" type="button" disabled>Apply Best + Backtest</button>
 <span id="status" class="muted">JavaScript ready — press Run.</span>
 </form>
 <div class="muted">US-market estimate: 78 five-minute bars per trading day. Start small (1, 2, 5, 10 days) and increase until the worker fails.</div>
@@ -33,11 +33,11 @@ td:first-child,th:first-child{text-align:left}.muted{color:#8b949e}.sig{font-wei
 </div>
 <div class="box"><h3>Signal Diagnostics</h3><table id="diag"></table><div class="muted">Set Min RR to 0 and Min score to 2 for a pure signal-generation test.</div></div>
 <div class="box"><h3>Dataset</h3><table id="dataset"></table></div>
-<div class="box"><h3>Metrics</h3><table id="metrics"></table></div>
-<div class="box"><h3>Optimizer Results</h3><table id="optimizer"></table></div><div class="box"><h3>Recent Trades</h3><div style="max-height:420px;overflow:auto"><table id="trades"></table></div></div>
+<div class="box"><h3>Metrics</h3><table id="metrics"></table><div id="comparison" style="margin-top:12px"></div></div>
+<div class="box"><h3>Optimizer Results</h3><div id="optimizerInfo" class="muted"></div><div style="max-height:420px;overflow:auto"><table id="optimizer"></table></div></div><div class="box"><h3>Recent Trades</h3><div style="max-height:420px;overflow:auto"><table id="trades"></table></div></div>
 <script>
 (function(){
-  const $=id=>document.getElementById(id);
+  const $=id=>document.getElementById(id);\n  let lastBest=null,lastBaseline=null;
   function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
   function syncBars(){const d=Math.max(1,Number($('days').value)||1);$('bars').value=Math.min(60000,Math.max(100,Math.round(d*78)));}
   async function runRequest(mode){
@@ -69,10 +69,13 @@ td:first-child,th:first-child{text-align:left}.muted{color:#8b949e}.sig{font-wei
             rows.map(x=>'<tr>'+Object.keys(x).filter(k=>k!=='eligible').map(k=>'<td>'+esc(fmt(k,x[k]))+'</td>').join('')+'</tr>').join('')
           : '<tr><td>No optimizer results</td></tr>';
         const o=d.optimizer||{};
-        status.innerHTML='<span class="ok"> Optimization done.</span> Tested '+esc(o.tested)+' combinations; '+esc(o.eligible)+' passed train/test trade filters. Split: '+esc(o.train_pct)+'% / '+esc(o.test_pct)+'%.';
+        lastBest=d.best_params||null;
+        $('applyButton').disabled=!lastBest;
+        $('optimizerInfo').innerHTML='Training = '+esc(o.train_pct)+'%, validation = '+esc(o.test_pct)+'%. <b>Optimizer parameters are NOT automatically used for the strategy.</b> Click <b>Apply Best + Backtest</b> to run the selected parameters and compare before vs after. Saved: '+esc((d.storage_files||{}).optimizer_csv||'');
+        status.innerHTML='<span class="ok"> Optimization done.</span> Tested '+esc(o.tested)+' combinations; '+esc(o.eligible)+' passed train/test trade filters.';
         return;
       }
-      const dg=d.signal_diag||{};
+      lastBaseline=d.metrics||lastBaseline;\n      const dg=d.signal_diag||{};
       $('diag').innerHTML=Object.entries(dg).map(([k,v])=>'<tr><td>'+esc(k)+'</td><td>'+esc(v)+'</td></tr>').join('');
       $('dataset').innerHTML=[
         ['Symbol',d.symbol],['Source',d.data_source],['Requested bars',requestedBars],['Received bars',d.bars],
@@ -82,6 +85,7 @@ td:first-child,th:first-child{text-align:left}.muted{color:#8b949e}.sig{font-wei
         const vv=(typeof v==='number'&&isFinite(v))?Number(v).toFixed(2):esc(v);
         return '<tr><td>'+esc(k)+'</td><td>'+esc(vv)+'</td></tr>';
       }).join('');
+      $('comparison').innerHTML='Saved files: '+Object.values(d.storage_files||{}).map(x=>'<code>'+esc(x)+'</code>').join(' | ');
       const trades=d.trades||[];
       $('trades').innerHTML=trades.length
         ?'<tr>'+Object.keys(trades[0]).map(k=>'<th>'+esc(k)+'</th>').join('')+'</tr>'+trades.map(x=>'<tr>'+Object.entries(x).map(([k,v])=>{
@@ -98,6 +102,35 @@ td:first-child,th:first-child{text-align:left}.muted{color:#8b949e}.sig{font-wei
   $('days').addEventListener('input',syncBars);
   $('runForm').addEventListener('submit',function(e){e.preventDefault();runRequest('backtest');});
   $('optButton').addEventListener('click',function(){runRequest('optimize');});
+  $('applyButton').addEventListener('click',async function(){
+    if(!lastBest)return;
+    $('score').value=lastBest.min_score;
+    $('rr').value=lastBest.min_rr;
+    $('status').textContent=' Applying optimizer parameters and running backtest...';
+    const originalRisk=$('risk').value;
+    const button=$('applyButton');button.disabled=true;button.textContent='Applying...';
+    try{
+      const requestedBars=Math.min(60000,Math.max(100,Number($('bars').value)||1000));
+      const response=await fetch('/api/xauusd-confluence-v4/run',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        symbol:$('symbol').value.trim().toUpperCase(),data_source:'alpaca',n_bars:requestedBars,mode:'backtest',
+        config:{min_score:Number(lastBest.min_score),min_rr:Number(lastBest.min_rr),sl_atr:Number(lastBest.sl_atr),cooldown_bars:Number(lastBest.cooldown_bars),risk_pct:Number(originalRisk)}
+      })});
+      const d=await response.json();
+      if(!response.ok)throw new Error(d.error||'Backtest failed');
+      const before=lastBaseline||{};
+      const after=d.metrics||{};
+      const row=(label,a,b,dec=2)=>'<tr><td>'+esc(label)+'</td><td>'+esc(typeof a==='number'?a.toFixed(dec):a??'—')+'</td><td>'+esc(typeof b==='number'?b.toFixed(dec):b??'—')+'</td></tr>';
+      $('comparison').innerHTML='<h4>Before vs Optimized</h4><table><tr><th>Metric</th><th>Before</th><th>Optimized</th></tr>'+
+        row('Profit factor',before.profit_factor,after.profit_factor)+row('Total R',before.total_R,after.total_R)+
+        row('Expectancy R',before.expectancy_R,after.expectancy_R)+row('Win rate %',before.win_rate,after.win_rate)+
+        row('Max drawdown %',before.max_drawdown_pct,after.max_drawdown_pct)+row('Return %',before.total_return_pct,after.total_return_pct)+
+        row('Trades',before.num_trades,after.num_trades,0)+'</table>'+
+        '<div class="muted">Applied: score '+esc(lastBest.min_score)+', RR '+esc(lastBest.min_rr)+', SL ATR '+esc(lastBest.sl_atr)+', cooldown '+esc(lastBest.cooldown_bars)+'. Saved: '+esc((d.storage_files||{}).json||'')+'</div>';
+      lastBaseline=after;
+      $('status').innerHTML='<span class="ok"> Optimized backtest complete.</span> Parameters were applied to the actual strategy backtest.';
+    }catch(e){$('status').innerHTML='<span class="warn"> Apply failed: '+esc(e.message)+'</span>';}
+    finally{button.disabled=false;button.textContent='Apply Best + Backtest';}
+  });
   syncBars();
 })();
 </script>
