@@ -113,6 +113,15 @@ def _run_impl():
     try:
         result = run_backtest(use_live=use_live, n_bars=n_bars, mtf_cfg=mtf_cfg, engine_cfg=engine_cfg,
                                data_source=data_source, lookback_days=lookback_days, alpaca_symbol=alpaca_symbol)
+    except TypeError as ex:
+        if "unexpected keyword argument" in str(ex):
+            msg = (f"Version mismatch: {ex}. This usually means only some files from the "
+                   f"latest update were deployed - research/xauusd_fib_mtf/backtest.py, "
+                   f"data_loader.py, and xauusd_fib_mtf_routes.py all need to be replaced "
+                   f"together, not individually.")
+            logger.error(f"xauusd_fib_mtf VERSION MISMATCH: {msg}")
+            return jsonify({"error": msg}), 500
+        raise
     except Exception as ex:
         logger.warning(f"xauusd_fib_mtf backtest failed: {ex}\n{traceback.format_exc()}")
         return jsonify({"error": str(ex)}), 400
@@ -198,6 +207,15 @@ def _optimize_impl():
         data = get_mtf_data(use_live=use_live, n_bars=n_bars, data_source=data_source,
                              lookback_days=lookback_days, alpaca_symbol=alpaca_symbol)
         results_df = grid_search(data, combos, base_cfg, engine_cfg, min_trades=min_trades)
+    except TypeError as ex:
+        if "unexpected keyword argument" in str(ex):
+            msg = (f"Version mismatch: {ex}. This usually means only some files from the "
+                   f"latest update were deployed - research/xauusd_fib_mtf/backtest.py, "
+                   f"data_loader.py, and xauusd_fib_mtf_routes.py all need to be replaced "
+                   f"together, not individually.")
+            logger.error(f"xauusd_fib_mtf VERSION MISMATCH: {msg}")
+            return jsonify({"error": msg}), 500
+        raise
     except Exception as ex:
         logger.warning(f"xauusd_fib_mtf optimize failed: {ex}\n{traceback.format_exc()}")
         return jsonify({"error": str(ex)}), 400
