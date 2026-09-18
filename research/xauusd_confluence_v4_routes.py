@@ -1,6 +1,8 @@
 from flask import Blueprint, render_template, request, jsonify, session
 import logging
 import time
+import math
+import numpy as np
 from research.xauusd_confluence_v4 import V4Config, load_data, backtest
 
 logger = logging.getLogger("xauusd_confluence_v4")
@@ -11,6 +13,18 @@ def _auth():
     if not session.get('logged_in'):
         return jsonify({'error':'Unauthorized'}), 401
     return None
+
+def _json_safe(value):
+    """Convert numpy/non-finite values to standard JSON-safe Python values."""
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, np.generic):
+        return _json_safe(value.item())
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    return value
 
 @xauusd_confluence_v4_bp.route('/xauusd-confluence-v4')
 def page():
@@ -32,8 +46,8 @@ def run():
         symbol=str(body.get('symbol','GLD')).upper().strip()
         data_source=str(body.get('data_source','alpaca')).lower().strip()
         n_bars=int(body.get('n_bars',30000))
-        logger.info('[RUN] start symbol=%s source=%s n_bars=%d min_score=%s risk_pct=%s',
-                    symbol, data_source, n_bars, cfg.min_score, cfg.risk_pct)
+        logger.info('[RUN] start symbol=%s source=%s n_bars=%d min_score=%s min_rr=%s risk_pct=%s',
+                    symbol, data_source, n_bars, cfg.min_score, cfg.min_rr, cfg.risk_pct)
 
         stage='load_data'
         t=time.perf_counter()
@@ -50,14 +64,28 @@ def run():
         stage='serialize'
         trades=result['trades'].tail(200).copy()
         for col in ('entry_time','exit_time'):
-            if col in trades: trades[col]=trades[col].astype(str)
-        signals=result['signals'].tail(1000)[['signal','score','sl','tp1','tp2','tp3','reason']].reset_index().rename(columns={'index':'time'})
-        response={'symbol':symbol,'data_source':data_source,'bars':len(data['m5']),
-                  'data_start':str(data['m5'].index.min()),'data_end':str(data['m5'].index.max()),
-                  'metrics':result['metrics'],'trades':trades.to_dict('records'),
-                  'signals':signals.to_dict('records'),'signal_diag':result['signals'].attrs.get('signal_diag',{})}
-        logger.info('[RUN] success total_elapsed=%.2fs', time.perf_counter()-started)
-        return jsonify(response)
+            if col in trades:
+                trades[col]=trades[col].astype(str)
+
+        signals=result['signals'].tail(1000)[
+            ['signal','score','sl','tp1','tp2','tp3','reason']
+        ].reset_index().rename(columns={'index':'time'})
+
+        response={
+            'symbol':symbol,
+            'data_source':data_source,
+            'bars':len(data['m5']),
+            'data_start':str(data['m5'].index.min()),
+            'data_end':str(data['m5'].index.max()),
+            'metrics':result['metrics'],
+            'trades':trades.to_dict('records'),
+            'signals':signals.to_dict('records'),
+            'signal_diag':result['signals'].attrs.get('signal_diag',{})
+        }
+        safe_response=_json_safe(response)
+        logger.info('[RUN] success total_elapsed=%.2fs payload_trades=%d payload_signals=%d',
+                    time.perf_counter()-started,len(safe_response['trades']),len(safe_response['signals']))
+        return jsonify(safe_response)
     except Exception as ex:
         logger.exception('[RUN] failed stage=%s elapsed=%.2fs symbol=%s source=%s',
                          stage, time.perf_counter()-started,
