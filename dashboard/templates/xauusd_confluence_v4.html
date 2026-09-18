@@ -19,7 +19,7 @@ td:first-child,th:first-child{text-align:left}.muted{color:#8b949e}.sig{font-wei
 <h3>Run / Lookback Test</h3>
 <label>Symbol <input id="symbol" value="GLD"></label>
 <label>Lookback days <input id="days" type="number" min="1" max="770" value="5"></label>
-<label>5m bars <input id="bars" type="number" min="1000" max="60000" value="390"></label>
+<label>5m bars <input id="bars" type="number" min="100" max="60000" value="390"></label>
 <label>Min score <input id="score" type="number" value="12"></label>
 <label>Risk % <input id="risk" type="number" step="0.05" value="0.5"></label>
 <br>
@@ -38,7 +38,7 @@ const $=id=>document.getElementById(id);
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function syncBars(){
   const d=Math.max(1,+$('days').value||1);
-  $('bars').value=Math.min(60000,Math.max(1000,Math.round(d*78)));
+  $('bars').value=Math.min(60000,Math.max(100,Math.round(d*78)));
 }
 $('days').addEventListener('input',syncBars);
 
@@ -46,7 +46,7 @@ async function run(){
   $('errorBox').innerHTML='';
   $('status').textContent=' Loading Alpaca data...';
   const started=performance.now();
-  const requestedBars=Math.min(60000,Math.max(1000,+$('bars').value||1000));
+  const requestedBars=Math.min(60000,Math.max(100,+$('bars').value||1000));
   try{
     const r=await fetch('/api/xauusd-confluence-v4/run',{
       method:'POST',
