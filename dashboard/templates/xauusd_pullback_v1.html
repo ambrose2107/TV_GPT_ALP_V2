@@ -1,0 +1,35 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gold Pullback Breakout V1</title>
+<style>
+body{font-family:Arial;background:#0d1117;color:#c9d1d9;padding:24px;max-width:1100px;margin:auto}.box{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:18px;margin:14px 0}
+input{background:#0d1117;color:#c9d1d9;border:1px solid #30363d;padding:8px;width:80px;margin:4px}button{padding:10px 16px;font-weight:bold}
+table{width:100%;border-collapse:collapse}th{position:sticky;top:0;background:#161b22}td,th{padding:7px;border-bottom:1px solid #30363d;text-align:right;white-space:nowrap}.muted{color:#8b949e}.ok{color:#7ee787}
+</style></head><body>
+<h1>Gold Pullback Breakout V1</h1>
+<p class="muted">Independent strategy: EMA trend → 1–3 candle pullback → confirmed 5m breakout → ATR stop/target. This is a separate strategy from V4.</p>
+<div class="box"><label>Symbol <input id="symbol" value="GLD"></label><label>Days <input id="days" type="number" value="20"></label><label>Bars <input id="bars" type="number" value="1560"></label><label>Risk % <input id="risk" type="number" step=".05" value=".5"></label><label>Min trades <input id="mintrades" type="number" value="20"></label>
+<button id="run">Run Backtest</button> <button id="opt">Optimize</button><span id="status" class="muted"></span></div>
+<div class="box"><h3>Metrics</h3><table id="metrics"></table></div>
+<div class="box"><h3>Optimizer</h3><div style="max-height:420px;overflow:auto"><table id="optimizer"></table></div></div>
+<div class="box"><h3>Trades</h3><div style="max-height:420px;overflow:auto"><table id="trades"></table></div></div>
+<script>
+const $=x=>document.getElementById(x),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+$('days').oninput=()=>{$('bars').value=Math.max(100,Math.round(Number($('days').value||1)*78));};
+async function req(mode){
+ const s=$('status');s.textContent=' Running...';
+ const body={symbol:$('symbol').value.toUpperCase(),n_bars:Number($('bars').value),mode,min_trades:Number($('mintrades').value),config:{risk_pct:Number($('risk').value)}};
+ const r=await fetch('/api/xauusd-pullback-v1/run',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+ const d=await r.json();if(!r.ok)throw new Error(d.error||'failed');
+ if(mode==='optimize'){
+  const rows=d.optimizer.results||[]; $('optimizer').innerHTML=rows.length?'<tr>'+Object.keys(rows[0]).map(k=>'<th>'+esc(k)+'</th>').join('')+'</tr>'+rows.map(x=>'<tr>'+Object.values(x).map(v=>'<td>'+esc(typeof v==='number'?Number(v).toFixed(2):v)+'</td>').join('')+'</tr>').join(''):'<tr><td>No results</td></tr>';
+  s.textContent=' Optimization complete: '+d.optimizer.tested+' combinations.';
+ }else{
+  $('metrics').innerHTML=Object.entries(d.metrics||{}).map(([k,v])=>'<tr><td>'+esc(k)+'</td><td>'+esc(typeof v==='number'?v.toFixed(2):v)+'</td></tr>').join('');
+  const t=d.trades||[];$('trades').innerHTML=t.length?'<tr>'+Object.keys(t[0]).map(k=>'<th>'+esc(k)+'</th>').join('')+'</tr>'+t.map(x=>'<tr>'+Object.values(x).map(v=>'<td>'+esc(typeof v==='number'?v.toFixed(2):v)+'</td>').join('')+'</tr>').join(''):'<tr><td>No trades</td></tr>';
+  s.textContent=' Backtest complete.';
+ }
+}
+$('run').onclick=()=>req('backtest').catch(e=>$('status').textContent=' Failed: '+e.message);
+$('opt').onclick=()=>req('optimize').catch(e=>$('status').textContent=' Failed: '+e.message);
+$('days').dispatchEvent(new Event('input'));
+</script></body></html>
