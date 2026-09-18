@@ -25,35 +25,40 @@ td:first-child,th:first-child{text-align:left}.muted{color:#8b949e}.sig{font-wei
 <label>Min RR <input id="rr" type="number" step="0.1" value="1.5"></label>
 <label>Risk % <input id="risk" type="number" step="0.05" value="0.5"></label>
 <br>
-<button id="runButton" type="submit">Run Alpaca 5m Backtest</button>
+<button id="runButton" type="submit">Run Alpaca 5m Backtest</button> <button id="optButton" type="button">Optimize Profit Factor</button>
 <span id="status" class="muted">JavaScript ready — press Run.</span>
 </form>
 <div class="muted">US-market estimate: 78 five-minute bars per trading day. Start small (1, 2, 5, 10 days) and increase until the worker fails.</div>
-<div id="errorBox"></div>
+<div id="errorBox"></div><div class="muted">Optimizer tests score, RR, SL ATR and cooldown combinations. It ranks by profit factor but requires a minimum trade count so tiny samples are visible.</div>
 </div>
 <div class="box"><h3>Signal Diagnostics</h3><table id="diag"></table><div class="muted">Set Min RR to 0 and Min score to 2 for a pure signal-generation test.</div></div>
 <div class="box"><h3>Dataset</h3><table id="dataset"></table></div>
 <div class="box"><h3>Metrics</h3><table id="metrics"></table></div>
-<div class="box"><h3>Recent Trades</h3><table id="trades"></table></div>
+<div class="box"><h3>Optimizer Results</h3><table id="optimizer"></table></div><div class="box"><h3>Recent Trades</h3><div style="max-height:420px;overflow:auto"><table id="trades"></table></div></div>
 <script>
 (function(){
   const $=id=>document.getElementById(id);
   function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
   function syncBars(){const d=Math.max(1,Number($('days').value)||1);$('bars').value=Math.min(60000,Math.max(100,Math.round(d*78)));}
-  async function runBacktest(event){
-    event.preventDefault();
-    const button=$('runButton'),status=$('status'),errorBox=$('errorBox');
-    errorBox.innerHTML='';status.textContent=' Sending POST request to server...';button.disabled=true;button.textContent='Running...';
+  async function runRequest(mode){
+    const button=mode==='optimize'?$('optButton'):$('runButton'),status=$('status'),errorBox=$('errorBox');
+    errorBox.innerHTML='';status.textContent=' Sending POST request to server...';button.disabled=true;if(mode==='optimize'){button.textContent='Optimizing...';}else{button.textContent='Running...';}
     const started=performance.now(),requestedBars=Math.min(60000,Math.max(100,Number($('bars').value)||1000));
     try{
       const response=await fetch('/api/xauusd-confluence-v4/run',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({
         symbol:$('symbol').value.trim().toUpperCase(),data_source:'alpaca',n_bars:requestedBars,
-        config:{min_score:Number($('score').value),min_rr:Number($('rr').value),risk_pct:Number($('risk').value)}
+        mode:mode, min_trades:3, config:{min_score:Number($('score').value),min_rr:Number($('rr').value),risk_pct:Number($('risk').value)}
       })});
       const raw=await response.text();let d;try{d=JSON.parse(raw);}catch(_){d={error:raw||'Empty server response'};}
       if(!response.ok){
         const details=['HTTP '+response.status+' '+response.statusText,'Stage: '+(d.stage||'unknown'),'Type: '+(d.type||'unknown'),'Error: '+(d.error||'No error body returned'),'Browser elapsed: '+((performance.now()-started)/1000).toFixed(2)+'s'].join('\n');
         status.textContent=' FAILED';errorBox.innerHTML='<div class="error">'+esc(details)+'</div>';return;
+      }
+      if(mode==='optimize'){
+        const rows=d.optimizer&&d.optimizer.results||[];
+        $('optimizer').innerHTML=rows.length?'<tr>'+Object.keys(rows[0]).map(k=>'<th>'+esc(k)+'</th>').join('')+'</tr>'+rows.map(x=>'<tr>'+Object.values(x).map(v=>'<td>'+esc(v)+'</td>').join('')+'</tr>').join(''):'<tr><td>No optimizer results</td></tr>';
+        status.innerHTML='<span class="ok"> Optimization done.</span> Tested '+esc(d.optimizer.tested)+' combinations; '+esc(d.optimizer.eligible)+' met minimum trades.';
+        return;
       }
       const dg=d.signal_diag||{};
       $('diag').innerHTML=Object.entries(dg).map(([k,v])=>'<tr><td>'+esc(k)+'</td><td>'+esc(v)+'</td></tr>').join('');
@@ -70,10 +75,11 @@ td:first-child,th:first-child{text-align:left}.muted{color:#8b949e}.sig{font-wei
     }catch(e){
       status.textContent=' CONNECTION FAILED';
       errorBox.innerHTML='<div class="error">'+esc('Browser/network error: '+e.message+'\n\nCheck Render logs if the worker was killed.')+'</div>';
-    }finally{button.disabled=false;button.textContent='Run Alpaca 5m Backtest';}
+    }finally{button.disabled=false;button.textContent=mode==='optimize'?'Optimize Profit Factor':'Run Alpaca 5m Backtest';}
   }
   $('days').addEventListener('input',syncBars);
-  $('runForm').addEventListener('submit',runBacktest);
+  $('runForm').addEventListener('submit',function(e){e.preventDefault();runRequest('backtest');});
+  $('optButton').addEventListener('click',function(){runRequest('optimize');});
   syncBars();
 })();
 </script>
