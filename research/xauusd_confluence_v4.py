@@ -121,7 +121,7 @@ def _load_alpaca_5m(symbol='GLD', n_bars=30000, feed=None):
                     'timeframe': '5Min',
                     'start': start_ts.isoformat().replace('+00:00', 'Z'),
                     'end': end_ts.isoformat().replace('+00:00', 'Z'),
-                    'limit': 5000,
+                    'limit': min(5000, n_bars),
                     'adjustment': 'raw',
                     'feed': selected_feed,
                     'sort': 'asc',
