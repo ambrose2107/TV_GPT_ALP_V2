@@ -86,7 +86,7 @@ def _load_alpaca_5m(symbol='GLD', n_bars=30000, feed=None):
     import os
     import requests
 
-    n_bars = max(1000, min(int(n_bars), 60000))
+    n_bars = max(100, min(int(n_bars), 60000))
     api_key = os.environ.get('ALPACA_API_KEY', '')
     secret_key = os.environ.get('ALPACA_SECRET_KEY', '')
     if not api_key or not secret_key:
@@ -223,7 +223,6 @@ def build_signals(data, cfg=V4Config()):
     _,_,sh15,sl15,tr15 = structure(m15,cfg.pivot)
     _,_,sh1,sl1,tr1 = structure(h1,cfg.pivot)
     _,_,sh4,sl4,tr4 = structure(h4,cfg.pivot)
-    _,_,_,_,_,_ = fvg_state(m15)
     bull5,bear5,sh5,sl5,tr5 = structure(m5,cfg.pivot)
     _,_,fvg_lo_b,fvg_hi_b,fvg_lo_s,fvg_hi_s = fvg_state(m15)
 
@@ -267,7 +266,8 @@ def build_signals(data, cfg=V4Config()):
             if np.isfinite(fbl.iloc[i]) and fbl.iloc[i] <= price <= fbh.iloc[i]: score+=2; reasons.append('bull FVG')
             if np.isfinite(fsl.iloc[i]) and price >= fsh.iloc[i] and i-last_long_sweep<=cfg.sweep_window: score+=2; reasons.append('IFVG reaction')
             # 5m MSS/BOS proxy: close above prior confirmed swing high after sweep.
-            if price > sh5.iloc[i-1] if np.isfinite(sh5.iloc[i-1]) else False:
+            prev_sh5 = sh5.iloc[i-1]
+            if np.isfinite(prev_sh5) and price > float(prev_sh5):
                 score+=3; reasons.append('5m BOS/MSS')
             # displacement proxy.
             if out.Close.iloc[i]-out.Open.iloc[i] > 0.7*a: score+=2; reasons.append('bull displacement')
@@ -290,7 +290,9 @@ def build_signals(data, cfg=V4Config()):
             if in_fib and out.Close.iloc[i-1] > out.Open.iloc[i-1] and out.High.iloc[i-1] >= zlo: score+=2; reasons.append('supply/OB')
             if np.isfinite(fsl.iloc[i]) and fsl.iloc[i] <= price <= fsh.iloc[i]: score+=2; reasons.append('bear FVG')
             if np.isfinite(fbl.iloc[i]) and price <= fbl.iloc[i] and i-last_short_sweep<=cfg.sweep_window: score+=2; reasons.append('IFVG reaction')
-            if price < sl5.iloc[i-1] if np.isfinite(sl5.iloc[i-1]) else False: score+=3; reasons.append('5m BOS/MSS')
+            prev_sl5 = sl5.iloc[i-1]
+            if np.isfinite(prev_sl5) and price < float(prev_sl5):
+                score+=3; reasons.append('5m BOS/MSS')
             if out.Open.iloc[i]-out.Close.iloc[i] > 0.7*a: score+=2; reasons.append('bear displacement')
             sl=max(float(out.High.iloc[i]),recent)+cfg.sl_atr*a
             risk=sl-price; tp1=lo; tp2=price-risk*2; tp3=price-risk*3
@@ -300,37 +302,184 @@ def build_signals(data, cfg=V4Config()):
     return out
 
 
-def backtest(data,cfg=V4Config(),initial_equity=10000):
-    df=build_signals(data,cfg); equity=initial_equity; trades=[]; eq=[]; pos=None
-    for i,(ts,r) in enumerate(df.iterrows()):
-        if pos is None and r.signal!=0:
-            pos={'side':int(r.signal),'entry':float(r.Close),'sl':float(r.sl),'tp1':float(r.tp1),'tp2':float(r.tp2),'tp3':float(r.tp3),'remaining':1.0,'realized':0.0,'age':0,'score':int(r.score),'reason':r.reason,'entry_time':ts}
-        if pos:
-            pos['age']+=1; side=pos['side']; px=float(r.Close); hi=float(r.High); lo=float(r.Low); risk=abs(pos['entry']-pos['sl']);
-            hit=[]
-            if side==1:
-                if lo<=pos['sl']: hit.append(('SL',pos['sl'],pos['remaining']))
-                else:
-                    for name,tp in [('TP1',pos['tp1']),('TP2',pos['tp2']),('TP3',pos['tp3'])]:
-                        if hi>=tp and pos['remaining']>0: hit.append((name,tp,0.25 if name!='TP3' else pos['remaining'])); pos['remaining']-=0.25 if name!='TP3' else pos['remaining'];
+def backtest(data, cfg=V4Config(), initial_equity=10000):
+    """Run the V4 backtest using immutable initial risk for all R calculations.
+
+    The stop may move to breakeven after TP1. R-multiples must still be measured
+    against the original entry-to-stop distance; recomputing risk from the moved
+    stop would make risk zero and caused ZeroDivisionError.
+    """
+    df = build_signals(data, cfg)
+    equity = float(initial_equity)
+    trades = []
+    eq = []
+    pos = None
+    eps = 1e-12
+
+    for ts, r in df.iterrows():
+        opened_this_bar = False
+
+        if pos is None and r.signal != 0:
+            entry = float(r.Close)
+            stop = float(r.sl)
+            initial_risk = abs(entry - stop)
+
+            # Defensive guard: malformed/degenerate signals must never enter.
+            if (
+                np.isfinite(entry)
+                and np.isfinite(stop)
+                and np.isfinite(initial_risk)
+                and initial_risk > eps
+            ):
+                pos = {
+                    'side': int(r.signal),
+                    'entry': entry,
+                    'sl': stop,
+                    'initial_sl': stop,
+                    'initial_risk': initial_risk,
+                    'tp1': float(r.tp1),
+                    'tp2': float(r.tp2),
+                    'tp3': float(r.tp3),
+                    'remaining': 1.0,
+                    'realized': 0.0,
+                    'age': 0,
+                    'score': int(r.score),
+                    'reason': r.reason,
+                    'entry_time': ts,
+                }
+                opened_this_bar = True
             else:
-                if hi>=pos['sl']: hit.append(('SL',pos['sl'],pos['remaining']))
+                logger.warning(
+                    '[BACKTEST] skipped zero/invalid-risk signal time=%s entry=%s sl=%s risk=%s',
+                    ts, entry, stop, initial_risk
+                )
+
+        # Do not use the entry candle's already-known high/low to decide an exit.
+        if pos is not None and not opened_this_bar:
+            pos['age'] += 1
+            side = pos['side']
+            px = float(r.Close)
+            hi = float(r.High)
+            lo = float(r.Low)
+            risk = float(pos['initial_risk'])
+
+            if not np.isfinite(risk) or risk <= eps:
+                logger.error(
+                    '[BACKTEST] invalid stored initial risk time=%s entry=%s initial_sl=%s risk=%s',
+                    ts, pos['entry'], pos.get('initial_sl'), risk
+                )
+                pos = None
+                eq.append(equity)
+                continue
+
+            hit = []
+
+            if side == 1:
+                if lo <= pos['sl']:
+                    hit.append(('SL', float(pos['sl']), float(pos['remaining'])))
                 else:
-                    for name,tp in [('TP1',pos['tp1']),('TP2',pos['tp2']),('TP3',pos['tp3'])]:
-                        if lo<=tp and pos['remaining']>0: hit.append((name,tp,0.25 if name!='TP3' else pos['remaining'])); pos['remaining']-=0.25 if name!='TP3' else pos['remaining']
-            for name,fill,frac in hit:
-                R=((fill-pos['entry'])/risk if side==1 else (pos['entry']-fill)/risk); pos['realized']+=R*frac
-                if name=='TP1' and pos['remaining']>0: pos['sl']=pos['entry']
-            if hit and hit[-1][0]=='SL' or pos['remaining']<=1e-9 or pos['age']>=cfg.max_hold_bars:
-                if not hit and pos['age']>=cfg.max_hold_bars:
-                    R=((px-pos['entry'])/risk if side==1 else (pos['entry']-px)/risk); pos['realized']+=R*pos['remaining']
-                equity*=1+cfg.risk_pct/100*pos['realized']; trades.append({**pos,'exit_time':ts,'R':pos['realized'],'equity':equity}); pos=None
+                    for name, tp in [('TP1', pos['tp1']), ('TP2', pos['tp2']), ('TP3', pos['tp3'])]:
+                        if hi >= tp and pos['remaining'] > eps:
+                            frac = 0.25 if name != 'TP3' else pos['remaining']
+                            frac = min(float(frac), float(pos['remaining']))
+                            hit.append((name, float(tp), frac))
+                            pos['remaining'] = max(0.0, pos['remaining'] - frac)
+            else:
+                if hi >= pos['sl']:
+                    hit.append(('SL', float(pos['sl']), float(pos['remaining'])))
+                else:
+                    for name, tp in [('TP1', pos['tp1']), ('TP2', pos['tp2']), ('TP3', pos['tp3'])]:
+                        if lo <= tp and pos['remaining'] > eps:
+                            frac = 0.25 if name != 'TP3' else pos['remaining']
+                            frac = min(float(frac), float(pos['remaining']))
+                            hit.append((name, float(tp), frac))
+                            pos['remaining'] = max(0.0, pos['remaining'] - frac)
+
+            for name, fill, frac in hit:
+                if side == 1:
+                    R = (fill - pos['entry']) / risk
+                else:
+                    R = (pos['entry'] - fill) / risk
+                pos['realized'] += R * frac
+
+                # Move the live stop to BE, but NEVER change initial_risk.
+                if name == 'TP1' and pos['remaining'] > eps:
+                    pos['sl'] = pos['entry']
+
+            stopped = bool(hit) and hit[-1][0] == 'SL'
+            fully_exited = pos['remaining'] <= eps
+            timed_out = pos['age'] >= cfg.max_hold_bars
+
+            if stopped or fully_exited or timed_out:
+                if not hit and timed_out and pos['remaining'] > eps:
+                    if side == 1:
+                        R = (px - pos['entry']) / risk
+                    else:
+                        R = (pos['entry'] - px) / risk
+                    pos['realized'] += R * pos['remaining']
+                    pos['remaining'] = 0.0
+
+                equity *= 1 + (cfg.risk_pct / 100.0) * pos['realized']
+                trades.append({
+                    **pos,
+                    'exit_time': ts,
+                    'R': pos['realized'],
+                    'equity': equity,
+                })
+                pos = None
+
         eq.append(equity)
-    if pos:
-        px=float(df.Close.iloc[-1]); risk=abs(pos['entry']-pos['sl']); R=((px-pos['entry'])/risk if pos['side']==1 else (pos['entry']-px)/risk)*pos['remaining']+pos['realized']; equity*=1+cfg.risk_pct/100*R; trades.append({**pos,'exit_time':df.index[-1],'R':R,'equity':equity})
-    t=pd.DataFrame(trades); e=pd.Series(eq,index=df.index)
-    if t.empty: metrics={'num_trades':0,'win_rate':0.0,'profit_factor':0.0,'total_R':0.0,'expectancy_R':0.0,'max_drawdown_pct':0.0,'total_return_pct':0.0,'final_equity':equity}
+
+    # Mark any still-open trade to the final close using original risk.
+    if pos is not None:
+        px = float(df.Close.iloc[-1])
+        risk = float(pos['initial_risk'])
+        if np.isfinite(risk) and risk > eps:
+            if pos['side'] == 1:
+                open_R = (px - pos['entry']) / risk
+            else:
+                open_R = (pos['entry'] - px) / risk
+            total_R = pos['realized'] + open_R * pos['remaining']
+        else:
+            logger.error('[BACKTEST] invalid final initial risk; using realized R only')
+            total_R = pos['realized']
+
+        equity *= 1 + (cfg.risk_pct / 100.0) * total_R
+        trades.append({
+            **pos,
+            'exit_time': df.index[-1],
+            'R': total_R,
+            'equity': equity,
+        })
+
+    t = pd.DataFrame(trades)
+    e = pd.Series(eq, index=df.index, dtype='float64')
+
+    if t.empty:
+        metrics = {
+            'num_trades': 0,
+            'win_rate': 0.0,
+            'profit_factor': 0.0,
+            'total_R': 0.0,
+            'expectancy_R': 0.0,
+            'max_drawdown_pct': 0.0,
+            'total_return_pct': 0.0,
+            'final_equity': equity,
+        }
     else:
-        wins=t[t.R>0].R.sum(); losses=-t[t.R<0].R.sum(); peak=e.cummax(); dd=(e/peak-1).min()*100
-        metrics={'num_trades':int(len(t)),'win_rate':round(float((t.R>0).mean()*100),2),'profit_factor':round(float(wins/losses),2) if losses else float('inf'),'total_R':round(float(t.R.sum()),2),'expectancy_R':round(float(t.R.mean()),3),'max_drawdown_pct':round(float(dd),2),'total_return_pct':round(float((equity/initial_equity-1)*100),2),'final_equity':round(float(equity),2)}
-    return {'signals':df,'trades':t,'equity_curve':e,'metrics':metrics}
+        wins = t.loc[t.R > 0, 'R'].sum()
+        losses = -t.loc[t.R < 0, 'R'].sum()
+        peak = e.cummax()
+        dd = (e / peak - 1).min() * 100
+        metrics = {
+            'num_trades': int(len(t)),
+            'win_rate': round(float((t.R > 0).mean() * 100), 2),
+            'profit_factor': round(float(wins / losses), 2) if losses else float('inf'),
+            'total_R': round(float(t.R.sum()), 2),
+            'expectancy_R': round(float(t.R.mean()), 3),
+            'max_drawdown_pct': round(float(dd), 2),
+            'total_return_pct': round(float((equity / initial_equity - 1) * 100), 2),
+            'final_equity': round(float(equity), 2),
+        }
+
+    return {'signals': df, 'trades': t, 'equity_curve': e, 'metrics': metrics}
