@@ -7,8 +7,11 @@ FVG/IFVG, supply/demand, Fibonacci retracement/extension and ATR risk.
 This is a research/backtest engine, not a guarantee of profitability.
 """
 from dataclasses import dataclass
+import logging
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger("xauusd_confluence_v4")
 
 FIBS = (0.0, 0.236, 0.382, 0.5, 0.618, 0.65, 0.705, 0.786, 0.886, 1.0, 1.272, 1.618)
 
@@ -79,10 +82,11 @@ def resample(df, rule):
 
 
 def _load_alpaca_5m(symbol='GLD', n_bars=30000, feed=None):
-    """Load 5-minute US ETF bars from Alpaca Market Data with pagination."""
+    """Load 5-minute US ETF bars from Alpaca with pagination and bounded memory."""
     import os
     import requests
 
+    n_bars = max(1000, min(int(n_bars), 60000))
     api_key = os.environ.get('ALPACA_API_KEY', '')
     secret_key = os.environ.get('ALPACA_SECRET_KEY', '')
     if not api_key or not secret_key:
@@ -93,11 +97,8 @@ def _load_alpaca_5m(symbol='GLD', n_bars=30000, feed=None):
     if feed not in ('sip', 'iex'):
         raise ValueError("ALPACA_DATA_FEED must be 'sip' or 'iex'.")
 
-    # Alpaca's Basic plan restricts recent SIP data; keeping the end at least
-    # 20 minutes old also makes the backtest deterministic while the market is open.
     end_ts = pd.Timestamp.now(tz='UTC') - pd.Timedelta(minutes=20)
-    # ~78 regular-session 5m bars/day. Add ample calendar slack for weekends/holidays.
-    calendar_days = max(30, int(np.ceil(max(1000, n_bars) / 78.0 * 7.0 / 5.0)) + 14)
+    calendar_days = max(30, int(np.ceil(n_bars / 78.0 * 7.0 / 5.0)) + 14)
     start_ts = end_ts - pd.Timedelta(days=calendar_days)
 
     url = f'https://data.alpaca.markets/v2/stocks/{symbol}/bars'
@@ -106,18 +107,21 @@ def _load_alpaca_5m(symbol='GLD', n_bars=30000, feed=None):
         'APCA-API-SECRET-KEY': secret_key,
         'Accept': 'application/json',
     }
+    logger.info('[DATA] Alpaca request symbol=%s timeframe=5Min requested=%d window=%s..%s feed=%s',
+                symbol, n_bars, start_ts.isoformat(), end_ts.isoformat(), feed)
 
     last_error = None
     for selected_feed in ([feed, 'iex'] if feed == 'sip' else ['iex']):
         rows = []
         page_token = None
+        pages = 0
         try:
             while True:
                 params = {
                     'timeframe': '5Min',
                     'start': start_ts.isoformat().replace('+00:00', 'Z'),
                     'end': end_ts.isoformat().replace('+00:00', 'Z'),
-                    'limit': 10000,
+                    'limit': 5000,
                     'adjustment': 'raw',
                     'feed': selected_feed,
                     'sort': 'asc',
@@ -126,35 +130,52 @@ def _load_alpaca_5m(symbol='GLD', n_bars=30000, feed=None):
                     params['page_token'] = page_token
 
                 resp = requests.get(url, headers=headers, params=params, timeout=30)
-                if resp.status_code >= 400:
+                status = resp.status_code
+                if status >= 400:
                     detail = resp.text[:500].replace('\\n', ' ')
-                    raise RuntimeError(f'Alpaca HTTP {resp.status_code} ({selected_feed}): {detail}')
+                    raise RuntimeError(f'Alpaca HTTP {status} ({selected_feed}): {detail}')
                 payload = resp.json()
                 page_rows = payload.get('bars') or []
-                rows.extend(page_rows)
+                pages += 1
+
+                # Store compact tuples instead of retaining thousands of JSON dicts.
+                for b in page_rows:
+                    try:
+                        rows.append((b['t'], b['o'], b['h'], b['l'], b['c'], b.get('v', 0)))
+                    except (KeyError, TypeError):
+                        continue
+
                 page_token = payload.get('next_page_token')
+                logger.info('[DATA] Alpaca page=%d rows=%d total=%d feed=%s',
+                            pages, len(page_rows), len(rows), selected_feed)
+
+                del page_rows, payload, resp
                 if not page_token or len(rows) >= n_bars:
                     break
 
             if not rows:
                 raise RuntimeError(f'Alpaca returned no {selected_feed} 5m bars for {symbol}.')
 
-            frame = pd.DataFrame(rows)
-            frame['timestamp'] = pd.to_datetime(frame['t'], utc=True)
-            frame = frame.rename(columns={
-                'o':'Open', 'h':'High', 'l':'Low', 'c':'Close', 'v':'Volume'
-            })
-            frame = frame.set_index('timestamp')[['Open','High','Low','Close','Volume']]
+            frame = pd.DataFrame(rows, columns=['timestamp','Open','High','Low','Close','Volume'])
+            del rows
+            frame['timestamp'] = pd.to_datetime(frame['timestamp'], utc=True)
+            frame = frame.set_index('timestamp')
             frame = frame[~frame.index.duplicated(keep='last')].sort_index()
-            frame = frame.apply(pd.to_numeric, errors='coerce').dropna()
-            if frame.empty:
-                raise RuntimeError(f'Alpaca returned unusable {selected_feed} bars for {symbol}.')
-            return frame.tail(n_bars)
+            for col in ('Open','High','Low','Close'):
+                frame[col] = pd.to_numeric(frame[col], errors='coerce').astype('float64')
+            frame['Volume'] = pd.to_numeric(frame['Volume'], errors='coerce').fillna(0).astype('int64')
+            frame = frame.dropna(subset=['Open','High','Low','Close'])
+            frame = frame.tail(n_bars)
+
+            logger.info('[DATA] Alpaca success feed=%s pages=%d bars=%d start=%s end=%s',
+                        selected_feed, pages, len(frame),
+                        frame.index.min(), frame.index.max())
+            return frame
         except Exception as exc:
             last_error = exc
+            logger.exception('[DATA] Alpaca failed feed=%s symbol=%s', selected_feed, symbol)
 
     raise RuntimeError(f'Alpaca 5m data failed for {symbol}: {last_error}')
-
 
 def load_data(use_live=True, n_bars=30000, symbol='GLD', data_source='alpaca'):
     if not use_live:
@@ -179,12 +200,12 @@ def load_data(use_live=True, n_bars=30000, symbol='GLD', data_source='alpaca'):
 
     raw = raw[['Open','High','Low','Close','Volume']].dropna().tail(n_bars)
     raw.index = pd.to_datetime(raw.index)
-    return {
-        'm5': raw,
-        'm15': resample(raw, '15min'),
-        'h1': resample(raw, '1h'),
-        'h4': resample(raw, '4h'),
-    }
+    m15 = resample(raw, '15min')
+    h1 = resample(raw, '1h')
+    h4 = resample(raw, '4h')
+    logger.info('[DATA] Final dataset symbol=%s source=%s m5=%d m15=%d h1=%d h4=%d',
+                symbol, data_source, len(raw), len(m15), len(h1), len(h4))
+    return {'m5': raw, 'm15': m15, 'h1': h1, 'h4': h4}
 
 def _fib_zone(low, high, side, a, b):
     rng = high-low
