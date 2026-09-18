@@ -1,5 +1,6 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <title>XAUUSD Confluence V4</title>
 <style>
 body{font-family:Arial,sans-serif;background:#0d1117;color:#c9d1d9;padding:24px;max-width:1100px;margin:auto}
@@ -12,83 +13,68 @@ td:first-child,th:first-child{text-align:left}.muted{color:#8b949e}.sig{font-wei
 .ok{color:#7ee787}.warn{color:#d29922}
 </style></head>
 <body>
-<h1>Gold Confluence V4 (GLD / Alpaca)</h1>
+<h1>Gold Confluence V4 <span class="muted">— HTML v2</span></h1>
 <p class="muted">4H + 1H + 15m context → 5m execution. Fibonacci, liquidity sweep, FVG/IFVG, supply/demand, BOS/MSS and displacement.</p>
-
 <div class="box">
 <h3>Run / Lookback Test</h3>
+<form id="runForm">
 <label>Symbol <input id="symbol" value="GLD"></label>
 <label>Lookback days <input id="days" type="number" min="1" max="770" value="5"></label>
 <label>5m bars <input id="bars" type="number" min="100" max="60000" value="390"></label>
 <label>Min score <input id="score" type="number" value="12"></label>
-<label>Min RR <input id="rr" type="number" step="0.1" value="1.5"></label>\n<label>Risk % <input id="risk" type="number" step="0.05" value="0.5"></label>
+<label>Min RR <input id="rr" type="number" step="0.1" value="1.5"></label>
+<label>Risk % <input id="risk" type="number" step="0.05" value="0.5"></label>
 <br>
-<button onclick="run()">Run Alpaca 5m Backtest</button>
-<span id="status" class="muted"></span>
+<button id="runButton" type="submit">Run Alpaca 5m Backtest</button>
+<span id="status" class="muted">JavaScript ready — press Run.</span>
+</form>
 <div class="muted">US-market estimate: 78 five-minute bars per trading day. Start small (1, 2, 5, 10 days) and increase until the worker fails.</div>
 <div id="errorBox"></div>
 </div>
-
-<div class="box"><h3>Signal Diagnostics</h3><table id="diag"></table><div class="muted">This shows exactly where signals are being filtered. Set Min RR to 0 and Min score to 2 for a pure signal-generation test.</div></div>\n<div class="box"><h3>Dataset</h3><table id="dataset"></table></div>
+<div class="box"><h3>Signal Diagnostics</h3><table id="diag"></table><div class="muted">Set Min RR to 0 and Min score to 2 for a pure signal-generation test.</div></div>
+<div class="box"><h3>Dataset</h3><table id="dataset"></table></div>
 <div class="box"><h3>Metrics</h3><table id="metrics"></table></div>
 <div class="box"><h3>Recent Trades</h3><table id="trades"></table></div>
-
 <script>
-const $=id=>document.getElementById(id);
-function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-function syncBars(){
-  const d=Math.max(1,+$('days').value||1);
-  $('bars').value=Math.min(60000,Math.max(100,Math.round(d*78)));
-}
-$('days').addEventListener('input',syncBars);
-
-async function run(){
-  $('errorBox').innerHTML='';
-  $('status').textContent=' Loading Alpaca data...';
-  const started=performance.now();
-  const requestedBars=Math.min(60000,Math.max(100,+$('bars').value||1000));
-  try{
-    const r=await fetch('/api/xauusd-confluence-v4/run',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        symbol:$('symbol').value.trim().toUpperCase(),
-        data_source:'alpaca',
-        n_bars:requestedBars,
-        config:{min_score:+$('score').value,min_rr:+$('rr').value,risk_pct:+$('risk').value}
-      })
-    });
-    const text=await r.text();
-    let d;
-    try{d=JSON.parse(text);}catch(_){d={error:text||'Empty server response'};}
-    if(!r.ok){
-      const details=[
-        'HTTP '+r.status+' '+r.statusText,
-        'Stage: '+(d.stage||'unknown'),
-        'Type: '+(d.type||'unknown'),
-        'Error: '+(d.error||'No error body returned'),
-        'Browser elapsed: '+((performance.now()-started)/1000).toFixed(2)+'s'
-      ].join('\n');
-      $('status').textContent=' FAILED';
-      $('errorBox').innerHTML='<div class="error">'+esc(details)+'</div>';
-      return;
-    }
-    const dg=d.signal_diag||{};\n    $('diag').innerHTML=Object.entries(dg).map(([k,v])=>'<tr><td>'+esc(k)+'</td><td>'+esc(v)+'</td></tr>').join('');\n    $('dataset').innerHTML=[
-      ['Symbol',d.symbol],['Source',d.data_source],['Requested bars',requestedBars],
-      ['Received bars',d.bars],['Data start',d.data_start],['Data end',d.data_end],
-      ['Browser elapsed (sec)',((performance.now()-started)/1000).toFixed(2)]
-    ].map(x=>'<tr><td>'+esc(x[0])+'</td><td>'+esc(x[1])+'</td></tr>').join('');
-    $('metrics').innerHTML=Object.entries(d.metrics||{}).map(([k,v])=>'<tr><td>'+esc(k)+'</td><td>'+esc(v)+'</td></tr>').join('');
-    const t=d.trades||[];
-    $('trades').innerHTML=t.length
-      ?'<tr>'+Object.keys(t[0]).map(k=>'<th>'+esc(k)+'</th>').join('')+'</tr>'+t.map(x=>'<tr>'+Object.values(x).map(v=>'<td>'+esc(v)+'</td>').join('')+'</tr>').join('')
-      :'<tr><td>No trades</td></tr>';
-    $('status').innerHTML='<span class="ok"> Done.</span> '+esc(d.symbol)+' | '+esc(d.bars)+' bars | '+esc(d.data_start)+' → '+esc(d.data_end);
-  }catch(e){
-    $('status').textContent=' CONNECTION FAILED';
-    $('errorBox').innerHTML='<div class="error">'+esc('Browser/network error: '+e.message+'\n\nIf Render killed the Gunicorn worker (SIGKILL), the browser cannot receive that server-side log. Check Render logs or use the staged server logs.')+'</div>';
+(function(){
+  const $=id=>document.getElementById(id);
+  function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+  function syncBars(){const d=Math.max(1,Number($('days').value)||1);$('bars').value=Math.min(60000,Math.max(100,Math.round(d*78)));}
+  async function runBacktest(event){
+    event.preventDefault();
+    const button=$('runButton'),status=$('status'),errorBox=$('errorBox');
+    errorBox.innerHTML='';status.textContent=' Sending POST request to server...';button.disabled=true;button.textContent='Running...';
+    const started=performance.now(),requestedBars=Math.min(60000,Math.max(100,Number($('bars').value)||1000));
+    try{
+      const response=await fetch('/api/xauusd-confluence-v4/run',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+        symbol:$('symbol').value.trim().toUpperCase(),data_source:'alpaca',n_bars:requestedBars,
+        config:{min_score:Number($('score').value),min_rr:Number($('rr').value),risk_pct:Number($('risk').value)}
+      })});
+      const raw=await response.text();let d;try{d=JSON.parse(raw);}catch(_){d={error:raw||'Empty server response'};}
+      if(!response.ok){
+        const details=['HTTP '+response.status+' '+response.statusText,'Stage: '+(d.stage||'unknown'),'Type: '+(d.type||'unknown'),'Error: '+(d.error||'No error body returned'),'Browser elapsed: '+((performance.now()-started)/1000).toFixed(2)+'s'].join('\n');
+        status.textContent=' FAILED';errorBox.innerHTML='<div class="error">'+esc(details)+'</div>';return;
+      }
+      const dg=d.signal_diag||{};
+      $('diag').innerHTML=Object.entries(dg).map(([k,v])=>'<tr><td>'+esc(k)+'</td><td>'+esc(v)+'</td></tr>').join('');
+      $('dataset').innerHTML=[
+        ['Symbol',d.symbol],['Source',d.data_source],['Requested bars',requestedBars],['Received bars',d.bars],
+        ['Data start',d.data_start],['Data end',d.data_end],['Browser elapsed (sec)',((performance.now()-started)/1000).toFixed(2)]
+      ].map(x=>'<tr><td>'+esc(x[0])+'</td><td>'+esc(x[1])+'</td></tr>').join('');
+      $('metrics').innerHTML=Object.entries(d.metrics||{}).map(([k,v])=>'<tr><td>'+esc(k)+'</td><td>'+esc(v)+'</td></tr>').join('');
+      const trades=d.trades||[];
+      $('trades').innerHTML=trades.length
+        ?'<tr>'+Object.keys(trades[0]).map(k=>'<th>'+esc(k)+'</th>').join('')+'</tr>'+trades.map(x=>'<tr>'+Object.values(x).map(v=>'<td>'+esc(v)+'</td>').join('')+'</tr>').join('')
+        :'<tr><td>No trades</td></tr>';
+      status.innerHTML='<span class="ok"> Done.</span> '+esc(d.symbol)+' | '+esc(d.bars)+' bars | '+esc(d.data_start)+' → '+esc(d.data_end);
+    }catch(e){
+      status.textContent=' CONNECTION FAILED';
+      errorBox.innerHTML='<div class="error">'+esc('Browser/network error: '+e.message+'\n\nCheck Render logs if the worker was killed.')+'</div>';
+    }finally{button.disabled=false;button.textContent='Run Alpaca 5m Backtest';}
   }
-}
-syncBars();
+  $('days').addEventListener('input',syncBars);
+  $('runForm').addEventListener('submit',runBacktest);
+  syncBars();
+})();
 </script>
 </body></html>
