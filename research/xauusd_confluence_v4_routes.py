@@ -60,7 +60,7 @@ def run():
         initial_equity=float(body.get('initial_equity',10000))
         if str(body.get('mode','backtest')).lower() == 'optimize':
             stage='optimize'
-            opt=optimize(data,cfg,initial_equity=initial_equity,min_trades=int(body.get('min_trades',3)))
+            opt=optimize(data,cfg,initial_equity=initial_equity,min_trades=int(body.get('min_trades',5)))
             logger.info('[RUN] optimizer complete tested=%d eligible=%d elapsed=%.2fs', opt['tested'], opt['eligible'], time.perf_counter()-t)
             return jsonify(_json_safe({'symbol':symbol,'data_source':data_source,'bars':len(data['m5']),
                 'data_start':str(data['m5'].index.min()),'data_end':str(data['m5'].index.max()),'optimizer':opt}))
