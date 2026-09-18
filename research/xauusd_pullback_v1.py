@@ -44,11 +44,13 @@ def build_signals(df, cfg=PullbackConfig()):
     x['tp'] = np.nan
     x['reason'] = ''
 
-    hours = x.index.hour
+    # DatetimeIndex.hour returns a NumPy array; keep the session mask as a
+    # plain boolean array and index it with [i] (not .iloc).
+    hours = x.index.hour.to_numpy()
     session = (hours >= cfg.session_start_utc) & (hours < cfg.session_end_utc)
 
     for i in range(max(cfg.ema_slow, cfg.breakout_lookback + cfg.pullback_bars + 2), len(x)):
-        if not session.iloc[i]:
+        if not session[i]:
             continue
         a = float(x.atr.iloc[i])
         if not np.isfinite(a) or a <= 0:
