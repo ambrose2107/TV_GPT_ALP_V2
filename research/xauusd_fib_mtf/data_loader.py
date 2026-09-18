@@ -117,7 +117,7 @@ def get_synthetic_5m(n_bars: int = 20000, start_price: float = 2350.0, seed: int
 
 def get_mtf_data(use_live: bool = True, symbol: str = "GC=F", n_bars: int = 20000,
                   data_source: str = "yfinance", lookback_days: int = None,
-                  alpaca_symbol: str = "GLD") -> dict:
+                  alpaca_symbol: str = "GLD", **_unused) -> dict:
     """Returns {'m5': df_5m, 'm15': df_15m} with m15 derived by resampling m5.
 
     data_source: "yfinance" (GC=F/XAUUSD=X, real 24h gold price action) or
@@ -126,6 +126,10 @@ def get_mtf_data(use_live: bool = True, symbol: str = "GC=F", n_bars: int = 2000
     lookback_days: if given, overrides the default period/window for
     whichever data_source is used (yfinance period string or Alpaca's
     start-date window).
+
+    **_unused absorbs any extra/future keyword arguments silently, so a
+    partial file update elsewhere degrades gracefully instead of raising
+    "unexpected keyword argument".
     """
     if use_live:
         try:

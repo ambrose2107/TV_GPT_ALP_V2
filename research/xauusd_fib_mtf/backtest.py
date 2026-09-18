@@ -14,7 +14,10 @@ def run_backtest(use_live: bool = True, n_bars: int = 20000,
                   mtf_cfg: MTFConfig = None, engine_cfg: EngineConfig = None,
                   use_numba: bool = True, data: dict = None,
                   data_source: str = "yfinance", lookback_days: int = None,
-                  alpaca_symbol: str = "GLD") -> dict:
+                  alpaca_symbol: str = "GLD", **_unused) -> dict:
+    # **_unused absorbs any extra/future keyword arguments silently, so a
+    # partial file update elsewhere (e.g. routes.py newer than this file)
+    # degrades gracefully instead of raising "unexpected keyword argument".
     mtf_cfg = mtf_cfg or MTFConfig()
     engine_cfg = engine_cfg or EngineConfig()
 
