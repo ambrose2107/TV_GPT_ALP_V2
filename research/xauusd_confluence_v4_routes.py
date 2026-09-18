@@ -139,6 +139,7 @@ def run():
             safe=_json_safe(response)
             files=_save_run_files(symbol,'optimize',safe)
             safe['storage_files']={k:Path(v).name for k,v in files.items()}
+            safe['storage_downloads']={k:f'/api/xauusd-confluence-v4/download/{Path(v).name}' for k,v in files.items()}
             safe['storage_dir']=str(_storage_dir())
             logger.info('[RUN] optimizer complete tested=%d eligible=%d elapsed=%.2fs saved=%s', opt['tested'], opt['eligible'], time.perf_counter()-t, files)
             return jsonify(safe)
@@ -170,6 +171,7 @@ def run():
         safe_response=_json_safe(response)
         files=_save_run_files(symbol,'backtest',safe_response)
         safe_response['storage_files']={k:Path(v).name for k,v in files.items()}
+        safe_response['storage_downloads']={k:f'/api/xauusd-confluence-v4/download/{Path(v).name}' for k,v in files.items()}
         safe_response['storage_dir']=str(_storage_dir())
         logger.info('[RUN] success total_elapsed=%.2fs payload_trades=%d payload_signals=%d saved=%s',
                     time.perf_counter()-started,len(safe_response['trades']),len(safe_response['signals']),files)
