@@ -325,14 +325,14 @@ def build_signals(data, cfg=V4Config()):
     return out
 
 
-def backtest(data, cfg=V4Config(), initial_equity=10000):
+def backtest(data, cfg=V4Config(), initial_equity=10000, signals=None):
     """Run the V4 backtest using immutable initial risk for all R calculations.
 
     The stop may move to breakeven after TP1. R-multiples must still be measured
     against the original entry-to-stop distance; recomputing risk from the moved
     stop would make risk zero and caused ZeroDivisionError.
     """
-    df = build_signals(data, cfg)
+    df = signals.copy() if signals is not None else build_signals(data, cfg)
     equity = float(initial_equity)
     trades = []
     eq = []
@@ -511,10 +511,8 @@ def backtest(data, cfg=V4Config(), initial_equity=10000):
 def _trade_metrics(trades):
     """Compact metrics for an optimizer segment."""
     if trades is None or trades.empty:
-        return {
-            'trades': 0, 'win_rate': 0.0, 'profit_factor': 0.0,
-            'total_R': 0.0, 'expectancy_R': 0.0
-        }
+        return {'trades': 0, 'win_rate': 0.0, 'profit_factor': 0.0,
+                'total_R': 0.0, 'expectancy_R': 0.0}
     r = pd.to_numeric(trades['R'], errors='coerce').dropna()
     if r.empty:
         return {'trades': 0, 'win_rate': 0.0, 'profit_factor': 0.0,
@@ -522,106 +520,122 @@ def _trade_metrics(trades):
     wins = float(r[r > 0].sum())
     losses = float(-r[r < 0].sum())
     pf = wins / losses if losses > 0 else (float('inf') if wins > 0 else 0.0)
-    return {
-        'trades': int(len(r)),
-        'win_rate': round(float((r > 0).mean() * 100), 2),
-        'profit_factor': pf,
-        'total_R': float(r.sum()),
-        'expectancy_R': float(r.mean())
-    }
+    return {'trades': int(len(r)),
+            'win_rate': round(float((r > 0).mean() * 100), 2),
+            'profit_factor': pf,
+            'total_R': float(r.sum()),
+            'expectancy_R': float(r.mean())}
+
+
+def _apply_signal_filters(df, min_score, min_rr, cooldown):
+    """Cheaply filter a precomputed signal frame for optimizer execution."""
+    out = df.copy()
+    risk = (out['Close'] - out['sl']).abs()
+    long_rr = (out['tp1'] - out['Close']) / risk
+    short_rr = (out['Close'] - out['tp1']) / risk
+    rr = np.where(out['signal'].to_numpy() > 0, long_rr.to_numpy(), short_rr.to_numpy())
+    valid = (
+        (out['signal'].to_numpy() != 0) &
+        (pd.to_numeric(out['score'], errors='coerce').to_numpy() >= float(min_score)) &
+        np.isfinite(risk.to_numpy()) & (risk.to_numpy() > 1e-12) &
+        np.isfinite(rr) & (rr >= float(min_rr))
+    )
+    # Reproduce the signal cooldown without rebuilding all market structure.
+    chosen = np.flatnonzero(valid)
+    if cooldown > 1 and len(chosen):
+        keep = np.zeros(len(out), dtype=bool)
+        last = -10**9
+        for i in chosen:
+            if i - last >= int(cooldown):
+                keep[i] = True
+                last = i
+        valid = keep
+    out.loc[~valid, ['signal','score','sl','tp1','tp2','tp3']] = [0, 0, np.nan, np.nan, np.nan, np.nan]
+    out.loc[~valid, 'reason'] = ''
+    return out
 
 
 def optimize(data, base_cfg=None, initial_equity=10000, min_trades=5):
-    """Fast robust optimizer with train/test validation.
+    """Fast optimizer with cached signals and chronological 70/30 validation.
 
-    Signal generation is expensive, so this uses a bounded 48-combination grid
-    and evaluates each configuration once. Each result is then split into a
-    chronological 70/30 train/test sample. The ranking uses validation PF,
-    train PF, total R and a drawdown penalty instead of blindly maximizing PF
-    on the full sample.
+    Expensive market-structure/FVG calculations are built only once per SL-ATR
+    value. Score, RR and cooldown combinations are then filtered from those
+    cached signals, making the optimizer much faster than rerunning build_signals
+    for every combination.
 
-    This is still research optimization: it cannot guarantee future profit.
+    The ranking emphasizes validation PF while requiring a meaningful train/test
+    sample and also considering expectancy and drawdown. It does not guarantee
+    future profitability.
     """
     base = base_cfg or V4Config()
     candidates = []
-
-    # 48 combinations: enough variation to tune execution without recreating
-    # the 300x full-signal workload that can exceed Render request time.
-    grid = (
-        (8, 1.0, 0.10, 3), (8, 1.5, 0.10, 6), (8, 2.0, 0.10, 6),
-        (10, 1.0, 0.20, 3), (10, 1.5, 0.20, 6), (10, 2.0, 0.20, 6),
-        (12, 1.0, 0.20, 3), (12, 1.5, 0.20, 6), (12, 2.0, 0.20, 6),
-        (14, 1.0, 0.30, 3), (14, 1.5, 0.30, 6), (14, 2.0, 0.30, 6),
-        (8, 1.0, 0.10, 12), (8, 1.5, 0.10, 12), (8, 2.0, 0.10, 12),
-        (10, 1.0, 0.20, 12), (10, 1.5, 0.20, 12), (10, 2.0, 0.20, 12),
-        (12, 1.0, 0.20, 12), (12, 1.5, 0.20, 12), (12, 2.0, 0.20, 12),
-        (14, 1.0, 0.30, 12), (14, 1.5, 0.30, 12), (14, 2.0, 0.30, 12),
-        (8, 1.25, 0.15, 3), (8, 1.75, 0.15, 6), (10, 1.25, 0.15, 3),
-        (10, 1.75, 0.15, 6), (12, 1.25, 0.25, 3), (12, 1.75, 0.25, 6),
-        (14, 1.25, 0.35, 3), (14, 1.75, 0.35, 6), (8, 1.25, 0.30, 12),
-        (8, 1.75, 0.30, 12), (10, 1.25, 0.40, 12), (10, 1.75, 0.40, 12),
-        (12, 1.25, 0.40, 3), (12, 1.75, 0.40, 6), (14, 1.25, 0.20, 3),
-        (14, 1.75, 0.20, 6), (8, 1.0, 0.40, 3), (10, 1.0, 0.40, 6),
-        (12, 1.0, 0.40, 3), (14, 1.0, 0.40, 6), (8, 2.0, 0.40, 12),
-        (10, 2.0, 0.40, 12), (12, 2.0, 0.40, 3), (14, 2.0, 0.40, 6),
-    )
-
+    scores = (8, 10, 12, 14)
+    rrs = (1.0, 1.5, 2.0)
+    sls = (0.10, 0.30)
+    cooldowns = (3, 6)
     split_i = max(1, int(len(data['m5']) * 0.70))
     split_time = data['m5'].index[split_i]
     min_trades = max(2, int(min_trades))
 
-    for min_score, min_rr, sl_atr, cooldown in grid:
-        cfg = V4Config(**{**base.__dict__, 'min_score': min_score,
-                          'min_rr': min_rr, 'sl_atr': sl_atr,
-                          'cooldown_bars': cooldown})
-        result = backtest(data, cfg, initial_equity=initial_equity)
-        m = result['metrics']
-        trades = result['trades'].copy()
-        if not trades.empty:
-            train = trades[trades['entry_time'] < split_time]
-            test = trades[trades['entry_time'] >= split_time]
-        else:
-            train = trades
-            test = trades
-
-        tm = _trade_metrics(train)
-        vm = _trade_metrics(test)
-        pf_train = float(tm['profit_factor'])
-        pf_test = float(vm['profit_factor'])
-        pf_full = float(m.get('profit_factor', 0.0))
-        # Cap infinite PF for ranking; expose the actual value separately.
-        rank_train_pf = min(pf_train, 5.0) if np.isfinite(pf_train) else 5.0
-        rank_test_pf = min(pf_test, 5.0) if np.isfinite(pf_test) else 5.0
-        dd = abs(float(m.get('max_drawdown_pct', 0.0)))
-        robust_score = (
-            0.45 * rank_test_pf +
-            0.30 * rank_train_pf +
-            0.20 * max(-2.0, min(2.0, vm['expectancy_R'])) -
-            0.05 * dd
-        )
-        eligible = tm['trades'] >= min_trades and vm['trades'] >= 2
-        candidates.append({
-            'min_score': int(min_score), 'min_rr': float(min_rr),
-            'sl_atr': float(sl_atr), 'cooldown_bars': int(cooldown),
-            'profit_factor': pf_full if np.isfinite(pf_full) else None,
-            'train_pf': pf_train if np.isfinite(pf_train) else None,
-            'test_pf': pf_test if np.isfinite(pf_test) else None,
-            'train_trades': int(tm['trades']), 'test_trades': int(vm['trades']),
-            'num_trades': int(m['num_trades']),
-            'total_R': float(m['total_R']),
-            'expectancy_R': float(m['expectancy_R']),
-            'win_rate': float(m['win_rate']),
-            'max_drawdown_pct': float(m['max_drawdown_pct']),
-            'total_return_pct': float(m['total_return_pct']),
-            'robust_score': round(float(robust_score), 3),
-            'eligible': bool(eligible)
-        })
+    for sl_atr in sls:
+        # Cache the expensive signal-generation pass for this SL setting.
+        signal_cfg = V4Config(**{**base.__dict__, 'min_score': 0, 'min_rr': 0.0,
+                                 'sl_atr': sl_atr, 'cooldown_bars': 0})
+        cached = build_signals(data, signal_cfg)
+        for min_score in scores:
+            for min_rr in rrs:
+                for cooldown in cooldowns:
+                    cfg = V4Config(**{**base.__dict__, 'min_score': min_score,
+                                      'min_rr': min_rr, 'sl_atr': sl_atr,
+                                      'cooldown_bars': cooldown})
+                    filtered = _apply_signal_filters(cached, min_score, min_rr, cooldown)
+                    result = backtest(data, cfg, initial_equity=initial_equity, signals=filtered)
+                    m = result['metrics']
+                    trades = result['trades'].copy()
+                    if not trades.empty:
+                        train = trades[trades['entry_time'] < split_time]
+                        test = trades[trades['entry_time'] >= split_time]
+                    else:
+                        train = trades
+                        test = trades
+                    tm = _trade_metrics(train)
+                    vm = _trade_metrics(test)
+                    pf_train = float(tm['profit_factor'])
+                    pf_test = float(vm['profit_factor'])
+                    rank_train_pf = min(pf_train, 5.0) if np.isfinite(pf_train) else 5.0
+                    rank_test_pf = min(pf_test, 5.0) if np.isfinite(pf_test) else 5.0
+                    dd = abs(float(m.get('max_drawdown_pct', 0.0)))
+                    robust_score = (
+                        0.50 * rank_test_pf +
+                        0.25 * rank_train_pf +
+                        0.20 * max(-2.0, min(2.0, vm['expectancy_R'])) -
+                        0.05 * dd
+                    )
+                    eligible = tm['trades'] >= min_trades and vm['trades'] >= 2
+                    candidates.append({
+                        'min_score': int(min_score), 'min_rr': float(min_rr),
+                        'sl_atr': float(sl_atr), 'cooldown_bars': int(cooldown),
+                        'profit_factor': float(m['profit_factor']) if np.isfinite(m['profit_factor']) else None,
+                        'train_pf': pf_train if np.isfinite(pf_train) else None,
+                        'test_pf': pf_test if np.isfinite(pf_test) else None,
+                        'train_trades': int(tm['trades']), 'test_trades': int(vm['trades']),
+                        'num_trades': int(m['num_trades']),
+                        'total_R': float(m['total_R']),
+                        'expectancy_R': float(m['expectancy_R']),
+                        'win_rate': float(m['win_rate']),
+                        'max_drawdown_pct': float(m['max_drawdown_pct']),
+                        'total_return_pct': float(m['total_return_pct']),
+                        'robust_score': round(float(robust_score), 3),
+                        'eligible': bool(eligible)
+                    })
 
     eligible_rows = [x for x in candidates if x['eligible']]
     pool = eligible_rows if eligible_rows else candidates
-    pool.sort(key=lambda x: (x['robust_score'], x['test_pf'] if x['test_pf'] is not None else -1,
-                             x['total_R']), reverse=True)
-
+    pool.sort(key=lambda x: (
+        x['robust_score'],
+        x['test_pf'] if x['test_pf'] is not None else -1,
+        x['total_R']
+    ), reverse=True)
     return {
         'tested': len(candidates),
         'eligible': len(eligible_rows),
@@ -629,6 +643,6 @@ def optimize(data, base_cfg=None, initial_equity=10000, min_trades=5):
         'train_pct': 70,
         'test_pct': 30,
         'split_time': str(split_time),
-        'method': '70/30 chronological train/test; ranked by validation PF + train PF + expectancy - drawdown penalty',
+        'method': 'Cached signals + 70/30 chronological validation; validation PF weighted with train PF, expectancy and drawdown',
         'results': pool[:20]
     }
