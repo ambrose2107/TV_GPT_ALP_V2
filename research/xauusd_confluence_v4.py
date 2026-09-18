@@ -245,8 +245,10 @@ def build_signals(data, cfg=V4Config()):
     fbl=fvg_lo_b.shift(1).reindex(m5.index,method='ffill'); fbh=fvg_hi_b.shift(1).reindex(m5.index,method='ffill')
     fsl=fvg_lo_s.shift(1).reindex(m5.index,method='ffill'); fsh=fvg_hi_s.shift(1).reindex(m5.index,method='ffill')
 
-    last_low=np.nan; last_high=np.nan; last_long_sweep=-999; last_short_sweep=-999; last_trade=-999
+    last_long_sweep=-999; last_short_sweep=-999; last_trade=-999
+    diag={'bars':0,'side15':0,'score_ge_min':0,'risk_valid':0,'rr_valid':0,'signals':0,'max_score':0}
     for i in range(max(30,cfg.pivot*3),len(out)):
+        diag['bars'] += 1
         price=float(out.Close.iloc[i]); a=float(out.atr.iloc[i])
         if not np.isfinite(a) or a<=0: continue
         # confirmed 15m impulse from most recent structural leg
@@ -255,6 +257,7 @@ def build_signals(data, cfg=V4Config()):
         if not np.isfinite(hi) or not np.isfinite(lo) or hi<=lo: continue
         side15='long' if tr15a.iloc[i]=='bullish' else 'short' if tr15a.iloc[i]=='bearish' else None
         if side15 is None: continue
+        diag['side15'] += 1
         # HTF alignment is descriptive context, not a hard AND gate.
         score=0; reasons=[]
         if side15=='long':
@@ -282,9 +285,14 @@ def build_signals(data, cfg=V4Config()):
             if out.Close.iloc[i]-out.Open.iloc[i] > 0.7*a: score+=2; reasons.append('bull displacement')
             sl=min(float(out.Low.iloc[i]), recent)-cfg.sl_atr*a
             risk=price-sl; tp1=hi; tp2=price+risk*2; tp3=price+risk*3
-            valid=score>=cfg.min_score and risk>0 and (tp1-price)/risk>=cfg.min_rr
+            rr=(tp1-price)/risk if risk>0 else -np.inf
+            diag['max_score']=max(diag['max_score'], int(score))
+            if score>=cfg.min_score: diag['score_ge_min'] += 1
+            if risk>0: diag['risk_valid'] += 1
+            if rr>=cfg.min_rr: diag['rr_valid'] += 1
+            valid=score>=cfg.min_score and risk>0 and rr>=cfg.min_rr
             if valid and i-last_trade>=cfg.cooldown_bars:
-                out.iloc[i,out.columns.get_loc('signal')]=1; out.iloc[i,out.columns.get_loc('score')]=score; out.iloc[i,out.columns.get_loc('sl')]=sl; out.iloc[i,out.columns.get_loc('tp1')]=tp1; out.iloc[i,out.columns.get_loc('tp2')]=tp2; out.iloc[i,out.columns.get_loc('tp3')]=tp3; out.iloc[i,out.columns.get_loc('reason')]=' | '.join(reasons); last_trade=i
+                out.iloc[i,out.columns.get_loc('signal')]=1; out.iloc[i,out.columns.get_loc('score')]=score; diag['signals'] += 1; out.iloc[i,out.columns.get_loc('sl')]=sl; out.iloc[i,out.columns.get_loc('tp1')]=tp1; out.iloc[i,out.columns.get_loc('tp2')]=tp2; out.iloc[i,out.columns.get_loc('tp3')]=tp3; out.iloc[i,out.columns.get_loc('reason')]=' | '.join(reasons); last_trade=i
         else:
             if h1a.iloc[i]=='bearish': score+=2; reasons.append('1H bearish')
             if h4a.iloc[i]=='bearish': score+=1; reasons.append('4H bearish')
@@ -305,9 +313,14 @@ def build_signals(data, cfg=V4Config()):
             if out.Open.iloc[i]-out.Close.iloc[i] > 0.7*a: score+=2; reasons.append('bear displacement')
             sl=max(float(out.High.iloc[i]),recent)+cfg.sl_atr*a
             risk=sl-price; tp1=lo; tp2=price-risk*2; tp3=price-risk*3
-            valid=score>=cfg.min_score and risk>0 and (price-tp1)/risk>=cfg.min_rr
+            rr=(price-tp1)/risk if risk>0 else -np.inf
+            diag['max_score']=max(diag['max_score'], int(score))
+            if score>=cfg.min_score: diag['score_ge_min'] += 1
+            if risk>0: diag['risk_valid'] += 1
+            if rr>=cfg.min_rr: diag['rr_valid'] += 1
+            valid=score>=cfg.min_score and risk>0 and rr>=cfg.min_rr
             if valid and i-last_trade>=cfg.cooldown_bars:
-                out.iloc[i,out.columns.get_loc('signal')]=-1; out.iloc[i,out.columns.get_loc('score')]=score; out.iloc[i,out.columns.get_loc('sl')]=sl; out.iloc[i,out.columns.get_loc('tp1')]=tp1; out.iloc[i,out.columns.get_loc('tp2')]=tp2; out.iloc[i,out.columns.get_loc('tp3')]=tp3; out.iloc[i,out.columns.get_loc('reason')]=' | '.join(reasons); last_trade=i
+                out.iloc[i,out.columns.get_loc('signal')]=-1; out.iloc[i,out.columns.get_loc('score')]=score; diag['signals'] += 1; out.iloc[i,out.columns.get_loc('sl')]=sl; out.iloc[i,out.columns.get_loc('tp1')]=tp1; out.iloc[i,out.columns.get_loc('tp2')]=tp2; out.iloc[i,out.columns.get_loc('tp3')]=tp3; out.iloc[i,out.columns.get_loc('reason')]=' | '.join(reasons); last_trade=i
     return out
 
 
