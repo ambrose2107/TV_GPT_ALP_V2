@@ -71,7 +71,7 @@ td:first-child,th:first-child{text-align:left}.muted{color:#8b949e}.sig{font-wei
         const o=d.optimizer||{};
         lastBest=d.best_params||null;
         $('applyButton').disabled=!lastBest;
-        $('optimizerInfo').innerHTML='Training = '+esc(o.train_pct)+'%, validation = '+esc(o.test_pct)+'%. <b>Optimizer parameters are NOT automatically used for the strategy.</b> Click <b>Apply Best + Backtest</b> to run the selected parameters and compare before vs after. Saved: '+esc((d.storage_files||{}).optimizer_csv||'');
+        $('optimizerInfo').innerHTML='Training = '+esc(o.train_pct)+'%, validation = '+esc(o.test_pct)+'%. <b>Optimizer parameters are NOT automatically used for the strategy.</b> Click <b>Apply Best + Backtest</b> to run the selected parameters and compare before vs after. Saved: '+Object.entries(d.storage_downloads||{}).map(([k,u])=>'<a href="'+esc(u)+'" target="_blank">Download '+esc(k)+'</a>').join(' | ');
         status.innerHTML='<span class="ok"> Optimization done.</span> Tested '+esc(o.tested)+' combinations; '+esc(o.eligible)+' passed train/test trade filters.';
         return;
       }
@@ -125,7 +125,7 @@ td:first-child,th:first-child{text-align:left}.muted{color:#8b949e}.sig{font-wei
         row('Expectancy R',before.expectancy_R,after.expectancy_R)+row('Win rate %',before.win_rate,after.win_rate)+
         row('Max drawdown %',before.max_drawdown_pct,after.max_drawdown_pct)+row('Return %',before.total_return_pct,after.total_return_pct)+
         row('Trades',before.num_trades,after.num_trades,0)+'</table>'+
-        '<div class="muted">Applied: score '+esc(lastBest.min_score)+', RR '+esc(lastBest.min_rr)+', SL ATR '+esc(lastBest.sl_atr)+', cooldown '+esc(lastBest.cooldown_bars)+'. Saved: '+esc((d.storage_files||{}).json||'')+'</div>';
+        '<div class="muted">Applied: score '+esc(lastBest.min_score)+', RR '+esc(lastBest.min_rr)+', SL ATR '+esc(lastBest.sl_atr)+', cooldown '+esc(lastBest.cooldown_bars)+'. '+Object.entries(d.storage_downloads||{}).map(([k,u])=>'<a href="'+esc(u)+'" target="_blank">Download '+esc(k)+'</a>').join(' | ')+'</div>';
       lastBaseline=after;
       $('status').innerHTML='<span class="ok"> Optimized backtest complete.</span> Parameters were applied to the actual strategy backtest.';
     }catch(e){$('status').innerHTML='<span class="warn"> Apply failed: '+esc(e.message)+'</span>';}
