@@ -506,3 +506,42 @@ def backtest(data, cfg=V4Config(), initial_equity=10000):
         }
 
     return {'signals': df, 'trades': t, 'equity_curve': e, 'metrics': metrics}
+
+
+def optimize(data, base_cfg=None, initial_equity=10000, min_trades=3):
+    """Small bounded grid search for research, with trade-count protection.
+
+    The optimizer searches execution/risk parameters that can materially change
+    trade selection. It ranks primarily by profit factor, but exposes trade count,
+    total R and drawdown so a high-PF result with very few trades is visible.
+    """
+    base = base_cfg or V4Config()
+    candidates = []
+    for min_score in (8, 10, 12, 14, 16):
+        for min_rr in (0.8, 1.0, 1.25, 1.5, 2.0):
+            for sl_atr in (0.10, 0.20, 0.30, 0.40):
+                for cooldown in (3, 6, 12):
+                    cfg = V4Config(**{**base.__dict__, 'min_score':min_score,
+                                      'min_rr':min_rr, 'sl_atr':sl_atr,
+                                      'cooldown_bars':cooldown})
+                    result = backtest(data, cfg, initial_equity=initial_equity)
+                    m = result['metrics']
+                    pf = float(m.get('profit_factor', 0.0))
+                    if not np.isfinite(pf):
+                        pf = 999.0
+                    row = {
+                        'min_score':min_score, 'min_rr':min_rr,
+                        'sl_atr':sl_atr, 'cooldown_bars':cooldown,
+                        'profit_factor':round(pf, 3),
+                        'num_trades':int(m['num_trades']),
+                        'total_R':float(m['total_R']),
+                        'expectancy_R':float(m['expectancy_R']),
+                        'win_rate':float(m['win_rate']),
+                        'max_drawdown_pct':float(m['max_drawdown_pct']),
+                        'total_return_pct':float(m['total_return_pct'])
+                    }
+                    candidates.append(row)
+    eligible=[x for x in candidates if x['num_trades'] >= int(min_trades)]
+    pool=eligible if eligible else candidates
+    pool.sort(key=lambda x:(x['profit_factor'], x['total_R'], -abs(x['max_drawdown_pct'])), reverse=True)
+    return {'tested':len(candidates), 'eligible':len(eligible), 'min_trades':int(min_trades), 'results':pool[:20]}
