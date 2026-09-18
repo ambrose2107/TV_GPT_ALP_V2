@@ -49,8 +49,10 @@ def pivots(df, p=3):
 
 def structure(df, p=3):
     ph, pl = pivots(df, p)
-    sh = df.High.where(ph).ffill()
-    sl = df.Low.where(pl).ffill()
+    # A centered pivot needs p bars on the right to be confirmed. Delay the
+    # level by p bars before using it so the backtest cannot see future price.
+    sh = df.High.where(ph).ffill().shift(p)
+    sl = df.Low.where(pl).ffill().shift(p)
     # A close above/below the latest confirmed pivot is the structural break.
     trend = pd.Series(index=df.index, dtype=object)
     trend[df.Close > sh.shift(1)] = 'bullish'
@@ -68,8 +70,11 @@ def fvg_state(df):
     slo = pd.Series(np.nan, index=df.index); shi = pd.Series(np.nan, index=df.index)
     b_active = None; s_active = None
     for i in range(len(df)):
-        if bull.iloc[i]: b_active = (float(df.High.iloc[i-2]), float(df.Low.iloc[i]))
-        if bear.iloc[i]: s_active = (float(df.High.iloc[i]), float(df.Low.iloc[i-2]))
+        # A 3-candle FVG is undefined for the first two rows. Avoid negative
+        # iloc indexing, which otherwise reads candles from the dataframe tail.
+        if i >= 2:
+            if bull.iloc[i]: b_active = (float(df.High.iloc[i-2]), float(df.Low.iloc[i]))
+            if bear.iloc[i]: s_active = (float(df.High.iloc[i]), float(df.Low.iloc[i-2]))
         if b_active and float(df.Close.iloc[i]) < b_active[0]: b_active = None
         if s_active and float(df.Close.iloc[i]) > s_active[1]: s_active = None
         if b_active: blo.iloc[i], bhi.iloc[i] = b_active
@@ -98,7 +103,9 @@ def _load_alpaca_5m(symbol='GLD', n_bars=30000, feed=None):
         raise ValueError("ALPACA_DATA_FEED must be 'sip' or 'iex'.")
 
     end_ts = pd.Timestamp.now(tz='UTC') - pd.Timedelta(minutes=20)
-    calendar_days = max(30, int(np.ceil(n_bars / 78.0 * 7.0 / 5.0)) + 14)
+    # Request only the period needed for the requested sample plus warm-up.
+    # This avoids a large 30-day query when testing only 50-200 bars.
+    calendar_days = max(5, int(np.ceil(n_bars / 78.0 * 7.0 / 5.0)) + 3)
     start_ts = end_ts - pd.Timedelta(days=calendar_days)
 
     url = f'https://data.alpaca.markets/v2/stocks/{symbol}/bars'
@@ -129,7 +136,9 @@ def _load_alpaca_5m(symbol='GLD', n_bars=30000, feed=None):
                 if page_token:
                     params['page_token'] = page_token
 
-                resp = requests.get(url, headers=headers, params=params, timeout=30)
+                # Fail fast so a slow feed can fall back to IEX before the
+                # Render/proxy request timeout is reached.
+                resp = requests.get(url, headers=headers, params=params, timeout=12)
                 status = resp.status_code
                 if status >= 400:
                     detail = resp.text[:500].replace('\\n', ' ')
@@ -229,7 +238,7 @@ def build_signals(data, cfg=V4Config()):
     out=m5.copy(); out['signal']=0; out['score']=0; out['sl']=np.nan; out['tp1']=np.nan; out['tp2']=np.nan; out['tp3']=np.nan; out['reason']=''
     # Shift HTF features one completed bar before mapping to 5m: no future leakage.
     h1a=tr1.shift(1).reindex(m5.index,method='ffill'); h4a=tr4.shift(1).reindex(m5.index,method='ffill')
-    m15a=m15.reindex(m5.index,method='ffill'); tr15a=tr15.shift(1).reindex(m5.index,method='ffill')
+    tr15a=tr15.shift(1).reindex(m5.index,method='ffill')
     sh15a=sh15.shift(1).reindex(m5.index,method='ffill'); sl15a=sl15.shift(1).reindex(m5.index,method='ffill')
     atr15a=m15.atr.shift(1).reindex(m5.index,method='ffill')
     # Confirmed 15m FVG state is also shifted before mapping.
