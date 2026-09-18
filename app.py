@@ -1,1 +1,55 @@
-"""\napp.py — Flask application factory v8\nRegisters: webhook, dashboard, mirrorfish, analytics blueprints\n"""\nfrom flask import Flask\nfrom core.database import init_db\nfrom core.logger import get_logger\nfrom webhook.routes import webhook_bp\nfrom dashboard.routes import dashboard_bp\nfrom mirrorfish.routes import mirrorfish_bp\nfrom core.analytics_routes import analytics_bp\nfrom research.backtest_routes import backtest_bp\nfrom research.xauusd_v3_routes import xauusd_v3_bp\nfrom research.xauusd_fib_mtf_routes import xauusd_fib_mtf_bp\nfrom research.xauusd_confluence_v4_routes import xauusd_confluence_v4_bp\nfrom research.xauusd_pullback_v1_routes import xauusd_pullback_v1_bp\nfrom research.xauusd_strategy_lab_routes import xauusd_strategy_lab_bp\nfrom core.scheduler import init_scheduler\nimport os\n\nlogger = get_logger(__name__)\n\ndef create_app():\n    app = Flask(__name__, template_folder="dashboard/templates", static_folder="dashboard/static")\n    app.secret_key = os.environ.get("APP_SECRET_KEY", "change-me-in-production")\n    init_db()\n    app.register_blueprint(webhook_bp)\n    app.register_blueprint(dashboard_bp)\n    app.register_blueprint(mirrorfish_bp)\n    app.register_blueprint(analytics_bp)\n    app.register_blueprint(backtest_bp)\n    app.register_blueprint(xauusd_v3_bp)\n    app.register_blueprint(xauusd_fib_mtf_bp)\n    app.register_blueprint(xauusd_confluence_v4_bp)\n    app.register_blueprint(xauusd_pullback_v1_bp)\n    app.register_blueprint(xauusd_strategy_lab_bp)\n    init_scheduler()\n    logger.info("OptiTrade AI v8 app created.")\n    return app\n
+"""Flask application factory v8.
+
+Registers the core dashboard/webhook routes plus the XAUUSD research
+strategy pages, including the combined strategy lab.
+"""
+
+import os
+
+from flask import Flask
+
+from core.analytics_routes import analytics_bp
+from core.database import init_db
+from core.logger import get_logger
+from core.scheduler import init_scheduler
+from dashboard.routes import dashboard_bp
+from mirrorfish.routes import mirrorfish_bp
+from research.backtest_routes import backtest_bp
+from research.xauusd_confluence_v4_routes import xauusd_confluence_v4_bp
+from research.xauusd_fib_mtf_routes import xauusd_fib_mtf_bp
+from research.xauusd_pullback_v1_routes import xauusd_pullback_v1_bp
+from research.xauusd_strategy_lab_routes import xauusd_strategy_lab_bp
+from research.xauusd_v3_routes import xauusd_v3_bp
+from webhook.routes import webhook_bp
+
+
+logger = get_logger(__name__)
+
+
+def create_app():
+    app = Flask(
+        __name__,
+        template_folder="dashboard/templates",
+        static_folder="dashboard/static",
+    )
+    app.secret_key = os.environ.get(
+        "APP_SECRET_KEY",
+        "change-me-in-production",
+    )
+
+    init_db()
+
+    app.register_blueprint(webhook_bp)
+    app.register_blueprint(dashboard_bp)
+    app.register_blueprint(mirrorfish_bp)
+    app.register_blueprint(analytics_bp)
+    app.register_blueprint(backtest_bp)
+    app.register_blueprint(xauusd_v3_bp)
+    app.register_blueprint(xauusd_fib_mtf_bp)
+    app.register_blueprint(xauusd_confluence_v4_bp)
+    app.register_blueprint(xauusd_pullback_v1_bp)
+    app.register_blueprint(xauusd_strategy_lab_bp)
+
+    init_scheduler()
+    logger.info("OptiTrade AI v8 app created.")
+    return app
