@@ -39,6 +39,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
     <button id="runAll" class="primary">Run All 4</button>
     <button id="runOpen">Run Expanded</button>
     <button id="clear">Clear Results</button>
+    <button id="downloadCsv" onclick="downloadCombinedCsv()" disabled>📥 Download All Results CSV</button>
     <span id="globalStatus" class="muted">Ready</span>
   </div>
   <div class="muted" style="margin-top:8px">
@@ -95,6 +96,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
 
 <script>
 const $=id=>document.getElementById(id);
+let lastResults={};
 const defs={
  v3:{name:'V3 — Institutional Confluence',url:'/api/xauusd-v3/run'},
  fib:{name:'Fib MTF — Liquidity + Structure',url:'/api/xauusd-fib-mtf/run'},
@@ -138,9 +140,9 @@ async function runOne(k){
   const r=await fetch(dfn.url,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload(k))});
   const raw=await r.text();let d;try{d=JSON.parse(raw)}catch(_){d={error:raw||'Empty response'}};
   if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
-  renderMetrics(k,d);setStatus(k,'Done','ok');updateComparison(k,'Done',d);return {k,d};
+  renderMetrics(k,d);lastResults[k]=d;setStatus(k,'Done','ok');updateComparison(k,'Done',d);$('downloadCsv').disabled=false;return {k,d};
  }catch(e){
-  $('metrics-'+k).innerHTML='<div class="bad">Error: '+esc(e.message)+'</div>';setStatus(k,'Failed','bad');updateComparison(k,'Failed',{error:e.message});return {k,error:e};
+  $('metrics-'+k).innerHTML='<div class="bad">Error: '+esc(e.message)+'</div>';setStatus(k,'Failed','bad');updateComparison(k,'Failed',{error:e.message});lastResults[k]={error:e.message};$('downloadCsv').disabled=false;return {k,error:e};
  }
 }
 async function runKeys(keys){
@@ -149,8 +151,49 @@ async function runKeys(keys){
  $('globalStatus').innerHTML='<span class="ok">All selected runs finished.</span>';
 }
 $('runAll').onclick=()=>runKeys(Object.keys(defs));
+function csvCell(v){
+ const s=v==null?'':String(v);
+ return '"'+s.replace(/"/g,'""')+'"';
+}
+function downloadCombinedCsv(){
+ const rows=[];
+ const now=new Date().toISOString();
+ const common=['timestamp','record_type','strategy','status','symbol','data_source','bars','data_start','data_end',
+   'num_trades','win_rate','profit_factor','expectancy_R','total_R','total_return_pct','max_drawdown_pct','final_equity',
+   'entry_time','exit_time','side','entry','sl','tp','R','equity','reason'];
+ rows.push(common);
+ for(const k of Object.keys(defs)){
+   const d=lastResults[k];
+   if(!d) continue;
+   const m=d.metrics||{};
+   const status=d.error?'FAILED':'DONE';
+   const base=[now,'SUMMARY',defs[k].name,status,d.symbol||'',d.data_source||(k==='v3'||k==='fib'?'existing XAUUSD loader':'Alpaca/GLD'),
+     d.bars||'',d.data_start||'',d.data_end||'',m.num_trades??'',m.win_rate??'',m.profit_factor??'',m.expectancy_R??'',
+     m.total_R??'',m.total_return_pct??'',m.max_drawdown_pct??'',m.final_equity??''];
+   rows.push(base);
+   if(d.error){
+     rows.push([now,'ERROR',defs[k].name,'FAILED','','','','','','','','','','','','','','','','','','','','','','',d.error]);
+     continue;
+   }
+   for(const t of (d.trades||[])){
+     rows.push([now,'TRADE',defs[k].name,'DONE',d.symbol||'',d.data_source||(k==='v3'||k==='fib'?'existing XAUUSD loader':'Alpaca/GLD'),
+       d.bars||'',d.data_start||'',d.data_end||'',m.num_trades??'',m.win_rate??'',m.profit_factor??'',m.expectancy_R??'',m.total_R??'',
+       m.total_return_pct??'',m.max_drawdown_pct??'',m.final_equity??'',t.entry_time??'',t.exit_time??'',t.side??'',t.entry??'',t.sl??'',t.tp??'',
+       t.R??'',t.equity??'',t.reason??'']);
+   }
+ }
+ if(rows.length===1){alert('Run at least one strategy first.');return;}
+ const csv=rows.map(r=>r.map(csvCell).join(',')).join('\\n');
+ const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+ const a=document.createElement('a');
+ a.href=URL.createObjectURL(blob);
+ a.download='gold_strategy_lab_results_'+new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)+'.csv';
+ document.body.appendChild(a);a.click();a.remove();
+ setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+
 $('runOpen').onclick=()=>runKeys(Object.keys(defs).filter(k=>$('card-'+k).open));
-$('clear').onclick=()=>{Object.keys(defs).forEach(k=>{setStatus(k,'Ready');$('metrics-'+k).innerHTML='<div class="empty">No result yet.</div>';$('trades-'+k).innerHTML='';const r=document.querySelector('#comparison tr[data-k="'+k+'"]');if(r)r.remove()});$('globalStatus').textContent='Ready';};
+$('clear').onclick=()=>{lastResults={};$('downloadCsv').disabled=true;Object.keys(defs).forEach(k=>{setStatus(k,'Ready');$('metrics-'+k).innerHTML='<div class="empty">No result yet.</div>';$('trades-'+k).innerHTML='';const r=document.querySelector('#comparison tr[data-k="'+k+'"]');if(r)r.remove()});$('globalStatus').textContent='Ready';};
 function openPage(p){window.location.href=p}
 $('days').dispatchEvent(new Event('input'));
 </script>
