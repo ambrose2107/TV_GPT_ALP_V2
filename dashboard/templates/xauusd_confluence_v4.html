@@ -23,13 +23,13 @@ td:first-child,th:first-child{text-align:left}.muted{color:#8b949e}.sig{font-wei
 <label>5m bars <input id="bars" type="number" min="100" max="60000" value="390"></label>
 <label>Min score <input id="score" type="number" value="12"></label>
 <label>Min RR <input id="rr" type="number" step="0.1" value="1.5"></label>
-<label>Risk % <input id="risk" type="number" step="0.05" value="0.5"></label>
+<label>Risk % <input id="risk" type="number" step="0.05" value="0.5"></label>\n<label>Min optimizer trades <input id="minTrades" type="number" min="2" value="5"></label>
 <br>
 <button id="runButton" type="submit">Run Alpaca 5m Backtest</button> <button id="optButton" type="button">Optimize Profit Factor</button>
 <span id="status" class="muted">JavaScript ready — press Run.</span>
 </form>
 <div class="muted">US-market estimate: 78 five-minute bars per trading day. Start small (1, 2, 5, 10 days) and increase until the worker fails.</div>
-<div id="errorBox"></div><div class="muted">Optimizer tests score, RR, SL ATR and cooldown combinations. It ranks by profit factor but requires a minimum trade count so tiny samples are visible.</div>
+<div id="errorBox"></div><div class="muted">Fast optimizer + chronological 70/30 train/test validation. It searches score, RR, SL ATR and cooldown, then ranks by validation PF, train PF, expectancy and drawdown. A high PF with too few trades is not treated as robust.</div>
 </div>
 <div class="box"><h3>Signal Diagnostics</h3><table id="diag"></table><div class="muted">Set Min RR to 0 and Min score to 2 for a pure signal-generation test.</div></div>
 <div class="box"><h3>Dataset</h3><table id="dataset"></table></div>
@@ -47,7 +47,7 @@ td:first-child,th:first-child{text-align:left}.muted{color:#8b949e}.sig{font-wei
     try{
       const response=await fetch('/api/xauusd-confluence-v4/run',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({
         symbol:$('symbol').value.trim().toUpperCase(),data_source:'alpaca',n_bars:requestedBars,
-        mode:mode, min_trades:3, config:{min_score:Number($('score').value),min_rr:Number($('rr').value),risk_pct:Number($('risk').value)}
+        mode:mode, min_trades:Math.max(2,Number($('minTrades').value)||5), config:{min_score:Number($('score').value),min_rr:Number($('rr').value),risk_pct:Number($('risk').value)}
       })});
       const raw=await response.text();let d;try{d=JSON.parse(raw);}catch(_){d={error:raw||'Empty server response'};}
       if(!response.ok){
@@ -56,8 +56,20 @@ td:first-child,th:first-child{text-align:left}.muted{color:#8b949e}.sig{font-wei
       }
       if(mode==='optimize'){
         const rows=d.optimizer&&d.optimizer.results||[];
-        $('optimizer').innerHTML=rows.length?'<tr>'+Object.keys(rows[0]).map(k=>'<th>'+esc(k)+'</th>').join('')+'</tr>'+rows.map(x=>'<tr>'+Object.values(x).map(v=>'<td>'+esc(v)+'</td>').join('')+'</tr>').join(''):'<tr><td>No optimizer results</td></tr>';
-        status.innerHTML='<span class="ok"> Optimization done.</span> Tested '+esc(d.optimizer.tested)+' combinations; '+esc(d.optimizer.eligible)+' met minimum trades.';
+        const fmt=(k,v)=>{
+          if(v==null)return '—';
+          if(typeof v==='number'){
+            if(k==='min_score'||k==='cooldown_bars'||k==='train_trades'||k==='test_trades'||k==='num_trades') return String(Math.round(v));
+            return Number(v).toFixed(2);
+          }
+          return v;
+        };
+        $('optimizer').innerHTML=rows.length
+          ? '<tr>'+Object.keys(rows[0]).filter(k=>k!=='eligible').map(k=>'<th>'+esc(k)+'</th>').join('')+'</tr>'+
+            rows.map(x=>'<tr>'+Object.keys(x).filter(k=>k!=='eligible').map(k=>'<td>'+esc(fmt(k,x[k]))+'</td>').join('')+'</tr>').join('')
+          : '<tr><td>No optimizer results</td></tr>';
+        const o=d.optimizer||{};
+        status.innerHTML='<span class="ok"> Optimization done.</span> Tested '+esc(o.tested)+' combinations; '+esc(o.eligible)+' passed train/test trade filters. Split: '+esc(o.train_pct)+'% / '+esc(o.test_pct)+'%.';
         return;
       }
       const dg=d.signal_diag||{};
@@ -66,10 +78,16 @@ td:first-child,th:first-child{text-align:left}.muted{color:#8b949e}.sig{font-wei
         ['Symbol',d.symbol],['Source',d.data_source],['Requested bars',requestedBars],['Received bars',d.bars],
         ['Data start',d.data_start],['Data end',d.data_end],['Browser elapsed (sec)',((performance.now()-started)/1000).toFixed(2)]
       ].map(x=>'<tr><td>'+esc(x[0])+'</td><td>'+esc(x[1])+'</td></tr>').join('');
-      $('metrics').innerHTML=Object.entries(d.metrics||{}).map(([k,v])=>'<tr><td>'+esc(k)+'</td><td>'+esc(v)+'</td></tr>').join('');
+      $('metrics').innerHTML=Object.entries(d.metrics||{}).map(([k,v])=>{
+        const vv=(typeof v==='number'&&isFinite(v))?Number(v).toFixed(2):esc(v);
+        return '<tr><td>'+esc(k)+'</td><td>'+esc(vv)+'</td></tr>';
+      }).join('');
       const trades=d.trades||[];
       $('trades').innerHTML=trades.length
-        ?'<tr>'+Object.keys(trades[0]).map(k=>'<th>'+esc(k)+'</th>').join('')+'</tr>'+trades.map(x=>'<tr>'+Object.values(x).map(v=>'<td>'+esc(v)+'</td>').join('')+'</tr>').join('')
+        ?'<tr>'+Object.keys(trades[0]).map(k=>'<th>'+esc(k)+'</th>').join('')+'</tr>'+trades.map(x=>'<tr>'+Object.entries(x).map(([k,v])=>{
+          const vv=(typeof v==='number'&&isFinite(v))?Number(v).toFixed(2):v;
+          return '<td>'+esc(vv)+'</td>';
+        }).join('')+'</tr>').join('')
         :'<tr><td>No trades</td></tr>';
       status.innerHTML='<span class="ok"> Done.</span> '+esc(d.symbol)+' | '+esc(d.bars)+' bars | '+esc(d.data_start)+' → '+esc(d.data_end);
     }catch(e){
