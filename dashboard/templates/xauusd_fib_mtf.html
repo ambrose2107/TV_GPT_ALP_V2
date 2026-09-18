@@ -22,15 +22,17 @@
     padding: 18px; margin-bottom: 18px;
   }
   .sec h2 { font-size: 15px; margin: 0 0 12px; }
-  .row { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; align-items: center; }
+  .row { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 10px; align-items: flex-end; }
   input[type=text], input[type=number], select {
     background: #0d1117; border: 1px solid var(--border); color: var(--text);
     border-radius: 6px; padding: 7px 10px; font-size: 13px;
   }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 11px; color: var(--muted); white-space: nowrap; }
   label.chk {
     display: flex; align-items: center; gap: 6px; font-size: 12px;
     background: #0d1117; border: 1px solid var(--border); border-radius: 6px;
-    padding: 6px 10px; cursor: pointer;
+    padding: 6px 10px; cursor: pointer; height: 32px;
   }
   .grp-title { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 14px 0 6px; }
   button.run {
@@ -66,35 +68,73 @@
 <div class="sec">
   <h2>Data</h2>
   <div class="row">
-    <input type="number" id="mtf-nbars" value="30000" placeholder="5m bars to load" style="max-width:150px">
-    <label class="chk"><input type="checkbox" id="mtf-uselive" checked> Use live data (yfinance)</label>
+    <div class="field">
+      <label>Data Source</label>
+      <select id="mtf-data-source" onchange="onDataSourceChange()">
+        <option value="yfinance" selected>Yahoo Finance (GC=F, real 24h gold)</option>
+        <option value="alpaca">Alpaca (GLD ETF proxy - see note)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Lookback Period (days)</label>
+      <input type="number" id="mtf-lookback-days" value="60" style="max-width:120px">
+    </div>
+    <div class="field" id="mtf-alpaca-symbol-field" style="display:none">
+      <label>Alpaca Proxy Symbol</label>
+      <input type="text" id="mtf-alpaca-symbol" value="GLD" style="max-width:110px">
+    </div>
+    <div class="field">
+      <label>Synthetic Fallback Bars</label>
+      <input type="number" id="mtf-nbars" value="30000" style="max-width:130px">
+    </div>
+    <label class="chk"><input type="checkbox" id="mtf-uselive" checked> Use live data</label>
   </div>
+  <div class="warn" id="mtf-alpaca-warning" style="display:none">
+    Alpaca does not provide gold/XAUUSD market data directly (US equities + crypto only).
+    This uses <b>GLD</b> (a gold-tracking ETF) as a proxy through your site's existing Alpaca
+    connection. Real differences from actual gold, not just a units difference: GLD only trades
+    during NYSE hours (no overnight/Asian/London session activity), and can occasionally diverge
+    slightly from spot gold. Use Yahoo Finance for a closer read on real 24-hour gold behavior;
+    use this if you specifically want to test against your Alpaca connection.
+  </div>
+  <div class="note">"Synthetic Fallback Bars" only matters if live data fails to load - it controls how much offline test data gets generated instead so you still have something to look at.</div>
 
   <div class="grp-title">Impulse Quality (15m)</div>
   <div class="row">
-    <input type="number" id="mtf-min-eff" value="0.35" step="0.05" placeholder="Min Efficiency" style="max-width:140px">
-    <input type="number" id="mtf-min-atr" value="3.0" step="0.5" placeholder="Min Size (x ATR)" style="max-width:140px">
-    <input type="number" id="mtf-pivot-l15" value="3" placeholder="15m Pivot Left" style="max-width:140px">
-    <input type="number" id="mtf-pivot-r15" value="3" placeholder="15m Pivot Right" style="max-width:140px">
+    <div class="field"><label>Min Efficiency (0-1, net move / path length)</label>
+      <input type="number" id="mtf-min-eff" value="0.35" step="0.05" style="max-width:140px"></div>
+    <div class="field"><label>Min Impulse Size (x ATR)</label>
+      <input type="number" id="mtf-min-atr" value="3.0" step="0.5" style="max-width:140px"></div>
+    <div class="field"><label>15m Pivot Left (bars)</label>
+      <input type="number" id="mtf-pivot-l15" value="3" style="max-width:140px"></div>
+    <div class="field"><label>15m Pivot Right (bars)</label>
+      <input type="number" id="mtf-pivot-r15" value="3" style="max-width:140px"></div>
   </div>
 
   <div class="grp-title">Fibonacci & Confluence</div>
   <div class="row">
-    <input type="number" id="mtf-zone-tol" value="0.3" step="0.1" placeholder="Zone Tolerance (x ATR)" style="max-width:170px">
-    <input type="number" id="mtf-min-conf" value="2" min="1" max="3" placeholder="Min Confluences (of 3)" style="max-width:180px">
+    <div class="field"><label>Zone Tolerance (x ATR)</label>
+      <input type="number" id="mtf-zone-tol" value="0.3" step="0.1" style="max-width:170px"></div>
+    <div class="field"><label>Min Confluences Required (of 3)</label>
+      <input type="number" id="mtf-min-conf" value="2" min="1" max="3" style="max-width:180px"></div>
   </div>
 
   <div class="grp-title">5m Confirmation</div>
   <div class="row">
-    <input type="number" id="mtf-sweep-lookback" value="20" placeholder="Sweep Lookback (bars)" style="max-width:170px">
-    <input type="number" id="mtf-sweep-window" value="6" placeholder="Sweep-to-BOS Window" style="max-width:170px">
-    <input type="number" id="mtf-sl-buffer" value="0.15" step="0.05" placeholder="SL Buffer (x ATR)" style="max-width:150px">
-    <input type="number" id="mtf-min-spacing" value="6" placeholder="Min Spacing (bars)" style="max-width:150px">
+    <div class="field"><label>Sweep Lookback (bars)</label>
+      <input type="number" id="mtf-sweep-lookback" value="20" style="max-width:170px"></div>
+    <div class="field"><label>Sweep-to-BOS Window (bars)</label>
+      <input type="number" id="mtf-sweep-window" value="6" style="max-width:170px"></div>
+    <div class="field"><label>SL Buffer (x ATR)</label>
+      <input type="number" id="mtf-sl-buffer" value="0.15" step="0.05" style="max-width:150px"></div>
+    <div class="field"><label>Min Spacing Between Entries (bars)</label>
+      <input type="number" id="mtf-min-spacing" value="6" style="max-width:150px"></div>
   </div>
 
   <div class="grp-title">Risk</div>
   <div class="row">
-    <input type="number" id="mtf-risk-pct" value="0.5" step="0.01" placeholder="Risk % / trade" style="max-width:150px">
+    <div class="field"><label>Risk % of Equity / Trade</label>
+      <input type="number" id="mtf-risk-pct" value="0.5" step="0.01" style="max-width:150px"></div>
     <label class="chk"><input type="checkbox" id="mtf-allow-longs" checked> Allow Longs</label>
     <label class="chk"><input type="checkbox" id="mtf-allow-shorts" checked> Allow Shorts</label>
   </div>
@@ -126,8 +166,10 @@
 <div class="sec" id="opt-sec" style="display:none">
   <h2>Auto-Optimizer Results</h2>
   <div class="row">
-    <input type="number" id="mtf-opt-nbars" value="60000" placeholder="Bars for optimizer" style="max-width:170px">
-    <input type="number" id="mtf-opt-min-trades" value="10" placeholder="Min trades to trust" style="max-width:170px">
+    <div class="field"><label>Bars for Optimizer (synthetic fallback)</label>
+      <input type="number" id="mtf-opt-nbars" value="60000" style="max-width:170px"></div>
+    <div class="field"><label>Min Trades to Trust a Result</label>
+      <input type="number" id="mtf-opt-min-trades" value="10" style="max-width:170px"></div>
   </div>
   <div class="note">Grid capped at 2 values per dimension (max 32 combos) to keep a single web request reasonably fast. For a full research-grade sweep, run main.py locally.</div>
   <span id="opt-status"></span>
@@ -139,6 +181,20 @@ function byId(id) {
   const el = document.getElementById(id);
   if (!el) console.error('xauusd-fib-mtf: element not found:', id);
   return el;
+}
+
+function onDataSourceChange() {
+  const isAlpaca = byId('mtf-data-source').value === 'alpaca';
+  byId('mtf-alpaca-symbol-field').style.display = isAlpaca ? '' : 'none';
+  byId('mtf-alpaca-warning').style.display = isAlpaca ? '' : 'none';
+}
+
+function buildDataSourcePayload() {
+  return {
+    data_source: byId('mtf-data-source').value,
+    lookback_days: parseInt(byId('mtf-lookback-days').value) || 60,
+    alpaca_symbol: byId('mtf-alpaca-symbol').value.trim() || 'GLD',
+  };
 }
 
 function buildMtfPayload() {
@@ -170,6 +226,7 @@ async function runBacktest() {
   const payload = {
     n_bars: parseInt(byId('mtf-nbars').value) || 30000,
     use_live: byId('mtf-uselive').checked,
+    ...buildDataSourcePayload(),
     mtf: buildMtfPayload(),
     engine: { risk_pct: parseFloat(byId('mtf-risk-pct').value) },
   };
@@ -245,6 +302,7 @@ async function runOptimize() {
     n_bars: parseInt(byId('mtf-opt-nbars').value) || 60000,
     use_live: byId('mtf-uselive').checked,
     min_trades: parseInt(byId('mtf-opt-min-trades').value) || 10,
+    ...buildDataSourcePayload(),
     mtf: buildMtfPayload(),
     engine: { risk_pct: parseFloat(byId('mtf-risk-pct').value) },
   };
