@@ -55,7 +55,7 @@ def run():
         response={'symbol':symbol,'data_source':data_source,'bars':len(data['m5']),
                   'data_start':str(data['m5'].index.min()),'data_end':str(data['m5'].index.max()),
                   'metrics':result['metrics'],'trades':trades.to_dict('records'),
-                  'signals':signals.to_dict('records')}
+                  'signals':signals.to_dict('records'),'signal_diag':result['signals'].attrs.get('signal_diag',{})}
         logger.info('[RUN] success total_elapsed=%.2fs', time.perf_counter()-started)
         return jsonify(response)
     except Exception as ex:
