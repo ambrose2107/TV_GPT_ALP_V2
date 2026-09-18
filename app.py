@@ -13,6 +13,7 @@ from research.backtest_routes import backtest_bp
 from research.xauusd_v3_routes import xauusd_v3_bp
 from research.xauusd_fib_mtf_routes import xauusd_fib_mtf_bp
 from research.xauusd_confluence_v4_routes import xauusd_confluence_v4_bp
+from research.xauusd_pullback_v1_routes import xauusd_pullback_v1_bp
 from core.scheduler import init_scheduler
 import os
 
@@ -30,6 +31,7 @@ def create_app():
     app.register_blueprint(xauusd_v3_bp)
     app.register_blueprint(xauusd_fib_mtf_bp)
     app.register_blueprint(xauusd_confluence_v4_bp)
+    app.register_blueprint(xauusd_pullback_v1_bp)
     init_scheduler()
     logger.info("OptiTrade AI v8 app created.")
     return app
