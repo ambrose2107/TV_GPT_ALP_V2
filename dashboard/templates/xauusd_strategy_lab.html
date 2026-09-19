@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<title>Gold Strategy Lab — 4 Strategy Comparison</title>
+<title>Gold Strategy Lab — 5 Strategy Comparison</title>
 <style>
 :root{--bg:#0d1117;--panel:#161b22;--line:#30363d;--text:#c9d1d9;--muted:#8b949e;--good:#7ee787;--warn:#d29922;--bad:#ff7b72}
 *{box-sizing:border-box}body{font-family:Arial,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:18px;max-width:1450px;margin-inline:auto}
@@ -28,7 +28,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
 </head>
 <body>
 <h1>Gold Strategy Lab</h1>
-<div class="muted">One workspace for four independent 5-minute Gold research strategies. Expand/minimize any strategy, run one, or run all and compare the same backtest metrics.</div>
+<div class="muted">One workspace for five independent Gold research strategies. Expand/minimize any strategy, run one, or run all and compare the same backtest metrics.</div>
 
 <div class="toolbar">
   <div class="controls">
@@ -36,14 +36,14 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
     <label>5m bars <input id="bars" type="number" min="100" max="60000" value="1560"></label>
     <label>Risk % <input id="risk" type="number" min=".01" step=".05" value=".50"></label>
     <label>Min trades <input id="minTrades" type="number" min="2" value="20"></label>
-    <button id="runAll" class="primary">Run All 4</button>
+    <button id="runAll" class="primary">Run All 5</button>
     <button id="runOpen">Run Expanded</button>
     <button id="clear">Clear Results</button>
     <button id="downloadCsv" onclick="downloadCombinedCsv()" disabled>📥 Download All Results CSV</button>
     <span id="globalStatus" class="muted">Ready</span>
   </div>
   <div class="muted" style="margin-top:8px">
-    Strategy 1/2 use their existing XAUUSD/futures data loaders; V4/Pullback use Alpaca GLD by default. The comparison table shows the data source returned by each strategy so results are not mistaken for identical instruments.
+    Strategy 1/2 use their existing XAUUSD/futures data loaders; V4/Pullback/EMA Retest use Alpaca GLD by default. The comparison table shows the data source returned by each strategy so results are not mistaken for identical instruments.
   </div>
 </div>
 
@@ -92,6 +92,16 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
     <div id="trades-pullback"></div>
   </div>
 </details>
+
+<details class="card" id="card-ema" open>
+  <summary><span>5. Gold EMA 20/50 — Third Retest V1</span><span class="badge">15m + 1H</span><span class="status" id="status-ema">Ready</span></summary>
+  <div class="body">
+    <div class="muted">EMA20/EMA50 cross arms direction. Entry only on the third clean 15m retest, with completed 1H alignment, London/NY overlap, one setup per day, fixed stop beyond EMA50, and fixed 2.5R target.</div>
+    <p><button onclick="runOne('ema')">Run EMA Retest</button> <button onclick="openPage('/xauusd-ema-retest-v1')">Open full EMA Retest page</button></p>
+    <div id="metrics-ema" class="empty">No result yet.</div>
+    <div id="trades-ema"></div>
+  </div>
+</details>
 </div>
 
 <script>
@@ -101,7 +111,8 @@ const defs={
  v3:{name:'V3 — Institutional Confluence',url:'/api/xauusd-v3/run'},
  fib:{name:'Fib MTF — Liquidity + Structure',url:'/api/xauusd-fib-mtf/run'},
  v4:{name:'Confluence V4',url:'/api/xauusd-confluence-v4/run'},
- pullback:{name:'Pullback Breakout V1',url:'/api/xauusd-pullback-v1/run'}
+ pullback:{name:'Pullback Breakout V1',url:'/api/xauusd-pullback-v1/run'},
+ ema:{name:'EMA 20/50 Third Retest V1',url:'/api/xauusd-ema-retest-v1/run'}
 };
 function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function num(v){return typeof v==='number'&&isFinite(v)?v.toFixed(2):'—';}
@@ -113,7 +124,8 @@ function payload(k){
  if(k==='v3') return {interval:'5m',use_live:true,n_bars:n};
  if(k==='fib') return {use_live:true,n_bars:n};
  if(k==='v4') return {symbol:'GLD',data_source:'alpaca',n_bars:n,mode:'backtest',min_trades:minTrades,config:{risk_pct:risk,min_score:12,min_rr:1.5}};
- return {symbol:'GLD',n_bars:n,mode:'backtest',min_trades:minTrades,config:{risk_pct:risk}};
+ if(k==='pullback') return {symbol:'GLD',n_bars:n,mode:'backtest',min_trades:minTrades,config:{risk_pct:risk}};
+ return {symbol:'GLD',n_bars:n,config:{risk_pct:risk,rr:2.5}};
 }
 function renderMetrics(k,d){
  const m=d.metrics||{};
