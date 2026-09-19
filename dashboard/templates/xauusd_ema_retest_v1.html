@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gold EMA 20/50 Third Retest V1</title>
+<style>
+body{font-family:Arial;background:#0d1117;color:#c9d1d9;padding:24px;max-width:1150px;margin:auto}.box{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:18px;margin:14px 0}
+input{background:#0d1117;color:#c9d1d9;border:1px solid #30363d;padding:8px;width:90px;margin:4px}button,a.btn{padding:9px 14px;font-weight:bold;border:1px solid #30363d;border-radius:6px;background:#21262d;color:#c9d1d9;text-decoration:none;cursor:pointer}
+table{width:100%;border-collapse:collapse}th{position:sticky;top:0;background:#161b22}td,th{padding:7px;border-bottom:1px solid #30363d;text-align:right;white-space:nowrap}.muted{color:#8b949e}.ok{color:#7ee787}.bad{color:#ff7b72}
+.nav{display:flex;gap:6px;flex-wrap:wrap}.nav a{font-size:12px}.primary{background:#238636!important;color:#fff!important}.scroll{max-height:440px;overflow:auto}
+</style></head><body>
+<div class="nav">
+<a class="btn primary" href="/xauusd-strategy-lab">🧪 Strategy Lab</a>
+<a class="btn" href="/xauusd-v3">V3</a><a class="btn" href="/xauusd-fib-mtf">Fib MTF</a>
+<a class="btn" href="/xauusd-confluence-v4">V4</a><a class="btn" href="/xauusd-pullback-v1">Pullback V1</a>
+<a class="btn" href="/xauusd-ema-retest-v1">EMA Retest V1</a><a class="btn" href="/?tab=bt">Backtest</a>
+</div>
+
+<h1>Gold EMA 20/50 — Third Retest V1</h1>
+<p class="muted">15m execution. EMA20/EMA50 cross arms direction, third clean retest triggers only if 1H agrees and the candle is inside the London/NY overlap. One setup per UTC day. Fixed stop beyond EMA50 and fixed 2.5R target.</p>
+
+<div class="box">
+<label>Symbol <input id="symbol" value="GLD"></label>
+<label>Days <input id="days" type="number" value="40" min="5"></label>
+<label>5m bars <input id="bars" type="number" value="3120" min="500"></label>
+<label>Risk % <input id="risk" type="number" value="1" step=".1"></label>
+<label>Target R <input id="rr" type="number" value="2.5" step=".1"></label>
+<label>SL ATR buffer <input id="slbuf" type="number" value=".10" step=".05"></label>
+<button id="run">Run Backtest</button> <span id="status" class="muted">Ready</span>
+</div>
+
+<div class="box"><h3>Rules</h3>
+<table>
+<tr><td>Execution timeframe</td><td>15m</td></tr>
+<tr><td>Direction</td><td>EMA20 above EMA50 = long only; below = short only</td></tr>
+<tr><td>Entry</td><td>Third clean retest after confirmed cross</td></tr>
+<tr><td>1H confirmation</td><td>Last completed 1H EMA20/EMA50 agrees</td></tr>
+<tr><td>Session</td><td>13:30–16:00 UTC London/NY overlap</td></tr>
+<tr><td>Frequency</td><td>Maximum 1 entry per UTC day</td></tr>
+<tr><td>Stop</td><td>Beyond EMA50 + ATR buffer, fixed at entry</td></tr>
+<tr><td>Target</td><td>2.5R fixed, never moved</td></tr>
+</table></div>
+
+<div class="box"><h3>Diagnostics</h3><table id="diag"></table></div>
+<div class="box"><h3>Metrics</h3><table id="metrics"></table></div>
+<div class="box"><h3>Trades</h3><div class="scroll"><table id="trades"></table></div></div>
+
+<script>
+const $=x=>document.getElementById(x),esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+$('days').oninput=()=>{$('bars').value=Math.max(500,Math.round(Number($('days').value||1)*78));};
+function fmt(v){return typeof v==='number'&&isFinite(v)?Number(v).toFixed(2):v??'—'}
+$('run').onclick=async()=>{
+ const s=$('status');$('run').disabled=true;s.textContent='Running…';
+ try{
+  const body={symbol:$('symbol').value.toUpperCase(),n_bars:Number($('bars').value),config:{risk_pct:Number($('risk').value),rr:Number($('rr').value),sl_buffer_atr:Number($('slbuf').value)}};
+  const r=await fetch('/api/xauusd-ema-retest-v1/run',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d=await r.json();if(!r.ok||d.error)throw new Error(d.error||'Failed');
+  $('diag').innerHTML=Object.entries(d.diagnostics||{}).map(([k,v])=>'<tr><td>'+esc(k)+'</td><td>'+esc(fmt(v))+'</td></tr>').join('');
+  $('metrics').innerHTML=Object.entries(d.metrics||{}).map(([k,v])=>'<tr><td>'+esc(k)+'</td><td>'+esc(fmt(v))+'</td></tr>').join('');
+  const t=d.trades||[];
+  $('trades').innerHTML=t.length?'<tr>'+Object.keys(t[0]).map(k=>'<th>'+esc(k)+'</th>').join('')+'</tr>'+t.slice().reverse().map(x=>'<tr>'+Object.values(x).map(v=>'<td>'+esc(fmt(v))+'</td>').join('')+'</tr>').join(''):'<tr><td>No trades</td></tr>';
+  s.innerHTML='<span class="ok">Done.</span> '+esc(d.data_start)+' → '+esc(d.data_end);
+ }catch(e){s.innerHTML='<span class="bad">Failed: '+esc(e.message)+'</span>'}
+ finally{$('run').disabled=false}
+};
+</script></body></html>
