@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gold Quad-RSI Mean Reversion V1</title>
+<style>
+body{font-family:Arial,sans-serif;background:#0d1117;color:#c9d1d9;margin:0;padding:16px;max-width:1300px;margin:auto}
+a,button{color:#c9d1d9}.nav{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}.nav a{padding:7px 10px;border:1px solid #30363d;border-radius:6px;text-decoration:none;background:#161b22}
+.card{background:#161b22;border:1px solid #30363d;border-radius:9px;padding:14px;margin:12px 0}button{background:#238636;border:1px solid #30363d;border-radius:6px;padding:9px 13px;font-weight:bold}
+input{background:#0d1117;color:#c9d1d9;border:1px solid #30363d;padding:8px;width:75px}table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px solid #30363d;text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left}.scroll{overflow:auto;max-height:420px}.muted{color:#8b949e}.good{color:#7ee787}
+</style></head><body>
+<div class="nav">
+<a href="/xauusd-strategy-lab">Strategy Lab</a><a href="/xauusd-v3">V3</a><a href="/xauusd-fib-mtf">Fib MTF</a><a href="/xauusd-confluence-v4">V4</a><a href="/xauusd-pullback-v1">Pullback V1</a><a href="/xauusd-ema-retest-v1">EMA Retest V1</a><a href="/xauusd-quad-rsi-v1">Quad RSI V1</a><a href="/backtest">Backtest</a>
+</div>
+<h1>Gold Quad-RSI Mean Reversion V1</h1>
+<div class="muted">Direct research implementation of the reference rules: RSI(3) exhaustion + repeated RSI declines + low IBS + price above MA150. Signal at session close, entry next session open, exit next open after a close above the prior session high.</div>
+<div class="card">
+<label>Symbol <input id="symbol" value="GLD"></label>
+<label>5m bars <input id="bars" type="number" value="3120" min="1000"></label>
+<button id="run">Run Backtest</button>
+<span id="status" class="muted">Ready</span>
+</div>
+<div class="card"><h2>Rules</h2><table><tr><td>RSI</td><td>3</td></tr><tr><td>RSI oversold</td><td>&lt; 25</td></tr><tr><td>RSI declines</td><td>≥ 4 in last 10 sessions</td></tr><tr><td>IBS</td><td>&lt; 10</td></tr><tr><td>Regime</td><td>Close &gt; MA150</td></tr><tr><td>Entry</td><td>Next session open</td></tr><tr><td>Exit</td><td>Next open after close &gt; yesterday's high</td></tr><tr><td>Positions</td><td>One at a time</td></tr></table></div>
+<div class="card"><h2>Metrics</h2><div id="metrics" class="muted">No result yet.</div></div>
+<div class="card"><h2>Diagnostics</h2><div id="diag" class="muted">No result yet.</div></div>
+<div class="card"><h2>Trades</h2><div id="trades" class="scroll"></div></div>
+<script>
+const $=x=>document.getElementById(x);
+const esc=v=>String(v==null?'':v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=v=>typeof v==='number'&&isFinite(v)?v.toFixed(2):'—';
+$('run').onclick=async()=>{
+ $('run').disabled=true;$('status').textContent='Running…';
+ try{
+  const r=await fetch('/api/xauusd-quad-rsi-v1/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:$('symbol').value||'GLD',n_bars:Number($('bars').value)||3120})});
+  const d=await r.json();if(!r.ok)throw new Error(d.error||'Request failed');
+  const m=d.metrics||{};
+  $('metrics').innerHTML='<table>'+Object.entries(m).map(([k,v])=>'<tr><td>'+esc(k)+'</td><td>'+fmt(v)+'</td></tr>').join('')+'</table><p class="muted">'+esc(d.data_source)+' · '+esc(d.data_start)+' → '+esc(d.data_end)+' · daily bars '+esc(d.daily_bars)+'</p>';
+  $('diag').innerHTML='<table>'+Object.entries(d.diagnostics||{}).map(([k,v])=>'<tr><td>'+esc(k)+'</td><td>'+esc(v)+'</td></tr>').join('')+'</table>';
+  const t=d.trades||[];if(t.length){const c=Object.keys(t[0]);$('trades').innerHTML='<table><tr>'+c.map(x=>'<th>'+esc(x)+'</th>').join('')+'</tr>'+t.map(row=>'<tr>'+c.map(x=>'<td>'+esc(typeof row[x]==='number'?fmt(row[x]):row[x])+'</td>').join('')+'</tr>').join('')+'</table>'}else $('trades').innerHTML='<div class="muted">No closed trades in this sample.</div>';
+  $('status').innerHTML='<span class="good">Done</span>';
+ }catch(e){$('status').textContent='Error: '+e.message}finally{$('run').disabled=false}
+};
+</script></body></html>
