@@ -71,7 +71,7 @@ def alpaca_get_bars(symbol: str, timeframe: str = "1Day",
         logger.warning("⚠️ Alpaca API key not set — skipping Alpaca, falling back to Yahoo")
         return None
 
-    requested = max(1, min(int(limit), 10000))
+    requested = max(1, min(int(limit), 100000))
     if not start:
         now = datetime.now(timezone.utc)
         if timeframe in ("1Day",):
