@@ -21,6 +21,7 @@ from research.xauusd_pullback_v1_routes import xauusd_pullback_v1_bp
 from research.xauusd_strategy_lab_routes import xauusd_strategy_lab_bp
 from research.xauusd_ema_retest_v1_routes import xauusd_ema_retest_v1_bp
 from research.xauusd_quad_rsi_v1_routes import xauusd_quad_rsi_v1_bp
+from research.xauusd_triple_rsi_v1_routes import xauusd_triple_rsi_v1_bp
 from research.strategy_chart_routes import strategy_chart_bp
 from research.xauusd_v3_routes import xauusd_v3_bp
 from webhook.routes import webhook_bp
@@ -54,6 +55,7 @@ def create_app():
     app.register_blueprint(xauusd_strategy_lab_bp)
     app.register_blueprint(xauusd_ema_retest_v1_bp)
     app.register_blueprint(xauusd_quad_rsi_v1_bp)
+    app.register_blueprint(xauusd_triple_rsi_v1_bp)
     app.register_blueprint(strategy_chart_bp)
 
     init_scheduler()
