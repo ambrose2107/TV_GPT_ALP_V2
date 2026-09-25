@@ -51,10 +51,10 @@
   }
   async function load(){
     const symbol=($('strategy-chart-symbol').value||'GLD').trim().toUpperCase();
+    const tf=$('strategy-chart-tf').value;
     const rawN=Number((document.getElementById('bars')||{}).value)||1560;
     const caps={'5m':6000,'15m':6000,'1h':3000,'1d':1500};
     const n=Math.min(rawN,caps[tf]||6000);
-    const tf=$('strategy-chart-tf').value;
     $('chart-status').textContent='Loading…';
     try{
       const r=await fetch('/api/strategy-chart',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol,n_bars:n,timeframe:tf})});
