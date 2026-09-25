@@ -80,6 +80,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
   </div>
   <div id="failureChecks" class="muted" style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 10px"></div>
   <div id="failureSummary" class="muted" style="margin-bottom:8px">Run the seven strategies to populate the chart.</div>
+  <div id="failureStats" class="scroll" style="max-height:260px;margin-bottom:10px"><div class="empty">Loss diagnostics will appear after the runs.</div></div>
   <div id="failureChart" style="width:100%;height:600px"></div>
   <div id="failureTradeDetail" class="card" style="display:none;margin-top:12px;padding:14px">
     <h3 style="margin:0 0 10px">🎯 Selected Trade</h3>
@@ -221,9 +222,23 @@ async function runOne(k){
   $('metrics-'+k).innerHTML='<div class="bad">Error: '+esc(e.message)+'</div>';setStatus(k,'Failed','bad');updateComparison(k,'Failed',{error:e.message});lastResults[k]={error:e.message};$('downloadCsv').disabled=false;return {k,error:e};
  }
 }
+function renderFailureStats(){
+ const rows=Object.keys(defs).map(k=>{
+   const t=(lastResults[k]&&lastResults[k].trades)||[];
+   const wins=t.filter(x=>Number(x.R)>0), losses=t.filter(x=>Number(x.R)<0);
+   const longs=t.filter(x=>String(x.side||'').toLowerCase().includes('long')).length;
+   const shorts=t.filter(x=>String(x.side||'').toLowerCase().includes('short')).length;
+   const avg=a=>a.length?a.reduce((s,x)=>s+Number(x.R),0)/a.length:null;
+   return {name:defs[k].name,trades:t.length,wins:wins.length,losses:losses.length,winR:avg(wins),lossR:avg(losses),longs,shorts};
+ });
+ $('failureStats').innerHTML='<table><tr><th>Strategy</th><th>Trades</th><th>Wins</th><th>Losses</th><th>Avg win R</th><th>Avg loss R</th><th>Long</th><th>Short</th></tr>'+
+ rows.map(r=>'<tr><td>'+esc(r.name)+'</td><td>'+r.trades+'</td><td>'+r.wins+'</td><td>'+r.losses+'</td><td>'+num(r.winR)+'</td><td>'+num(r.lossR)+'</td><td>'+r.longs+'</td><td>'+r.shorts+'</td></tr>').join('')+'</table>'+
+ '<div class="muted" style="padding:8px">This is descriptive backtest diagnostics. It does not establish future profitability; compare on held-out/walk-forward data before changing rules.</div>';
+}
 async function runKeys(keys){
  $('globalStatus').textContent='Running '+keys.length+' strategy'+(keys.length>1?'ies':'')+'…';
  await Promise.all(keys.map(runOne));
+ renderFailureStats();
  $('globalStatus').innerHTML='<span class="ok">All selected runs finished.</span>';
 }
 $('runAll').onclick=()=>runKeys(Object.keys(defs));
@@ -269,7 +284,7 @@ function downloadCombinedCsv(){
 }
 
 $('runOpen').onclick=()=>runKeys(Object.keys(defs).filter(k=>$('card-'+k).open));
-$('clear').onclick=()=>{lastResults={};$('downloadCsv').disabled=true;Object.keys(defs).forEach(k=>{setStatus(k,'Ready');$('metrics-'+k).innerHTML='<div class="empty">No result yet.</div>';$('trades-'+k).innerHTML='';const r=document.querySelector('#comparison tr[data-k="'+k+'"]');if(r)r.remove()});$('globalStatus').textContent='Ready';};
+$('clear').onclick=()=>{lastResults={};$('downloadCsv').disabled=true;Object.keys(defs).forEach(k=>{setStatus(k,'Ready');$('metrics-'+k).innerHTML='<div class="empty">No result yet.</div>';$('trades-'+k).innerHTML='';const r=document.querySelector('#comparison tr[data-k="'+k+'"]');if(r)r.remove()});$('failureStats').innerHTML='<div class="empty">Loss diagnostics will appear after the runs.</div>';$('globalStatus').textContent='Ready';};
 function openPage(p){window.location.href=p}
 $('days').dispatchEvent(new Event('input'));
 const failureColors=['#58a6ff','#d29922','#a371f7','#3fb950','#f778ba','#79c0ff','#ff7b72'];
