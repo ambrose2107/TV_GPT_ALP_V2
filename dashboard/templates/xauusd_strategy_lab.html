@@ -32,8 +32,12 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
 
 <div class="toolbar">
   <div class="controls">
-    <label>Days <input id="days" type="number" min="1" max="770" value="20"></label>
-    <label>5m bars <input id="bars" type="number" min="100" max="60000" value="1560"></label>
+    <label>Ticker <select id="symbol" style="background:var(--bg);color:var(--text);border:1px solid var(--line);padding:8px;border-radius:5px">
+<option>GLD</option><option>SPY</option><option>QQQ</option><option>NVDA</option><option>AAPL</option><option>MSFT</option><option>AMZN</option><option>META</option><option>TSLA</option>
+</select>
+<label>Custom ticker <input id="customSymbol" placeholder="AAPL" style="width:80px"></label>
+<label>Days <input id="days" type="number" min="1" max="770" value="200"></label>
+    <label>5m bars <input id="bars" type="number" min="100" max="60000" value="15600"></label>
     <label>Risk % <input id="risk" type="number" min=".01" step=".05" value=".50"></label>
     <label>Min trades <input id="minTrades" type="number" min="2" value="20"></label>
     <button id="runAll" class="primary">Run All 6</button>
@@ -43,7 +47,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
     <span id="globalStatus" class="muted">Ready</span>
   </div>
   <div class="muted" style="margin-top:8px">
-    Strategy 1/2 use their existing XAUUSD/futures data loaders; V4/Pullback/EMA Retest use Alpaca GLD by default. The comparison table shows the data source returned by each strategy so results are not mistaken for identical instruments.
+    All six strategies receive the same selected ticker. V3/Fib use their Yahoo loader; V4/Pullback/EMA/Quad use Alpaca. The comparison shows the actual data source. The comparison table shows the data source returned by each strategy so results are not mistaken for identical instruments.
   </div>
 </div>
 
@@ -129,15 +133,21 @@ function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;',
 function num(v){return typeof v==='number'&&isFinite(v)?v.toFixed(2):'—';}
 function setStatus(k,s,cls='muted'){$('status-'+k).className='status '+cls;$('status-'+k).textContent=s;}
 function bars(){return Math.min(60000,Math.max(100,Math.round((Number($('bars').value)||1560))));}
+function selectedSymbol(){
+ const custom=($('customSymbol').value||'').trim().toUpperCase();
+ return custom || $('symbol').value || 'GLD';
+}
+$('customSymbol').oninput=()=>{if($('customSymbol').value.trim())$('symbol').value='';};
+$('symbol').onchange=()=>{if($('symbol').value)$('customSymbol').value='';};
 $('days').oninput=()=>{$('bars').value=Math.min(60000,Math.max(100,Math.round((Number($('days').value)||1)*78)));};
 function payload(k){
  const n=bars(), risk=Number($('risk').value)||.5, minTrades=Number($('minTrades').value)||20;
- if(k==='v3') return {interval:'5m',use_live:true,n_bars:n};
- if(k==='fib') return {use_live:true,n_bars:n};
- if(k==='v4') return {symbol:'GLD',data_source:'alpaca',n_bars:n,mode:'backtest',min_trades:minTrades,config:{risk_pct:risk,min_score:12,min_rr:1.5}};
- if(k==='pullback') return {symbol:'GLD',n_bars:n,mode:'backtest',min_trades:minTrades,config:{risk_pct:risk}};
- if(k==='ema') return {symbol:'GLD',n_bars:n,config:{risk_pct:risk,rr:2.5}};
- return {symbol:'GLD',n_bars:n,config:{risk_pct:risk}};
+ if(k==='v3') return {interval:'5m',use_live:true,n_bars:n,symbol:selectedSymbol()};
+ if(k==='fib') return {use_live:true,n_bars:n,symbol:selectedSymbol()};
+ if(k==='v4') return {symbol:selectedSymbol(),data_source:'alpaca',n_bars:n,mode:'backtest',min_trades:minTrades,config:{risk_pct:risk,min_score:12,min_rr:1.5}};
+ if(k==='pullback') return {symbol:selectedSymbol(),n_bars:n,mode:'backtest',min_trades:minTrades,config:{risk_pct:risk}};
+ if(k==='ema') return {symbol:selectedSymbol(),n_bars:n,config:{risk_pct:risk,rr:2.5}};
+ return {symbol:selectedSymbol(),n_bars:n,config:{risk_pct:risk}};
 }
 function renderMetrics(k,d){
  const m=d.metrics||{};
