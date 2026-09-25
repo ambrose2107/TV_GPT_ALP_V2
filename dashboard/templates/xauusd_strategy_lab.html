@@ -81,6 +81,10 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
   <div id="failureChecks" class="muted" style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 10px"></div>
   <div id="failureSummary" class="muted" style="margin-bottom:8px">Run the six strategies to populate the chart.</div>
   <div id="failureChart" style="width:100%;height:680px"></div>
+  <div id="failureTradeDetail" class="card" style="display:none;margin-top:12px;padding:14px">
+    <h3 style="margin:0 0 10px">🎯 Selected Trade</h3>
+    <div id="failureTradeDetailBody" class="scroll"></div>
+  </div>
 </div>
 
 <div class="strategy-list">
@@ -282,59 +286,112 @@ async function loadFailureChart(){
     $('failureSummary').innerHTML='<span class="bad">Chart error: '+esc(e.message)+'</span>';
   }
 }
+function nearestChartIndex(ts){
+  if(!failureChartData||!failureChartData.ohlcv||!ts)return -1;
+  const target=Date.parse(ts);
+  if(!Number.isFinite(target))return -1;
+  let best=-1,bestDiff=Infinity;
+  failureChartData.ohlcv.forEach((r,i)=>{
+    const t=Date.parse(r.t); if(!Number.isFinite(t))return;
+    const diff=Math.abs(t-target);
+    if(diff<bestDiff){bestDiff=diff;best=i;}
+  });
+  return best;
+}
+function pct(v){return Number.isFinite(v)?(v>=0?'+':'')+v.toFixed(2)+'%':'—';}
+function fmtR(v){return Number.isFinite(v)?(v>=0?'+':'')+v.toFixed(2)+'R':'—';}
+function strategyTradeContext(k,t){
+  const d=failureChartData||{}, rows=d.ohlcv||[], inds=d.indicators||{};
+  const ei=nearestChartIndex(t.entry_time||t.entry_timestamp||t.entryTime);
+  const xi=nearestChartIndex(t.exit_time||t.exit_timestamp||t.exitTime);
+  const end=xi>=0?xi:(rows.length-1), start=ei>=0?ei:0;
+  const slice=rows.slice(Math.min(start,end),Math.max(start,end)+1);
+  const entry=Number(t.entry), side=String(t.side||'').toLowerCase();
+  const risk=Math.abs(entry-Number(t.sl));
+  let mfe=null,mae=null,mfePrice=null,maePrice=null;
+  if(Number.isFinite(entry)&&slice.length){
+    const highs=slice.map(r=>Number(r.h)).filter(Number.isFinite);
+    const lows=slice.map(r=>Number(r.l)).filter(Number.isFinite);
+    if(highs.length&&lows.length){
+      if(side.includes('short')){
+        mfePrice=entry-Math.min(...lows); maePrice=entry-Math.max(...highs);
+      }else{
+        mfePrice=Math.max(...highs)-entry; maePrice=Math.min(...lows)-entry;
+      }
+      mfe=mfePrice/(risk||NaN); mae=maePrice/(risk||NaN);
+    }
+  }
+  const c=ei>=0?rows[ei]:null;
+  const ema20=ei>=0?inds.ema20?.[ei]:null, ema50=ei>=0?inds.ema50?.[ei]:null;
+  const ema200=ei>=0?inds.ema200?.[ei]:null, vwap=ei>=0?inds.vwap?.[ei]:null;
+  const px=Number.isFinite(entry)?entry:(c?Number(c.c):NaN);
+  const distance=level=>Number.isFinite(px)&&Number.isFinite(level)?(px-level)/level*100:null;
+  const et=t.entry_time||t.entry_timestamp||t.entryTime||'', xt=t.exit_time||t.exit_timestamp||t.exitTime||'';
+  let duration='—';
+  if(et&&xt){const ms=Date.parse(xt)-Date.parse(et);if(Number.isFinite(ms)&&ms>=0){const mins=Math.round(ms/60000);duration=mins>=60?Math.floor(mins/60)+'h '+mins%60+'m':mins+'m';}}
+  const session=et?new Date(et).toISOString().slice(11,16)+' UTC':'—';
+  return {strategy:defs[k].name,side:(t.side||'—').toUpperCase(),outcome:Number(t.R)>=0?'WIN':'LOSS',
+    entry,exit:Number(t.exit),sl:Number(t.sl),tp:Number(t.tp),R:Number(t.R),reason:t.reason||'—',
+    entryTime:et||'—',exitTime:xt||'—',duration,session,ema20,ema50,ema200,vwap,
+    ema20Dist:distance(ema20),ema50Dist:distance(ema50),ema200Dist:distance(ema200),vwapDist:distance(vwap),
+    candle:c,mfe,mae,mfePrice,maePrice};
+}
+function showFailureTradeDetail(k,t){
+  const x=strategyTradeContext(k,t), cls=x.outcome==='WIN'?'ok':'bad';
+  const f=v=>Number.isFinite(v)?Number(v).toFixed(2):'—';
+  const pr=(label,v)=>'<tr><td>'+esc(label)+'</td><td>'+(Number.isFinite(v)?'$'+f(v):'—')+'</td></tr>';
+  $('failureTradeDetail').style.display='block';
+  $('failureTradeDetailBody').innerHTML='<table><tr><th>Field</th><th>Value</th></tr>'+
+    '<tr><td>Strategy</td><td><strong>'+esc(x.strategy)+'</strong></td></tr>'+
+    '<tr><td>Direction</td><td>'+esc(x.side)+'</td></tr>'+
+    '<tr><td>Result</td><td class="'+cls+'"><strong>'+x.outcome+' '+fmtR(x.R)+'</strong></td></tr>'+
+    '<tr><td>Entry</td><td>'+(Number.isFinite(x.entry)?'$'+f(x.entry):'—')+'</td></tr>'+
+    '<tr><td>Stop / Target</td><td>'+(Number.isFinite(x.sl)?'$'+f(x.sl):'—')+' / '+(Number.isFinite(x.tp)?'$'+f(x.tp):'—')+'</td></tr>'+
+    '<tr><td>Entry time</td><td>'+esc(x.entryTime)+'</td></tr>'+
+    '<tr><td>Exit time</td><td>'+esc(x.exitTime)+'</td></tr>'+
+    '<tr><td>Time in trade</td><td>'+esc(x.duration)+'</td></tr>'+
+    '<tr><td>Entry session</td><td>'+esc(x.session)+'</td></tr>'+
+    '<tr><td>Exit reason</td><td>'+esc(x.reason)+'</td></tr>'+
+    pr('EMA20 at entry',x.ema20)+'<tr><td>Distance to EMA20</td><td>'+pct(x.ema20Dist)+'</td></tr>'+
+    pr('EMA50 at entry',x.ema50)+'<tr><td>Distance to EMA50</td><td>'+pct(x.ema50Dist)+'</td></tr>'+
+    pr('EMA200 at entry',x.ema200)+'<tr><td>Distance to EMA200</td><td>'+pct(x.ema200Dist)+'</td></tr>'+
+    pr('VWAP at entry',x.vwap)+'<tr><td>Distance to VWAP</td><td>'+pct(x.vwapDist)+'</td></tr>'+
+    '<tr><td>MAE</td><td>'+(Number.isFinite(x.maePrice)?'$'+f(x.maePrice)+' ('+fmtR(x.mae)+')':'—')+'</td></tr>'+
+    '<tr><td>MFE</td><td>'+(Number.isFinite(x.mfePrice)?'$'+f(x.mfePrice)+' ('+fmtR(x.mfe)+')':'—')+'</td></tr></table>'+
+    '<div class="muted" style="margin-top:8px">MAE/MFE are descriptive measurements from the selected chart timeframe between entry and exit.</div>';
+  $('failureTradeDetail').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
 function renderFailureChart(){
   if(!failureChartData||!window.Plotly)return;
-  const d=failureChartData, rows=d.ohlcv||[], inds=d.indicators||{};
-  const x=rows.map(r=>r.t);
-  const traces=[{
-    x,open:rows.map(r=>r.o),high:rows.map(r=>r.h),low:rows.map(r=>r.l),close:rows.map(r=>r.c),
-    type:'candlestick',name:d.symbol+' price',increasing:{line:{color:'#3fb950'}},decreasing:{line:{color:'#f85149'}}
-  }];
-  const addLine=(key,name,show)=>{
-    if(!show)return;
-    const vals=inds[key]||[];
-    traces.push({x,y:vals,type:'scatter',mode:'lines',name,line:{width:1.4}});
-  };
-  addLine('ema20','EMA20',$('showEma20').checked);
-  addLine('ema50','EMA50',$('showEma50').checked);
-  addLine('ema200','EMA200',$('showEma200').checked);
-  addLine('vwap','VWAP',$('showVwap').checked);
-  const selected=failureSelected();
-  let markerCount=0;
+  const d=failureChartData, rows=d.ohlcv||[], inds=d.indicators||{}, x=rows.map(r=>r.t);
+  const traces=[{x,open:rows.map(r=>r.o),high:rows.map(r=>r.h),low:rows.map(r=>r.l),close:rows.map(r=>r.c),
+    type:'candlestick',name:d.symbol+' price',increasing:{line:{color:'#3fb950'}},decreasing:{line:{color:'#f85149'}}}];
+  const addLine=(key,name,show)=>{if(!show)return;const vals=inds[key]||[];traces.push({x,y:vals,type:'scatter',mode:'lines',name,line:{width:1.4}});};
+  addLine('ema20','EMA20',$('showEma20').checked); addLine('ema50','EMA50',$('showEma50').checked);
+  addLine('ema200','EMA200',$('showEma200').checked); addLine('vwap','VWAP',$('showVwap').checked);
+  const selected=failureSelected(); let markerCount=0;
   selected.forEach((k,idx)=>{
-    const d0=lastResults[k];
-    if(!d0||d0.error)return;
-    const trades=d0.trades||[];
-    const entries=[],exits=[],entryTexts=[],exitTexts=[];
-    trades.forEach(t=>{
-      const et=t.entry_time||t.entry_timestamp||t.entryTime;
-      const xt=t.exit_time||t.exit_timestamp||t.exitTime;
-      if(et){
-        entries.push([et,t.entry]);entryTexts.push(defs[k].name+' | '+(t.side||'')+' | entry '+num(t.entry));
-      }
-      if(xt){
-        exits.push([xt,t.exit]);exitTexts.push(defs[k].name+' | '+(t.R>=0?'WIN':'LOSS')+' | '+num(t.R)+'R');
-      }
+    const d0=lastResults[k]; if(!d0||d0.error)return;
+    const entries=[],exits=[],entryTexts=[],exitTexts=[],entryCustom=[],exitCustom=[];
+    (d0.trades||[]).forEach((t,tradeIndex)=>{
+      const et=t.entry_time||t.entry_timestamp||t.entryTime, xt=t.exit_time||t.exit_timestamp||t.exitTime;
+      if(et){entries.push([et,t.entry]);entryTexts.push(defs[k].name+' | '+(t.side||'')+' | entry '+num(t.entry));entryCustom.push({k,t,tradeIndex});}
+      if(xt){exits.push([xt,t.exit]);exitTexts.push(defs[k].name+' | '+(t.R>=0?'WIN':'LOSS')+' | '+num(t.R)+'R');exitCustom.push({k,t,tradeIndex});}
     });
-    if(entries.length){
-      traces.push({x:entries.map(a=>a[0]),y:entries.map(a=>a[1]),type:'scatter',mode:'markers',name:defs[k].name+' entries',
-        marker:{size:9,symbol:'triangle-up',color:failureColors[idx],line:{width:1}},text:entryTexts,hovertemplate:'%{text}<br>%{x}<extra></extra>'});
-      markerCount+=entries.length;
-    }
-    if(exits.length){
-      traces.push({x:exits.map(a=>a[0]),y:exits.map(a=>a[1]),type:'scatter',mode:'markers',name:defs[k].name+' exits',
-        marker:{size:8,symbol:'x',color:failureColors[idx],line:{width:1}},text:exitTexts,hovertemplate:'%{text}<br>%{x}<extra></extra>'});
-    }
+    if(entries.length)traces.push({x:entries.map(a=>a[0]),y:entries.map(a=>a[1]),type:'scatter',mode:'markers',name:defs[k].name+' entries',
+      marker:{size:10,symbol:'triangle-up',color:failureColors[idx],line:{width:1}},text:entryTexts,customdata:entryCustom,hovertemplate:'%{text}<br>%{x}<br><b>Click for trade analysis</b><extra></extra>'});
+    markerCount+=entries.length;
+    if(exits.length)traces.push({x:exits.map(a=>a[0]),y:exits.map(a=>a[1]),type:'scatter',mode:'markers',name:defs[k].name+' exits',
+      marker:{size:9,symbol:'x',color:failureColors[idx],line:{width:1}},text:exitTexts,customdata:exitCustom,hovertemplate:'%{text}<br>%{x}<br><b>Click for trade analysis</b><extra></extra>'});
   });
-  Plotly.react('failureChart',traces,{
-    title:{text:d.symbol+' — Six-Strategy Failure Analysis ('+d.timeframe+')',font:{size:16}},
+  Plotly.react('failureChart',traces,{title:{text:d.symbol+' — Six-Strategy Failure Analysis ('+d.timeframe+')',font:{size:16}},
     paper_bgcolor:'#161b22',plot_bgcolor:'#0d1117',font:{color:'#c9d1d9'},
-    xaxis:{rangeslider:{visible:true},autorange:true,type:'date',fixedrange:false},
-    yaxis:{autorange:true,fixedrange:false,side:'right'},
-    hovermode:'x unified',legend:{orientation:'h',y:1.02,x:0},
-    margin:{l:45,r:70,t:55,b:45},dragmode:'zoom'
-  },{responsive:true,displaylogo:false,scrollZoom:true});
-  $('failureSummary').textContent='Showing '+rows.length+' candles and '+markerCount+' entry markers. Toggle strategies to isolate failure patterns; winning exits are marked WIN and losing exits LOSS.';
+    xaxis:{rangeslider:{visible:true},autorange:true,type:'date',fixedrange:false},yaxis:{autorange:true,fixedrange:false,side:'right'},
+    hovermode:'x unified',legend:{orientation:'h',y:1.02,x:0},margin:{l:45,r:70,t:55,b:45},dragmode:'zoom'},
+    {responsive:true,displaylogo:false,scrollZoom:true});
+  const chartEl=$('failureChart');
+  if(!chartEl.__tradeClickBound){chartEl.on('plotly_click',ev=>{const p=ev?.points?.[0],cd=p?.customdata;if(cd&&cd.k&&cd.t)showFailureTradeDetail(cd.k,cd.t);});chartEl.__tradeClickBound=true;}
+  $('failureSummary').textContent='Showing '+rows.length+' candles and '+markerCount+' entry markers. Click any entry/exit marker for trade diagnostics including MAE/MFE, EMA/VWAP distance, session and exit reason.';
 }
 $('runChart').onclick=async()=>{await runKeys(Object.keys(defs));await loadFailureChart();$('failure-analysis').scrollIntoView({behavior:'smooth',block:'start'});};
 $('refreshChart').onclick=loadFailureChart;
