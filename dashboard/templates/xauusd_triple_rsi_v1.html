@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>Triple RSI Mean Reversion V1</title>
+<style>
+:root{--bg:#0b1020;--panel:#121a2a;--panel2:#0f1624;--line:#27344d;--text:#e6edf7;--muted:#91a0b8;--good:#55d187;--bad:#ff7b72;--accent:#7aa2ff}
+*{box-sizing:border-box}body{font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:radial-gradient(circle at top,#18243b 0,#0b1020 45%,#080c16 100%);color:var(--text);margin:0;padding:18px;max-width:1350px;margin:auto}
+.nav{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}.nav a{padding:8px 11px;border:1px solid var(--line);border-radius:8px;text-decoration:none;color:var(--text);background:rgba(18,26,42,.9)}
+.nav a:hover{border-color:var(--accent)}.hero{padding:20px;border:1px solid var(--line);border-radius:14px;background:linear-gradient(135deg,rgba(25,39,66,.95),rgba(15,22,36,.95));box-shadow:0 10px 30px rgba(0,0,0,.2)}
+h1{margin:0 0 7px;font-size:30px}.muted{color:var(--muted)}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px}
+.card{background:rgba(18,26,42,.94);border:1px solid var(--line);border-radius:12px;padding:15px;margin:12px 0}.controls{display:flex;flex-wrap:wrap;gap:9px;align-items:center}
+input,button{font:inherit}input{background:#0b1020;color:var(--text);border:1px solid var(--line);padding:9px;border-radius:8px;width:95px}
+button{background:#1f6feb;color:#fff;border:0;border-radius:8px;padding:10px 14px;font-weight:700;cursor:pointer}button:disabled{opacity:.5;cursor:wait}
+.metric{padding:11px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}.metric b{display:block;font-size:18px;margin-top:3px}
+table{width:100%;border-collapse:collapse}th,td{padding:8px;border-bottom:1px solid var(--line);white-space:nowrap;text-align:right}th:first-child,td:first-child{text-align:left}.scroll{overflow:auto;max-height:430px}.good{color:var(--good)}.bad{color:var(--bad)}
+@media(max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){body{padding:10px}.grid{grid-template-columns:1fr}.hero{padding:15px}h1{font-size:24px}}
+</style></head><body>
+<div class="nav">
+<a href="/xauusd-strategy-lab">Strategy Lab</a><a href="/xauusd-v3">V3</a><a href="/xauusd-fib-mtf">Fib MTF</a><a href="/xauusd-confluence-v4">V4</a><a href="/xauusd-pullback-v1">Pullback V1</a><a href="/xauusd-ema-retest-v1">EMA Retest V1</a><a href="/xauusd-quad-rsi-v1">Quad RSI V1</a><a href="/xauusd-triple-rsi-v1">Triple RSI V1</a><a href="/backtest">Backtest</a>
+</div>
+<section class="hero">
+<h1>Triple RSI Mean Reversion V1</h1>
+<div class="muted">Literal implementation of the supplied reference: RSI(5) exhaustion + three-day decline + 200-day trend filter. This is a daily stock/ETF research strategy, not an XAUUSD-specific intraday system.</div>
+<div class="controls" style="margin-top:14px">
+<label>Symbol <input id="symbol" value="SPY"></label>
+<label>Daily bars <input id="bars" type="number" min="250" max="5000" value="1000"></label>
+<button id="run">Run Backtest</button><span id="status" class="muted">Ready</span>
+</div>
+</section>
+<div class="grid">
+<div class="metric"><span class="muted">Trades</span><b id="m-trades">—</b></div>
+<div class="metric"><span class="muted">Win rate</span><b id="m-win">—</b></div>
+<div class="metric"><span class="muted">Profit factor</span><b id="m-pf">—</b></div>
+<div class="metric"><span class="muted">Total R</span><b id="m-r">—</b></div>
+</div>
+<div class="card"><h2>Rules</h2><table>
+<tr><td>RSI</td><td>RSI(5) &lt; 30</td></tr><tr><td>Momentum</td><td>RSI(5) falling for the 3rd consecutive day</td></tr>
+<tr><td>Three sessions ago</td><td>RSI(5) &lt; 60</td></tr><tr><td>Trend</td><td>Close &gt; SMA200</td></tr>
+<tr><td>Entry</td><td>Buy at completed daily close</td></tr><tr><td>Exit</td><td>Sell at close when RSI(5) crosses above 50</td></tr>
+</table></div>
+<div class="card"><h2>Metrics</h2><div id="metrics" class="muted">No result yet.</div></div>
+<div class="card"><h2>Diagnostics</h2><div id="diag" class="muted">No result yet.</div></div>
+<div class="card"><h2>Trades</h2><div id="trades" class="scroll"></div></div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=v=>String(v==null?'':v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=v=>typeof v==='number'&&isFinite(v)?v.toFixed(2):'—';
+$('run').onclick=async()=>{
+ $('run').disabled=true;$('status').textContent='Running…';
+ try{
+  const symbol=($('symbol').value||'SPY').trim().toUpperCase();
+  const r=await fetch('/api/xauusd-triple-rsi-v1/run',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol,n_bars:Number($('bars').value)||1000})});
+  const d=await r.json();if(!r.ok)throw new Error(d.error||'Request failed');
+  const m=d.metrics||{};
+  $('m-trades').textContent=fmt(m.num_trades);$('m-win').textContent=fmt(m.win_rate)+'%';$('m-pf').textContent=fmt(m.profit_factor);$('m-r').textContent=fmt(m.total_R)+'R';
+  $('metrics').innerHTML='<table>'+Object.entries(m).map(([k,v])=>'<tr><td>'+esc(k)+'</td><td>'+fmt(v)+'</td></tr>').join('')+'</table><p class="muted">'+esc(d.data_source)+' · '+esc(d.data_start)+' → '+esc(d.data_end)+' · daily bars '+esc(d.daily_bars)+'</p>';
+  $('diag').innerHTML='<table>'+Object.entries(d.diagnostics||{}).map(([k,v])=>'<tr><td>'+esc(k)+'</td><td>'+esc(v)+'</td></tr>').join('')+'</table>';
+  const t=d.trades||[];if(t.length){const c=Object.keys(t[0]);$('trades').innerHTML='<table><tr>'+c.map(x=>'<th>'+esc(x)+'</th>').join('')+'</tr>'+t.map(row=>'<tr>'+c.map(x=>'<td>'+esc(typeof row[x]==='number'?fmt(row[x]):row[x])+'</td>').join('')+'</tr>').join('')}</table>'}else $('trades').innerHTML='<div class="muted">No closed trades in this sample.</div>';
+  window.dispatchEvent(new CustomEvent('strategy-result',{detail:{...d,chart_timeframe:'1d'}}));
+  $('status').innerHTML='<span class="good">Done</span>';
+ }catch(e){$('status').innerHTML='<span class="bad">Error: '+esc(e.message)+'</span>'}finally{$('run').disabled=false}
+};
+</script>
+{% set chart_strategy = 'triple' %}
+{% set chart_default_tf = '1d' %}
+{% include 'partials/interactive_strategy_chart.html' %}
+</body></html>
