@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<title>Gold Strategy Lab — 6 Strategy Comparison</title>
+<title>Gold Strategy Lab — 7 Strategy Comparison</title>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <style>
 :root{--bg:#0d1117;--panel:#161b22;--line:#30363d;--text:#c9d1d9;--muted:#8b949e;--good:#7ee787;--warn:#d29922;--bad:#ff7b72}
-*{box-sizing:border-box}body{font-family:Arial,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:18px;max-width:1450px;margin-inline:auto}
+*{box-sizing:border-box}body{font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:18px;max-width:1450px;margin-inline:auto}
 h1{margin:0 0 6px}h2{margin:0;font-size:19px}h3{margin:12px 0 8px}.muted{color:var(--muted)}
 .toolbar,.card,.compare{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin:12px 0}
 .toolbar{padding:15px;position:sticky;top:0;z-index:20}
@@ -29,7 +29,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
 </head>
 <body>
 <h1>Gold Strategy Lab</h1>
-<div class="muted">One workspace for six independent Gold research strategies. Expand/minimize any strategy, run one, or run all and compare the same backtest metrics.</div>
+<div class="muted">One workspace for seven independent research strategies. Expand/minimize any strategy, run one, or run all and compare the same backtest metrics.</div>
 
 <div class="toolbar">
   <div class="controls">
@@ -41,14 +41,14 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
     <label>5m bars <input id="bars" type="number" min="100" max="60000" value="15600"></label>
     <label>Risk % <input id="risk" type="number" min=".01" step=".05" value=".50"></label>
     <label>Min trades <input id="minTrades" type="number" min="2" value="20"></label>
-    <button id="runAll" class="primary">Run All 6</button>
+    <button id="runAll" class="primary">Run All 7</button>
     <button id="runOpen">Run Expanded</button>
     <button id="clear">Clear Results</button>
     <button id="downloadCsv" onclick="downloadCombinedCsv()" disabled>📥 Download All Results CSV</button>
     <span id="globalStatus" class="muted">Ready</span>
   </div>
   <div class="muted" style="margin-top:8px">
-    All six strategies receive the same selected ticker. V3/Fib use their Yahoo loader; V4/Pullback/EMA/Quad use Alpaca. The comparison shows the actual data source. The comparison table shows the data source returned by each strategy so results are not mistaken for identical instruments.
+    All seven strategies receive the same selected ticker. V3/Fib use their existing Yahoo loader; V4/Pullback/EMA/Quad use Alpaca; Triple RSI uses daily Alpaca data. The comparison shows the actual data source. The comparison table shows the data source returned by each strategy so results are not mistaken for identical instruments.
   </div>
 </div>
 
@@ -61,7 +61,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
 <div class="compare" id="failure-analysis">
   <h2>🔎 Multi-Strategy Trade & Failure Analysis</h2>
   <div class="muted" style="margin:6px 0 10px">
-    One interactive price chart with trades from all six strategies. Use the strategy checkboxes to isolate entries/exits and inspect where losing trades occurred relative to EMA/VWAP and price structure.
+    One interactive price chart with trades from all seven strategies. Use the strategy checkboxes to isolate entries/exits and inspect where losing trades occurred relative to EMA/VWAP and price structure.
   </div>
   <div class="controls" style="margin-bottom:10px">
     <label>Chart timeframe
@@ -73,14 +73,14 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
     <label><input type="checkbox" id="showEma50" checked> EMA50</label>
     <label><input type="checkbox" id="showEma200"> EMA200</label>
     <label><input type="checkbox" id="showVwap"> VWAP</label>
-    <button id="runChart" class="primary">▶ Run All 6 + Chart</button>
+    <button id="runChart" class="primary">▶ Run All 7 + Chart</button>
     <button id="refreshChart">🔄 Refresh Chart</button>
     <button id="fitChart">Auto Fit</button>
     <button id="resetChart">Reset Zoom</button>
   </div>
   <div id="failureChecks" class="muted" style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 10px"></div>
-  <div id="failureSummary" class="muted" style="margin-bottom:8px">Run the six strategies to populate the chart.</div>
-  <div id="failureChart" style="width:100%;height:680px"></div>
+  <div id="failureSummary" class="muted" style="margin-bottom:8px">Run the seven strategies to populate the chart.</div>
+  <div id="failureChart" style="width:100%;height:600px"></div>
   <div id="failureTradeDetail" class="card" style="display:none;margin-top:12px;padding:14px">
     <h3 style="margin:0 0 10px">🎯 Selected Trade</h3>
     <div id="failureTradeDetailBody" class="scroll"></div>
@@ -147,6 +147,15 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
     <div id="trades-quad"></div>
   </div>
 </details>
+<details class="card" id="card-triple" open>
+  <summary><span>7. Gold Triple-RSI — Mean Reversion V1</span><span class="badge">Daily + RSI5 + SMA200</span><span class="status" id="status-triple">Ready</span></summary>
+  <div class="body">
+    <div class="muted">Reference strategy from the supplied screenshot: RSI(5) below 30, third consecutive RSI decline, RSI(5) below 60 three sessions ago, close above SMA200; buy at close and exit at close when RSI(5) crosses above 50.</div>
+    <p><button onclick="runOne('triple')">Run Triple RSI</button> <button onclick="openPage('/xauusd-triple-rsi-v1')">Open full Triple RSI page</button></p>
+    <div id="metrics-triple" class="empty">No result yet.</div>
+    <div id="trades-triple"></div>
+  </div>
+</details>
 </div>
 
 <script>
@@ -158,7 +167,8 @@ const defs={
  v4:{name:'Confluence V4',url:'/api/xauusd-confluence-v4/run'},
  pullback:{name:'Pullback Breakout V1',url:'/api/xauusd-pullback-v1/run'},
  ema:{name:'EMA 20/50 Third Retest V1',url:'/api/xauusd-ema-retest-v1/run'},
- quad:{name:'Quad RSI Mean Reversion V1',url:'/api/xauusd-quad-rsi-v1/run'}
+ quad:{name:'Quad RSI Mean Reversion V1',url:'/api/xauusd-quad-rsi-v1/run'},
+ triple:{name:'Triple RSI Mean Reversion V1',url:'/api/xauusd-triple-rsi-v1/run'}
 };
 function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function num(v){return typeof v==='number'&&isFinite(v)?v.toFixed(2):'—';}
@@ -178,6 +188,7 @@ function payload(k){
  if(k==='v4') return {symbol:selectedSymbol(),data_source:'alpaca',n_bars:n,mode:'backtest',min_trades:minTrades,config:{risk_pct:risk,min_score:12,min_rr:1.5}};
  if(k==='pullback') return {symbol:selectedSymbol(),n_bars:n,mode:'backtest',min_trades:minTrades,config:{risk_pct:risk}};
  if(k==='ema') return {symbol:selectedSymbol(),n_bars:n,config:{risk_pct:risk,rr:2.5}};
+ if(k==='triple') return {symbol:selectedSymbol(),n_bars:1000,config:{risk_pct:risk}};
  return {symbol:selectedSymbol(),n_bars:n,config:{risk_pct:risk}};
 }
 function renderMetrics(k,d){
@@ -261,13 +272,14 @@ $('runOpen').onclick=()=>runKeys(Object.keys(defs).filter(k=>$('card-'+k).open))
 $('clear').onclick=()=>{lastResults={};$('downloadCsv').disabled=true;Object.keys(defs).forEach(k=>{setStatus(k,'Ready');$('metrics-'+k).innerHTML='<div class="empty">No result yet.</div>';$('trades-'+k).innerHTML='';const r=document.querySelector('#comparison tr[data-k="'+k+'"]');if(r)r.remove()});$('globalStatus').textContent='Ready';};
 function openPage(p){window.location.href=p}
 $('days').dispatchEvent(new Event('input'));
-const failureColors=['#58a6ff','#d29922','#a371f7','#3fb950','#f778ba','#79c0ff'];
+const failureColors=['#58a6ff','#d29922','#a371f7','#3fb950','#f778ba','#79c0ff','#ff7b72'];
 let failureChartData=null;
 function renderFailureChecks(){
   const el=$('failureChecks');
   el.innerHTML=Object.keys(defs).map((k,i)=>'<label style="display:inline-flex;align-items:center;gap:4px"><input type="checkbox" data-failure-k="'+k+'" checked> '+esc(defs[k].name)+'</label>').join('');
   el.querySelectorAll('input[data-failure-k]').forEach(x=>x.onchange=renderFailureChart);
 }
+function chartBarsForTf(tf){const caps={'5m':6000,'15m':6000,'1h':3000,'1d':1500};return caps[tf]||6000;}
 function failureSelected(){
   return Object.keys(defs).filter(k=>{const x=document.querySelector('input[data-failure-k="'+k+'"]');return x&&x.checked;});
 }
@@ -277,7 +289,7 @@ async function loadFailureChart(){
   $('failureSummary').textContent='Loading '+symbol+' '+timeframe+' price data…';
   try{
     const r=await fetch('/api/strategy-chart',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({symbol,n_bars:Math.min(20000,Math.max(200,Number($('bars').value)||15600)),timeframe})});
+      body:JSON.stringify({symbol,n_bars:chartBarsForTf(timeframe),timeframe})});
     const d=await r.json();
     if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
     failureChartData=d;
@@ -386,7 +398,7 @@ function renderFailureChart(){
   });
   Plotly.react('failureChart',traces,{title:{text:d.symbol+' — Six-Strategy Failure Analysis ('+d.timeframe+')',font:{size:16}},
     paper_bgcolor:'#161b22',plot_bgcolor:'#0d1117',font:{color:'#c9d1d9'},
-    xaxis:{rangeslider:{visible:true},autorange:true,type:'date',fixedrange:false},yaxis:{autorange:true,fixedrange:false,side:'right'},
+    xaxis:{autorange:true,type:'date',fixedrange:false,showspikes:true,spikemode:'across',spikesnap:'cursor',rangeselector:{buttons:[{count:1,label:'1D',step:'day',stepmode:'backward'},{count:5,label:'5D',step:'day',stepmode:'backward'},{count:1,label:'1M',step:'month',stepmode:'backward'},{count:3,label:'3M',step:'month',stepmode:'backward'},{step:'all',label:'All'}],font:{size:11}}},yaxis:{autorange:true,fixedrange:false,side:'right',showspikes:true,spikemode:'across'},
     hovermode:'x unified',legend:{orientation:'h',y:1.02,x:0},margin:{l:45,r:70,t:55,b:45},dragmode:'zoom'},
     {responsive:true,displaylogo:false,scrollZoom:true});
   const chartEl=$('failureChart');
