@@ -1,0 +1,74 @@
+<div class="chart-card" style="margin:16px 0;padding:12px;border:1px solid var(--line,#30363d);border-radius:10px;background:var(--panel,#161b22)">
+  <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px">
+    <strong>Interactive Strategy Chart</strong>
+    <label>Symbol <input id="strategy-chart-symbol" value="{{ chart_symbol|default('GLD') }}" style="width:75px"></label>
+    <label>TF <select id="strategy-chart-tf"><option>5m</option><option selected>15m</option><option>1h</option><option>1d</option></select></label>
+    <label><input type="checkbox" id="chart-ema20" checked> EMA20</label>
+    <label><input type="checkbox" id="chart-ema50" checked> EMA50</label>
+    <label><input type="checkbox" id="chart-ema200"> EMA200</label>
+    <label><input type="checkbox" id="chart-vwap" checked> VWAP</label>
+    <button id="chart-load">Load / Refresh</button>
+    <button id="chart-fit">Auto Fit</button>
+    <button id="chart-reset">Reset Zoom</button>
+    <span id="chart-status" class="muted">Ready</span>
+  </div>
+  <div id="strategy-chart" style="width:100%;height:620px"></div>
+</div>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<script>
+(function(){
+  const $=id=>document.getElementById(id);
+  let chartData=null, lastTrades=[];
+  const key="{{ chart_strategy|default('strategy') }}";
+  const fmt=v=>typeof v==='number'&&isFinite(v)?v.toFixed(2):'';
+  function traceLine(name,values,x,visible){
+    return {x,y:values,name,type:'scatter',mode:'lines',visible:visible?'legendonly':false,connectgaps:false};
+  }
+  function render(){
+    if(!chartData)return;
+    const o=chartData.ohlcv, x=o.map(r=>r.t);
+    const c={x,open:o.map(r=>r.o),high:o.map(r=>r.h),low:o.map(r=>r.l),close:o.map(r=>r.c),type:'candlestick',name:chartData.symbol};
+    const ind=chartData.indicators||{}, traces=[c];
+    if($('chart-ema20').checked) traces.push({x,y:ind.ema20,name:'EMA20',type:'scatter',mode:'lines',connectgaps:false});
+    if($('chart-ema50').checked) traces.push({x,y:ind.ema50,name:'EMA50',type:'scatter',mode:'lines',connectgaps:false});
+    if($('chart-ema200').checked) traces.push({x,y:ind.ema200,name:'EMA200',type:'scatter',mode:'lines',connectgaps:false});
+    if($('chart-vwap').checked) traces.push({x,y:ind.vwap,name:'VWAP',type:'scatter',mode:'lines',connectgaps:false});
+    const entries=[],exits=[];
+    (lastTrades||[]).forEach(t=>{
+      if(t.entry_time&&isFinite(Number(t.entry))) entries.push({x:t.entry_time,y:Number(t.entry),text:(t.side||'')+' entry',kind:'entry'});
+      if(t.exit_time&&isFinite(Number(t.exit||t.exit_price))) exits.push({x:t.exit_time,y:Number(t.exit||t.exit_price),text:(t.side||'')+' exit',kind:'exit'});
+    });
+    if(entries.length)traces.push({x:entries.map(z=>z.x),y:entries.map(z=>z.y),text:entries.map(z=>z.text),name:'Entries',type:'scatter',mode:'markers',marker:{size:10,symbol:'triangle-up'}});
+    if(exits.length)traces.push({x:exits.map(z=>z.x),y:exits.map(z=>z.y),text:exits.map(z=>z.text),name:'Exits',type:'scatter',mode:'markers',marker:{size:9,symbol:'triangle-down'}});
+    const layout={
+      title:{text:(chartData.symbol||'')+' · '+(chartData.timeframe||'')+' · Strategy overlay'},
+      dragmode:'zoom',hovermode:'x unified',showlegend:true,
+      margin:{l:55,r:25,t:50,b:45},height:620,
+      xaxis:{type:'date',autorange:true,rangeslider:{visible:false},fixedrange:false},
+      yaxis:{autorange:true,fixedrange:false},
+      legend:{orientation:'h',y:1.02,x:0},
+      uirevision:key
+    };
+    Plotly.react('strategy-chart',traces,layout,{responsive:true,displaylogo:false,scrollZoom:true});
+  }
+  async function load(){
+    const symbol=($('strategy-chart-symbol').value||'GLD').trim().toUpperCase();
+    const n=Number((document.getElementById('bars')||{}).value)||1560;
+    const tf=$('strategy-chart-tf').value;
+    $('chart-status').textContent='Loading…';
+    try{
+      const r=await fetch('/api/strategy-chart',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol,n_bars:n,timeframe:tf})});
+      const d=await r.json();if(!r.ok||d.error)throw new Error(d.error||'Chart request failed');
+      chartData=d;render();$('chart-status').textContent='Loaded '+d.bars+' bars';
+    }catch(e){$('chart-status').textContent='Error: '+e.message}
+  }
+  $('chart-load').onclick=load;
+  ['chart-ema20','chart-ema50','chart-ema200','chart-vwap'].forEach(id=>$(id).onchange=render);
+  $('chart-fit').onclick=()=>{if(window.Plotly)Plotly.relayout('strategy-chart',{'xaxis.autorange':true,'yaxis.autorange':true})};
+  $('chart-reset').onclick=()=>{if(window.Plotly)Plotly.relayout('strategy-chart',{'xaxis.autorange':true,'yaxis.autorange':true})};
+  window.addEventListener('strategy-result',e=>{lastTrades=(e.detail&&e.detail.trades)||[];render();});
+  window.strategyChartLoad=load;
+  window.strategyChartSetSymbol=s=>{if(s)$('strategy-chart-symbol').value=s};
+  window.strategyChartKey=key;
+})();
+</script>
