@@ -37,7 +37,7 @@ def strategy_chart():
         return jsonify({"error": "Unauthorized"}), 401
     body = request.get_json(silent=True) or {}
     symbol = str(body.get("symbol", "GLD")).strip().upper()
-    bars = max(200, min(6000, int(body.get("n_bars", 1560))))
+    bars = max(200, min(20000, int(body.get("n_bars", 1560))))
     timeframe = str(body.get("timeframe", "5m")).lower()
     if timeframe not in {"5m", "15m", "1h", "1d"}:
         timeframe = "5m"
