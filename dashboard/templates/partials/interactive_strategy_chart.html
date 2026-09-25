@@ -66,7 +66,7 @@
   ['chart-ema20','chart-ema50','chart-ema200','chart-vwap'].forEach(id=>$(id).onchange=render);
   $('chart-fit').onclick=()=>{if(window.Plotly)Plotly.relayout('strategy-chart',{'xaxis.autorange':true,'yaxis.autorange':true})};
   $('chart-reset').onclick=()=>{if(window.Plotly)Plotly.relayout('strategy-chart',{'xaxis.autorange':true,'yaxis.autorange':true})};
-  window.addEventListener('strategy-result',e=>{lastTrades=(e.detail&&e.detail.trades)||[];render();});
+  window.addEventListener('strategy-result',e=>{const d=e.detail||{};if(d.symbol){$('strategy-chart-symbol').value=d.symbol;}lastTrades=d.trades||[];render();load();});
   window.strategyChartLoad=load;
   window.strategyChartSetSymbol=s=>{if(s)$('strategy-chart-symbol').value=s};
   window.strategyChartKey=key;
