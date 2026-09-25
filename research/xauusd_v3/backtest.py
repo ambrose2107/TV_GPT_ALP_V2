@@ -13,11 +13,11 @@ from .engine import EngineConfig, simulate_trades
 
 def run_backtest(symbol_interval: str = "5m", use_live: bool = True, n_bars: int = 20000,
                   signal_cfg: SignalConfig = None, engine_cfg: EngineConfig = None,
-                  use_numba: bool = True) -> dict:
+                  use_numba: bool = True, symbol: str = None) -> dict:
     signal_cfg = signal_cfg or SignalConfig()
     engine_cfg = engine_cfg or EngineConfig()
 
-    data = get_data(interval=symbol_interval, use_live=use_live, n_bars=n_bars)
+    data = get_data(interval=symbol_interval, use_live=use_live, n_bars=n_bars, primary_symbol=symbol)
     sig_result = build_signals(data, signal_cfg)
     engine_result = simulate_trades(sig_result["df"], engine_cfg, use_numba=use_numba)
 
