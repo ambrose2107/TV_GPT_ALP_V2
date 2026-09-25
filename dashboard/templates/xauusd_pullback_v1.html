@@ -35,10 +35,13 @@ async function req(mode){
  }else{
   $('metrics').innerHTML=Object.entries(d.metrics||{}).map(([k,v])=>'<tr><td>'+esc(k)+'</td><td>'+esc(typeof v==='number'?v.toFixed(2):v)+'</td></tr>').join('');
   const t=d.trades||[];$('trades').innerHTML=t.length?'<tr>'+Object.keys(t[0]).map(k=>'<th>'+esc(k)+'</th>').join('')+'</tr>'+t.map(x=>'<tr>'+Object.values(x).map(v=>'<td>'+esc(typeof v==='number'?v.toFixed(2):v)+'</td>').join('')+'</tr>').join(''):'<tr><td>No trades</td></tr>';
+  window.dispatchEvent(new CustomEvent('strategy-result',{detail:d}));
   s.textContent=' Backtest complete.';
  }
 }
 $('run').onclick=()=>req('backtest').catch(e=>$('status').textContent=' Failed: '+e.message);
 $('opt').onclick=()=>req('optimize').catch(e=>$('status').textContent=' Failed: '+e.message);
 $('days').dispatchEvent(new Event('input'));
-</script></body></html>
+</script>{% set chart_strategy = 'pullback' %}
+{% include 'partials/interactive_strategy_chart.html' %}
+</body></html>
