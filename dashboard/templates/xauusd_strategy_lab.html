@@ -237,7 +237,10 @@ function renderFailureStats(){
 }
 async function runKeys(keys){
  $('globalStatus').textContent='Running '+keys.length+' strategy'+(keys.length>1?'ies':'')+'…';
- await Promise.all(keys.map(runOne));
+ const queue=[...keys]; const workers=Array.from({length:Math.min(3,queue.length)},async()=>{
+   while(queue.length){const k=queue.shift();await runOne(k);}
+ });
+ await Promise.all(workers);
  renderFailureStats();
  $('globalStatus').innerHTML='<span class="ok">All selected runs finished.</span>';
 }
