@@ -56,6 +56,32 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
   <div class="scroll"><table id="comparison"><tr><th>Strategy</th><th>Status</th><th>Trades</th><th>Win %</th><th>PF</th><th>Expectancy R</th><th>Total R</th><th>Return %</th><th>Max DD %</th><th>Data</th></tr></table></div>
 </div>
 
+
+<div class="compare" id="failure-analysis">
+  <h2>🔎 Multi-Strategy Trade & Failure Analysis</h2>
+  <div class="muted" style="margin:6px 0 10px">
+    One interactive price chart with trades from all six strategies. Use the strategy checkboxes to isolate entries/exits and inspect where losing trades occurred relative to EMA/VWAP and price structure.
+  </div>
+  <div class="controls" style="margin-bottom:10px">
+    <label>Chart timeframe
+      <select id="failureTf" style="background:var(--bg);color:var(--text);border:1px solid var(--line);padding:8px;border-radius:5px">
+        <option value="5m">5m</option><option value="15m" selected>15m</option><option value="1h">1h</option><option value="1d">1D</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="showEma20" checked> EMA20</label>
+    <label><input type="checkbox" id="showEma50" checked> EMA50</label>
+    <label><input type="checkbox" id="showEma200"> EMA200</label>
+    <label><input type="checkbox" id="showVwap"> VWAP</label>
+    <button id="runChart" class="primary">▶ Run All 6 + Chart</button>
+    <button id="refreshChart">🔄 Refresh Chart</button>
+    <button id="fitChart">Auto Fit</button>
+    <button id="resetChart">Reset Zoom</button>
+  </div>
+  <div id="failureChecks" class="muted" style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 10px"></div>
+  <div id="failureSummary" class="muted" style="margin-bottom:8px">Run the six strategies to populate the chart.</div>
+  <div id="failureChart" style="width:100%;height:680px"></div>
+</div>
+
 <div class="strategy-list">
 <details class="card" id="card-v3" open>
   <summary><span>1. XAUUSD V3 — Institutional Confluence</span><span class="badge">5m + DXY + Silver</span><span class="status" id="status-v3">Ready</span></summary>
@@ -230,6 +256,93 @@ $('runOpen').onclick=()=>runKeys(Object.keys(defs).filter(k=>$('card-'+k).open))
 $('clear').onclick=()=>{lastResults={};$('downloadCsv').disabled=true;Object.keys(defs).forEach(k=>{setStatus(k,'Ready');$('metrics-'+k).innerHTML='<div class="empty">No result yet.</div>';$('trades-'+k).innerHTML='';const r=document.querySelector('#comparison tr[data-k="'+k+'"]');if(r)r.remove()});$('globalStatus').textContent='Ready';};
 function openPage(p){window.location.href=p}
 $('days').dispatchEvent(new Event('input'));
+const failureColors=['#58a6ff','#d29922','#a371f7','#3fb950','#f778ba','#79c0ff'];
+let failureChartData=null;
+function renderFailureChecks(){
+  const el=$('failureChecks');
+  el.innerHTML=Object.keys(defs).map((k,i)=>'<label style="display:inline-flex;align-items:center;gap:4px"><input type="checkbox" data-failure-k="'+k+'" checked> '+esc(defs[k].name)+'</label>').join('');
+  el.querySelectorAll('input[data-failure-k]').forEach(x=>x.onchange=renderFailureChart);
+}
+function failureSelected(){
+  return Object.keys(defs).filter(k=>{const x=document.querySelector('input[data-failure-k="'+k+'"]');return x&&x.checked;});
+}
+async function loadFailureChart(){
+  const symbol=selectedSymbol();
+  const timeframe=$('failureTf').value;
+  $('failureSummary').textContent='Loading '+symbol+' '+timeframe+' price data…';
+  try{
+    const r=await fetch('/api/strategy-chart',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({symbol,n_bars:Math.min(20000,Math.max(200,Number($('bars').value)||15600)),timeframe})});
+    const d=await r.json();
+    if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
+    failureChartData=d;
+    renderFailureChart();
+  }catch(e){
+    $('failureSummary').innerHTML='<span class="bad">Chart error: '+esc(e.message)+'</span>';
+  }
+}
+function renderFailureChart(){
+  if(!failureChartData||!window.Plotly)return;
+  const d=failureChartData, rows=d.ohlcv||[], inds=d.indicators||{};
+  const x=rows.map(r=>r.t);
+  const traces=[{
+    x,open:rows.map(r=>r.o),high:rows.map(r=>r.h),low:rows.map(r=>r.l),close:rows.map(r=>r.c),
+    type:'candlestick',name:d.symbol+' price',increasing:{line:{color:'#3fb950'}},decreasing:{line:{color:'#f85149'}}
+  }];
+  const addLine=(key,name,show)=>{
+    if(!show)return;
+    const vals=inds[key]||[];
+    traces.push({x,y:vals,type:'scatter',mode:'lines',name,line:{width:1.4}});
+  };
+  addLine('ema20','EMA20',$('showEma20').checked);
+  addLine('ema50','EMA50',$('showEma50').checked);
+  addLine('ema200','EMA200',$('showEma200').checked);
+  addLine('vwap','VWAP',$('showVwap').checked);
+  const selected=failureSelected();
+  let markerCount=0;
+  selected.forEach((k,idx)=>{
+    const d0=lastResults[k];
+    if(!d0||d0.error)return;
+    const trades=d0.trades||[];
+    const entries=[],exits=[],entryTexts=[],exitTexts=[];
+    trades.forEach(t=>{
+      const et=t.entry_time||t.entry_timestamp||t.entryTime;
+      const xt=t.exit_time||t.exit_timestamp||t.exitTime;
+      if(et){
+        entries.push([et,t.entry]);entryTexts.push(defs[k].name+' | '+(t.side||'')+' | entry '+num(t.entry));
+      }
+      if(xt){
+        exits.push([xt,t.exit]);exitTexts.push(defs[k].name+' | '+(t.R>=0?'WIN':'LOSS')+' | '+num(t.R)+'R');
+      }
+    });
+    if(entries.length){
+      traces.push({x:entries.map(a=>a[0]),y:entries.map(a=>a[1]),type:'scatter',mode:'markers',name:defs[k].name+' entries',
+        marker:{size:9,symbol:'triangle-up',color:failureColors[idx],line:{width:1}},text:entryTexts,hovertemplate:'%{text}<br>%{x}<extra></extra>'});
+      markerCount+=entries.length;
+    }
+    if(exits.length){
+      traces.push({x:exits.map(a=>a[0]),y:exits.map(a=>a[1]),type:'scatter',mode:'markers',name:defs[k].name+' exits',
+        marker:{size:8,symbol:'x',color:failureColors[idx],line:{width:1}},text:exitTexts,hovertemplate:'%{text}<br>%{x}<extra></extra>'});
+    }
+  });
+  Plotly.react('failureChart',traces,{
+    title:{text:d.symbol+' — Six-Strategy Failure Analysis ('+d.timeframe+')',font:{size:16}},
+    paper_bgcolor:'#161b22',plot_bgcolor:'#0d1117',font:{color:'#c9d1d9'},
+    xaxis:{rangeslider:{visible:true},autorange:true,type:'date',fixedrange:false},
+    yaxis:{autorange:true,fixedrange:false,side:'right'},
+    hovermode:'x unified',legend:{orientation:'h',y:1.02,x:0},
+    margin:{l:45,r:70,t:55,b:45},dragmode:'zoom'
+  },{responsive:true,displaylogo:false,scrollZoom:true});
+  $('failureSummary').textContent='Showing '+rows.length+' candles and '+markerCount+' entry markers. Toggle strategies to isolate failure patterns; winning exits are marked WIN and losing exits LOSS.';
+}
+$('runChart').onclick=async()=>{await runKeys(Object.keys(defs));await loadFailureChart();$('failure-analysis').scrollIntoView({behavior:'smooth',block:'start'});};
+$('refreshChart').onclick=loadFailureChart;
+$('failureTf').onchange=loadFailureChart;
+['showEma20','showEma50','showEma200','showVwap'].forEach(id=>$(id).onchange=renderFailureChart);
+$('fitChart').onclick=()=>{if(window.Plotly&&failureChartData)Plotly.relayout('failureChart',{xaxis:{autorange:true},yaxis:{autorange:true}});};
+$('resetChart').onclick=()=>{if(window.Plotly&&failureChartData)Plotly.relayout('failureChart',{xaxis:{autorange:true},yaxis:{autorange:true}});};
+renderFailureChecks();
+
 </script>
 </body>
 </html>
