@@ -396,7 +396,7 @@ function renderFailureChart(){
     if(exits.length)traces.push({x:exits.map(a=>a[0]),y:exits.map(a=>a[1]),type:'scatter',mode:'markers',name:defs[k].name+' exits',
       marker:{size:9,symbol:'x',color:failureColors[idx],line:{width:1}},text:exitTexts,customdata:exitCustom,hovertemplate:'%{text}<br>%{x}<br><b>Click for trade analysis</b><extra></extra>'});
   });
-  Plotly.react('failureChart',traces,{title:{text:d.symbol+' — Six-Strategy Failure Analysis ('+d.timeframe+')',font:{size:16}},
+  Plotly.react('failureChart',traces,{title:{text:d.symbol+' — Seven-Strategy Failure Analysis ('+d.timeframe+')',font:{size:16}},
     paper_bgcolor:'#161b22',plot_bgcolor:'#0d1117',font:{color:'#c9d1d9'},
     xaxis:{autorange:true,type:'date',fixedrange:false,showspikes:true,spikemode:'across',spikesnap:'cursor',rangeselector:{buttons:[{count:1,label:'1D',step:'day',stepmode:'backward'},{count:5,label:'5D',step:'day',stepmode:'backward'},{count:1,label:'1M',step:'month',stepmode:'backward'},{count:3,label:'3M',step:'month',stepmode:'backward'},{step:'all',label:'All'}],font:{size:11}}},yaxis:{autorange:true,fixedrange:false,side:'right',showspikes:true,spikemode:'across'},
     hovermode:'x unified',legend:{orientation:'h',y:1.02,x:0},margin:{l:45,r:70,t:55,b:45},dragmode:'zoom'},
