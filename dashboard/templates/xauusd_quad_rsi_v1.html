@@ -35,7 +35,10 @@ $('run').onclick=async()=>{
   $('metrics').innerHTML='<table>'+Object.entries(m).map(([k,v])=>'<tr><td>'+esc(k)+'</td><td>'+fmt(v)+'</td></tr>').join('')+'</table><p class="muted">'+esc(d.data_source)+' · '+esc(d.data_start)+' → '+esc(d.data_end)+' · daily bars '+esc(d.daily_bars)+'</p>';
   $('diag').innerHTML='<table>'+Object.entries(d.diagnostics||{}).map(([k,v])=>'<tr><td>'+esc(k)+'</td><td>'+esc(v)+'</td></tr>').join('')+'</table>';
   const t=d.trades||[];if(t.length){const c=Object.keys(t[0]);$('trades').innerHTML='<table><tr>'+c.map(x=>'<th>'+esc(x)+'</th>').join('')+'</tr>'+t.map(row=>'<tr>'+c.map(x=>'<td>'+esc(typeof row[x]==='number'?fmt(row[x]):row[x])+'</td>').join('')+'</tr>').join('')+'</table>'}else $('trades').innerHTML='<div class="muted">No closed trades in this sample.</div>';
+  window.dispatchEvent(new CustomEvent('strategy-result',{detail:d}));
   $('status').innerHTML='<span class="good">Done</span>';
  }catch(e){$('status').textContent='Error: '+e.message}finally{$('run').disabled=false}
 };
-</script></body></html>
+</script>{% set chart_strategy = 'quad' %}
+{% include 'partials/interactive_strategy_chart.html' %}
+</body></html>
