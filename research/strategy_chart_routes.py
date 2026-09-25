@@ -8,11 +8,17 @@ render an interactive candlestick chart without shipping base64 PNGs.
 import math
 import numpy as np
 import pandas as pd
+import time
 from flask import Blueprint, jsonify, request, session
 
 from core.market_data import get_bars, alpaca_get_bars
 
 strategy_chart_bp = Blueprint("strategy_chart", __name__)
+
+# Small in-process cache: chart data is read-only for a few seconds and is
+# expensive mainly because it crosses the network and is serialized to JSON.
+_CHART_CACHE = {}
+_CHART_CACHE_TTL = 20
 
 
 def _safe(v):
@@ -37,10 +43,18 @@ def strategy_chart():
         return jsonify({"error": "Unauthorized"}), 401
     body = request.get_json(silent=True) or {}
     symbol = str(body.get("symbol", "GLD")).strip().upper()
-    bars = max(200, min(20000, int(body.get("n_bars", 1560))))
+    requested = max(200, min(10000, int(body.get("n_bars", 3000))))
+    caps = {"5m": 6000, "15m": 6000, "1h": 3000, "1d": 1500}
+    bars = min(requested, caps.get(timeframe, 6000))
     timeframe = str(body.get("timeframe", "5m")).lower()
     if timeframe not in {"5m", "15m", "1h", "1d"}:
         timeframe = "5m"
+
+    cache_key = (symbol, timeframe, bars)
+    now = time.time()
+    cached = _CHART_CACHE.get(cache_key)
+    if cached and now - cached[0] < _CHART_CACHE_TTL:
+        return jsonify(cached[1])
 
     # Reuse Analyzer Pro's existing market-data path instead of maintaining
     # a second chart-specific downloader. This keeps the strategy-analysis
@@ -79,7 +93,7 @@ def strategy_chart():
     df["VWAP"] = pv.groupby(day).cumsum() / df["Volume"].astype(float).groupby(day).cumsum().replace(0, np.nan)
 
     source = raw[0].get("source", "unknown") if raw else "unknown"
-    return jsonify(_safe({
+    payload = _safe({
         "symbol": symbol,
         "timeframe": timeframe,
         "data_source": source,
