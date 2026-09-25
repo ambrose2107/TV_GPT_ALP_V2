@@ -24,7 +24,8 @@
   function render(){
     if(!chartData)return;
     const o=chartData.ohlcv, x=o.map(r=>r.t);
-    const c={x,open:o.map(r=>r.o),high:o.map(r=>r.h),low:o.map(r=>r.l),close:o.map(r=>r.c),type:'candlestick',name:chartData.symbol};
+    const c={x,open:o.map(r=>r.o),high:o.map(r=>r.h),low:o.map(r=>r.l),close:o.map(r=>r.c),type:'candlestick',name:chartData.symbol,
+      increasing:{line:{color:'#3fb950'},fillcolor:'#3fb950'},decreasing:{line:{color:'#f85149'},fillcolor:'#f85149'}};
     const ind=chartData.indicators||{}, traces=[c];
     if($('chart-ema20').checked) traces.push({x,y:ind.ema20,name:'EMA20',type:'scatter',mode:'lines',connectgaps:false});
     if($('chart-ema50').checked) traces.push({x,y:ind.ema50,name:'EMA50',type:'scatter',mode:'lines',connectgaps:false});
@@ -38,7 +39,8 @@
     if(entries.length)traces.push({x:entries.map(z=>z.x),y:entries.map(z=>z.y),text:entries.map(z=>z.text),name:'Entries',type:'scatter',mode:'markers',marker:{size:10,symbol:'triangle-up'}});
     if(exits.length)traces.push({x:exits.map(z=>z.x),y:exits.map(z=>z.y),text:exits.map(z=>z.text),name:'Exits',type:'scatter',mode:'markers',marker:{size:9,symbol:'triangle-down'}});
     const layout={
-      title:{text:(chartData.symbol||'')+' · '+(chartData.timeframe||'')+' · Strategy overlay'},
+      title:{text:(chartData.symbol||'')+' · '+(chartData.timeframe||'')+' · Strategy overlay',font:{size:16}},
+      paper_bgcolor:'#161b22',plot_bgcolor:'#0d1117',font:{color:'#c9d1d9'},
       dragmode:'zoom',hovermode:'x unified',showlegend:true,
       margin:{l:52,r:24,t:48,b:42},height:560,
       xaxis:{type:'date',autorange:true,fixedrange:false,showspikes:true,spikemode:'across',spikesnap:'cursor',
