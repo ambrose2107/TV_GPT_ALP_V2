@@ -57,8 +57,11 @@ $('run').onclick=async()=>{
   $('metrics').innerHTML=Object.entries(d.metrics||{}).map(([k,v])=>'<tr><td>'+esc(k)+'</td><td>'+esc(fmt(v))+'</td></tr>').join('');
   const t=d.trades||[];
   $('trades').innerHTML=t.length?'<tr>'+Object.keys(t[0]).map(k=>'<th>'+esc(k)+'</th>').join('')+'</tr>'+t.slice().reverse().map(x=>'<tr>'+Object.values(x).map(v=>'<td>'+esc(fmt(v))+'</td>').join('')+'</tr>').join(''):'<tr><td>No trades</td></tr>';
+  window.dispatchEvent(new CustomEvent('strategy-result',{detail:d}));
   s.innerHTML='<span class="ok">Done.</span> '+esc(d.data_start)+' → '+esc(d.data_end);
  }catch(e){s.innerHTML='<span class="bad">Failed: '+esc(e.message)+'</span>'}
  finally{$('run').disabled=false}
 };
-</script></body></html>
+</script>{% set chart_strategy = 'ema' %}
+{% include 'partials/interactive_strategy_chart.html' %}
+</body></html>
