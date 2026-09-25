@@ -1,8 +1,8 @@
-<div class="chart-card" style="margin:16px 0;padding:12px;border:1px solid var(--line,#30363d);border-radius:10px;background:var(--panel,#161b22)">
+<div class="chart-card" style="margin:18px 0;padding:14px;border:1px solid var(--line,#30363d);border-radius:12px;background:linear-gradient(145deg,var(--panel,#161b22),#10151d);box-shadow:0 8px 24px rgba(0,0,0,.16)">
   <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px">
-    <strong>Interactive Strategy Chart</strong>
+    <strong style="font-size:16px">Interactive Strategy Chart</strong><span class="muted" style="font-size:12px">Zoom, pan, rescale axes, or use Auto Fit.</span>
     <label>Symbol <input id="strategy-chart-symbol" value="{{ chart_symbol|default('GLD') }}" style="width:75px"></label>
-    <label>TF <select id="strategy-chart-tf"><option>5m</option><option selected>15m</option><option>1h</option><option>1d</option></select></label>
+    <label>TF <select id="strategy-chart-tf"><option {% if chart_default_tf|default("15m") == "5m" %}selected{% endif %}>5m</option><option {% if chart_default_tf|default("15m") == "15m" %}selected{% endif %}>15m</option><option {% if chart_default_tf|default("15m") == "1h" %}selected{% endif %}>1h</option><option {% if chart_default_tf|default("15m") == "1d" %}selected{% endif %}>1d</option></select></label>
     <label><input type="checkbox" id="chart-ema20" checked> EMA20</label>
     <label><input type="checkbox" id="chart-ema50" checked> EMA50</label>
     <label><input type="checkbox" id="chart-ema200"> EMA200</label>
@@ -12,7 +12,7 @@
     <button id="chart-reset">Reset Zoom</button>
     <span id="chart-status" class="muted">Ready</span>
   </div>
-  <div id="strategy-chart" style="width:100%;height:620px"></div>
+  <div id="strategy-chart" style="width:100%;height:560px"></div>
 </div>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <script>
@@ -21,9 +21,6 @@
   let chartData=null, lastTrades=[];
   const key="{{ chart_strategy|default('strategy') }}";
   const fmt=v=>typeof v==='number'&&isFinite(v)?v.toFixed(2):'';
-  function traceLine(name,values,x,visible){
-    return {x,y:values,name,type:'scatter',mode:'lines',visible:visible?'legendonly':false,connectgaps:false};
-  }
   function render(){
     if(!chartData)return;
     const o=chartData.ohlcv, x=o.map(r=>r.t);
@@ -43,9 +40,10 @@
     const layout={
       title:{text:(chartData.symbol||'')+' · '+(chartData.timeframe||'')+' · Strategy overlay'},
       dragmode:'zoom',hovermode:'x unified',showlegend:true,
-      margin:{l:55,r:25,t:50,b:45},height:620,
-      xaxis:{type:'date',autorange:true,rangeslider:{visible:false},fixedrange:false},
-      yaxis:{autorange:true,fixedrange:false},
+      margin:{l:52,r:24,t:48,b:42},height:560,
+      xaxis:{type:'date',autorange:true,fixedrange:false,showspikes:true,spikemode:'across',spikesnap:'cursor',
+        rangeselector:{buttons:[{count:1,label:'1D',step:'day',stepmode:'backward'},{count:5,label:'5D',step:'day',stepmode:'backward'},{count:1,label:'1M',step:'month',stepmode:'backward'},{count:3,label:'3M',step:'month',stepmode:'backward'},{step:'all',label:'All'}],font:{size:11}}},
+      yaxis:{autorange:true,fixedrange:false,side:'right',showspikes:true,spikemode:'across'},
       legend:{orientation:'h',y:1.02,x:0},
       uirevision:key
     };
@@ -53,7 +51,9 @@
   }
   async function load(){
     const symbol=($('strategy-chart-symbol').value||'GLD').trim().toUpperCase();
-    const n=Number((document.getElementById('bars')||{}).value)||1560;
+    const rawN=Number((document.getElementById('bars')||{}).value)||1560;
+    const caps={'5m':6000,'15m':6000,'1h':3000,'1d':1500};
+    const n=Math.min(rawN,caps[tf]||6000);
     const tf=$('strategy-chart-tf').value;
     $('chart-status').textContent='Loading…';
     try{
@@ -66,7 +66,16 @@
   ['chart-ema20','chart-ema50','chart-ema200','chart-vwap'].forEach(id=>$(id).onchange=render);
   $('chart-fit').onclick=()=>{if(window.Plotly)Plotly.relayout('strategy-chart',{'xaxis.autorange':true,'yaxis.autorange':true})};
   $('chart-reset').onclick=()=>{if(window.Plotly)Plotly.relayout('strategy-chart',{'xaxis.autorange':true,'yaxis.autorange':true})};
-  window.addEventListener('strategy-result',e=>{const d=e.detail||{};if(d.symbol){$('strategy-chart-symbol').value=d.symbol;}lastTrades=d.trades||[];render();load();});
+  window.addEventListener('strategy-result',e=>{
+    const d=e.detail||{};
+    if(d.symbol)$('strategy-chart-symbol').value=d.symbol;
+    if(d.chart_timeframe)$('strategy-chart-tf').value=d.chart_timeframe;
+    lastTrades=d.trades||[];
+    // Do not automatically make another market-data request after a backtest.
+    // The trade overlay is ready immediately; Load / Refresh fetches candles on demand.
+    if(chartData)render();
+    else $('chart-status').textContent='Trade result ready — load chart when needed';
+  });
   window.strategyChartLoad=load;
   window.strategyChartSetSymbol=s=>{if(s)$('strategy-chart-symbol').value=s};
   window.strategyChartKey=key;
