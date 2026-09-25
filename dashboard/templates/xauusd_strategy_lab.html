@@ -44,7 +44,13 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
     <button id="runAll" class="primary">Run All 7</button>
     <button id="runOpen">Run Expanded</button>
     <button id="clear">Clear Results</button>
-    <button id="downloadCsv" onclick="downloadCombinedCsv()" disabled>📥 Download All Results CSV</button>
+    <button id="downloadCsv" onclick="downloadCombinedCsv()" disabled>📥 Download Results CSV</button>
+    <span style="border-left:1px solid var(--line);height:28px"></span>
+    <label>Export TF <select id="exportTf" style="background:var(--bg);color:var(--text);border:1px solid var(--line);padding:8px;border-radius:5px">
+      <option value="1Day" selected>1D</option><option value="1Week">1W</option><option value="1Hour">1H</option><option value="15Min">15m</option><option value="5Min">5m</option>
+    </select></label>
+    <label>Export bars <input id="exportBars" type="number" min="100" max="100000" value="5000" style="width:95px"></label>
+    <button id="exportMarketTrades" onclick="downloadMarketDataWithTrades()">📦 Export Alpaca Data + Trades</button>
     <span id="globalStatus" class="muted">Ready</span>
   </div>
   <div class="muted" style="margin-top:8px">
@@ -286,6 +292,33 @@ function downloadCombinedCsv(){
  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
 
+async function downloadMarketDataWithTrades(){
+ const completed=Object.fromEntries(Object.entries(lastResults).filter(([k,d])=>d&&!d.error).map(([k,d])=>[defs[k].name,d.trades||[]]));
+ if(!Object.keys(completed).length){
+   alert('Run at least one strategy first so the export can include its trades.');
+   return;
+ }
+ const btn=$('exportMarketTrades'); btn.disabled=true; $('globalStatus').textContent='Downloading Alpaca market data…';
+ try{
+   const r=await fetch('/api/strategy-lab/export',{method:'POST',credentials:'same-origin',cache:'no-store',
+     headers:{'Content-Type':'application/json'},
+     body:JSON.stringify({symbol:selectedSymbol(),timeframe:$('exportTf').value,bars:Math.min(100000,Math.max(100,Number($('exportBars').value)||5000)),strategies:completed})});
+   if(!r.ok){
+     const txt=await r.text(); let msg=txt; try{msg=JSON.parse(txt).error||txt;}catch(_){}
+     throw new Error(msg);
+   }
+   const blob=await r.blob();
+   const cd=r.headers.get('Content-Disposition')||'';
+   const match=cd.match(/filename="([^"]+)"/i);
+   const name=match?match[1]:'strategy_lab_market_data_trades.csv';
+   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;
+   document.body.appendChild(a);a.click();a.remove();
+   setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+   $('globalStatus').innerHTML='<span class="ok">Alpaca market data + strategy trades exported.</span>';
+ }catch(e){
+   $('globalStatus').innerHTML='<span class="bad">Export error: '+esc(e.message)+'</span>';
+ }finally{btn.disabled=false;}
+}
 $('runOpen').onclick=()=>runKeys(Object.keys(defs).filter(k=>$('card-'+k).open));
 $('clear').onclick=()=>{lastResults={};$('downloadCsv').disabled=true;Object.keys(defs).forEach(k=>{setStatus(k,'Ready');$('metrics-'+k).innerHTML='<div class="empty">No result yet.</div>';$('trades-'+k).innerHTML='';const r=document.querySelector('#comparison tr[data-k="'+k+'"]');if(r)r.remove()});$('failureStats').innerHTML='<div class="empty">Loss diagnostics will appear after the runs.</div>';$('globalStatus').textContent='Ready';};
 function openPage(p){window.location.href=p}
