@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from flask import Blueprint, jsonify, request, session
 
-from core.market_data import get_bars
+from core.market_data import get_bars, alpaca_get_bars
 
 strategy_chart_bp = Blueprint("strategy_chart", __name__)
 
@@ -45,8 +45,11 @@ def strategy_chart():
     # Reuse Analyzer Pro's existing market-data path instead of maintaining
     # a second chart-specific downloader. This keeps the strategy-analysis
     # chart on the same source used by the Analyzer Pro tab.
-    period = {"5m": "1D", "15m": "1D", "1h": "1W", "1d": "3mo"}[timeframe]
-    raw = get_bars(symbol, period)
+    tf_map = {"5m": "5Min", "15m": "15Min", "1h": "1Hour", "1d": "1Day"}
+    raw = alpaca_get_bars(symbol, tf_map[timeframe], limit=min(10000, bars))
+    if not raw:
+        period = {"5m": "5m", "15m": "15m", "1h": "1h", "1d": "3mo"}[timeframe]
+        raw = get_bars(symbol, period)
     if not raw:
         return jsonify({"error": f"No chart data available for {symbol}"}), 404
 
