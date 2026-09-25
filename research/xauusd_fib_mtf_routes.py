@@ -79,6 +79,7 @@ def _run_impl():
     body = request.get_json(silent=True) or {}
     n_bars = int(body.get("n_bars", 30000))
     use_live = bool(body.get("use_live", True))
+    symbol = str(body.get("symbol", "GC=F")).upper()
 
     try:
         mtf_cfg = MTFConfig(**_safe_mtf_kwargs(body.get("mtf") or {}))
@@ -87,7 +88,7 @@ def _run_impl():
         return jsonify({"error": f"Invalid parameter: {ex}"}), 400
 
     try:
-        result = run_backtest(use_live=use_live, n_bars=n_bars, mtf_cfg=mtf_cfg, engine_cfg=engine_cfg)
+        result = run_backtest(use_live=use_live, n_bars=n_bars, mtf_cfg=mtf_cfg, engine_cfg=engine_cfg, data=get_mtf_data(use_live=use_live, symbol=symbol, n_bars=n_bars))
     except Exception as ex:
         logger.warning(f"xauusd_fib_mtf backtest failed: {ex}\n{traceback.format_exc()}")
         return jsonify({"error": str(ex)}), 400
@@ -125,6 +126,7 @@ def _run_impl():
 
     return jsonify({
         "metrics": result["metrics"],
+        "symbol": symbol,
         "funnel": funnel_ordered,
         "trades": trades_out.to_dict("records"),
         "used_numba": result["used_numba"],
