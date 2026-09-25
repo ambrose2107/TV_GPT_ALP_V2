@@ -2,7 +2,8 @@
 dashboard/routes.py — All dashboard routes (v4 complete)
 """
 from flask import Blueprint, render_template, jsonify, request, session, redirect, url_for, send_file
-import io, json
+import io, json, csv
+from datetime import datetime, timezone
 from core.database import (get_recent_trades, get_recent_webhooks, get_closed_positions,
                             get_closed_summary, log_closed_position)
 from core.config import Config
@@ -189,6 +190,46 @@ def api_webhooks():
     e = _auth(); 
     if e: return e
     return jsonify(get_recent_webhooks(20))
+
+@dashboard_bp.route("/api/open_positions_csv")
+def api_open_positions_csv():
+    """Download the complete current Alpaca open-position payload as CSV."""
+    auth = _auth()
+    if auth:
+        return auth
+    try:
+        positions = alpaca.get_positions() or []
+        # Preserve every field returned by Alpaca. Nested values are JSON strings
+        # so no information is silently dropped by the CSV conversion.
+        fields = sorted({k for p in positions if isinstance(p, dict) for k in p.keys()})
+        fields = ["exported_at_utc", "record_type"] + fields
+        exported = datetime.now(timezone.utc).isoformat()
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=fields, extrasaction="ignore")
+        writer.writeheader()
+        for p in positions:
+            row = {"exported_at_utc": exported, "record_type": "open_position"}
+            for k, v in p.items():
+                if isinstance(v, (dict, list)):
+                    row[k] = json.dumps(v, ensure_ascii=False, separators=(",", ":"))
+                else:
+                    row[k] = v
+            writer.writerow(row)
+        if not positions:
+            writer.writerow({
+                "exported_at_utc": exported,
+                "record_type": "open_position",
+            })
+        data = io.BytesIO(output.getvalue().encode("utf-8-sig"))
+        return send_file(
+            data,
+            mimetype="text/csv; charset=utf-8",
+            as_attachment=True,
+            download_name=f"open_positions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        )
+    except Exception as ex:
+        logger.exception("Open positions CSV export failed")
+        return jsonify({"error": str(ex)}), 500
 
 @dashboard_bp.route("/api/closed_positions")
 def api_closed_positions():
