@@ -6,9 +6,12 @@ bars for multi-month failure analysis.
 """
 import math
 import time
+import csv
+import io
+from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, jsonify, request, session, make_response
 
 from core.market_data import get_bars, alpaca_get_bars
 
@@ -33,6 +36,95 @@ def _safe(v):
 
 def _ema(s, n):
     return s.ewm(span=n, adjust=False, min_periods=n).mean()
+
+
+@strategy_chart_bp.route("/api/strategy-lab/export", methods=["POST"])
+def strategy_lab_export():
+    """Download raw Alpaca OHLCV plus all strategy trades in one CSV.
+
+    The market-data rows and trade rows use record_type so the file remains
+    easy to filter in Excel/Pandas while preserving the exact trade records
+    returned by the browser's completed backtests.
+    """
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    body = request.get_json(silent=True) or {}
+    symbol = str(body.get("symbol", "GLD")).strip().upper()
+    timeframe = str(body.get("timeframe", "1Day")).strip()
+    allowed = {"1Min", "2Min", "5Min", "15Min", "30Min", "1Hour", "4Hour", "1Day", "1Week"}
+    if timeframe not in allowed:
+        return jsonify({"error": "Unsupported timeframe"}), 400
+
+    try:
+        bars_requested = max(100, min(100000, int(body.get("bars", 10000))))
+    except (TypeError, ValueError):
+        bars_requested = 10000
+
+    raw = alpaca_get_bars(symbol, timeframe, limit=bars_requested)
+    if not raw:
+        return jsonify({
+            "error": f"No Alpaca data available for {symbol} {timeframe}. "
+                     "Export requires Alpaca market data."
+        }), 404
+
+    strategies = body.get("strategies") or {}
+    headers = [
+        "exported_at_utc", "record_type", "strategy", "symbol",
+        "timeframe", "data_source", "timestamp",
+        "open", "high", "low", "close", "volume",
+        "entry_time", "exit_time", "side", "entry", "sl", "tp", "R", "equity",
+        "reason"
+    ]
+    out = io.StringIO()
+    writer = csv.DictWriter(out, fieldnames=headers, extrasaction="ignore")
+    writer.writeheader()
+    exported = datetime.now(timezone.utc).isoformat()
+
+    for b in raw:
+        writer.writerow({
+            "exported_at_utc": exported,
+            "record_type": "market_data",
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "data_source": "Alpaca",
+            "timestamp": b.get("t"),
+            "open": b.get("o"),
+            "high": b.get("h"),
+            "low": b.get("l"),
+            "close": b.get("c"),
+            "volume": b.get("v"),
+        })
+
+    trade_count = 0
+    for strategy, trades in strategies.items():
+        for t in (trades or []):
+            writer.writerow({
+                "exported_at_utc": exported,
+                "record_type": "trade",
+                "strategy": strategy,
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "data_source": "strategy backtest",
+                "entry_time": t.get("entry_time"),
+                "exit_time": t.get("exit_time"),
+                "side": t.get("side"),
+                "entry": t.get("entry"),
+                "sl": t.get("sl"),
+                "tp": t.get("tp"),
+                "R": t.get("R"),
+                "equity": t.get("equity"),
+                "reason": t.get("reason"),
+            })
+            trade_count += 1
+
+    filename = f"strategy_lab_{symbol}_{timeframe}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}.csv"
+    response = make_response(out.getvalue())
+    response.headers["Content-Type"] = "text/csv; charset=utf-8"
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response.headers["X-Market-Data-Bars"] = str(len(raw))
+    response.headers["X-Strategy-Trades"] = str(trade_count)
+    return response
 
 
 @strategy_chart_bp.route("/api/strategy-chart", methods=["POST"])
