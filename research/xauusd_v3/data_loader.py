@@ -114,7 +114,10 @@ def get_synthetic_data(n_bars: int = 20000, bar_seconds: int = 300,
 
 
 def get_data(interval: str = "5m", use_live: bool = True, period: str = None,
-             n_bars: int = 20000, symbols: dict = None) -> dict:
+             n_bars: int = 20000, symbols: dict = None, primary_symbol: str = None) -> dict:
+    if primary_symbol:
+        symbols = dict(symbols or DEFAULT_SYMBOLS)
+        symbols["gold"] = str(primary_symbol).upper()
     if use_live:
         try:
             return get_live_data(interval=interval, period=period, symbols=symbols)
