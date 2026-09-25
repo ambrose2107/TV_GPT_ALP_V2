@@ -75,6 +75,7 @@ def _run_impl():
     interval = body.get("interval", "5m")
     n_bars = int(body.get("n_bars", 20000))
     use_live = bool(body.get("use_live", True))
+    symbol = str(body.get("symbol", "GC=F")).upper()
 
     # only accept known SignalConfig / EngineConfig fields - never pass
     # arbitrary request JSON straight into a dataclass constructor
@@ -92,7 +93,7 @@ def _run_impl():
     try:
         result = run_backtest(
             symbol_interval=interval, use_live=use_live, n_bars=n_bars,
-            signal_cfg=signal_cfg, engine_cfg=engine_cfg,
+            signal_cfg=signal_cfg, engine_cfg=engine_cfg, symbol=symbol,
         )
     except Exception as ex:
         logger.warning(f"xauusd_v3 backtest failed: {ex}\n{traceback.format_exc()}")
@@ -105,7 +106,7 @@ def _run_impl():
         try:
             p = os.path.join(tmp, "overview.png")
             plot_overview(result["df"], result["trades"], result["equity_curve"], p,
-                          title=f"XAUUSD ({interval})")
+                          title=f"{symbol} ({interval})")
             charts["overview"] = _fig_to_base64(p)
         except Exception as ex:
             logger.warning(f"overview chart failed: {ex}")
@@ -151,6 +152,7 @@ def _run_impl():
 
     return jsonify({
         "metrics": result["metrics"],
+        "symbol": symbol,
         "funnel": funnel_ordered,
         "trades": trades_out.to_dict("records"),
         "used_numba": result["used_numba"],
