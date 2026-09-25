@@ -192,6 +192,7 @@ async function runV3Backtest() {
     renderFunnel(data.funnel);
     renderMetrics(data.metrics, data.used_numba);
     renderCharts(data.charts);
+    window.dispatchEvent(new CustomEvent('strategy-result',{detail:data}));
     status.textContent = 'Done.';
   } catch (e) {
     status.innerHTML = `<span style="color:var(--red)">Error: ${e.message}</span>`;
@@ -249,5 +250,7 @@ function renderCharts(charts) {
 }
 </script>
 
+{% set chart_strategy = 'v3' %}
+{% include 'partials/interactive_strategy_chart.html' %}
 </body>
 </html>
