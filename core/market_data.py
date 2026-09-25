@@ -60,67 +60,76 @@ def alpaca_get_bars(symbol: str, timeframe: str = "1Day",
                     start=None):
     """
     Get OHLCV bars from Alpaca Data API.
-    Always passes a `start` date so the full period is covered.
-    Tries iex feed first (free/delayed), then sip, then no-feed param.
-    Returns list of dicts: {t, o, h, l, c, v}
+
+    The endpoint supports up to 10,000 bars per page and exposes
+    next_page_token pagination. We page through results when the caller asks
+    for a larger history so Analyzer Pro and strategy charts can use the same
+    underlying data path without silently truncating at the first page.
     """
     hdrs = _alpaca_headers()
     if not hdrs.get("APCA-API-KEY-ID"):
         logger.warning("⚠️ Alpaca API key not set — skipping Alpaca, falling back to Yahoo")
         return None
 
-    # Calculate start date from limit + timeframe if not provided
+    requested = max(1, min(int(limit), 10000))
     if not start:
         now = datetime.now(timezone.utc)
-        if timeframe in ("1Day", "1Day"):
-            # daily bars: go back limit trading days × 1.5 to cover weekends/holidays
-            start = (now - timedelta(days=int(limit * 1.5))).strftime("%Y-%m-%dT%H:%M:%SZ")
+        if timeframe in ("1Day",):
+            start = (now - timedelta(days=int(requested * 1.5))).strftime("%Y-%m-%dT%H:%M:%SZ")
         elif timeframe in ("1Week",):
-            start = (now - timedelta(weeks=int(limit * 1.5))).strftime("%Y-%m-%dT%H:%M:%SZ")
+            start = (now - timedelta(weeks=int(requested * 1.5))).strftime("%Y-%m-%dT%H:%M:%SZ")
         elif timeframe in ("1Hour", "4Hour", "30Min"):
-            # A tight window (limit-based) can land entirely outside market
-            # hours/on a weekend and come back empty. Use a generous
-            # calendar-day floor (matches the ~30-60d window Yahoo gets for
-            # these same periods) so there's always a real trading session
-            # inside the range regardless of when this runs.
-            start = (now - timedelta(days=max(10, int(limit / 6)))).strftime("%Y-%m-%dT%H:%M:%SZ")
+            start = (now - timedelta(days=max(10, int(requested / 6)))).strftime("%Y-%m-%dT%H:%M:%SZ")
         elif timeframe in ("1Min", "2Min", "5Min", "15Min"):
-            # Same issue, worse: a 390-bar 15Min request only spans ~13h by
-            # the old (limit*2 minutes) formula -- can miss the entire most
-            # recent trading day outside market hours. Floor at several
-            # calendar days, matching Yahoo's 5d window for these periods.
-            start = (now - timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            # Intraday charts may ask for substantially more than the old
+            # one-page 5-day window. The API will determine what the account
+            # is entitled to return; pagination then retrieves all available.
+            bars_per_day = {"1Min":390,"2Min":195,"5Min":78,"15Min":26}.get(timeframe,78)
+            calendar_days = max(5, int(requested / bars_per_day * 7 / 5) + 3)
+            start = (now - timedelta(days=calendar_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
         else:
-            start = (now - timedelta(days=int(limit * 1.5))).strftime("%Y-%m-%dT%H:%M:%SZ")
+            start = (now - timedelta(days=int(requested * 1.5))).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     url = f"{ALPACA_DATA_URL}/v2/stocks/{symbol.upper()}/bars"
-    base_params = {"timeframe": timeframe, "limit": limit, "start": start,
-                   "sort": "asc", "adjustment": "raw"}
+    base_params = {"timeframe": timeframe, "limit": min(requested, 10000),
+                   "start": start, "sort": "asc", "adjustment": "raw"}
 
-    # Try feeds in order: iex (free delayed), sip (subscription), then default
     for attempt_feed in ["iex", "sip", None]:
         try:
-            params = dict(base_params)
-            if attempt_feed:
-                params["feed"] = attempt_feed
-            r = requests.get(url, params=params, headers=hdrs, timeout=12)
-            if r.status_code == 403:
-                logger.debug(f"Alpaca 403 {symbol} feed={attempt_feed}, trying next")
-                continue
-            if r.status_code == 401:
-                logger.warning("Alpaca 401 Unauthorized — check ALPACA_API_KEY / ALPACA_SECRET_KEY env vars")
-                return None
-            r.raise_for_status()
-            bars = r.json().get("bars", [])
-            if bars:
-                logger.info(f"✅ Alpaca: {symbol} {timeframe} feed={attempt_feed or 'default'} ({len(bars)} bars) from {start}")
-                return bars
+            all_bars = []
+            page_token = None
+            while len(all_bars) < requested:
+                params = dict(base_params)
+                params["limit"] = min(10000, requested - len(all_bars))
+                if attempt_feed:
+                    params["feed"] = attempt_feed
+                if page_token:
+                    params["page_token"] = page_token
+                r = requests.get(url, params=params, headers=hdrs, timeout=12)
+                if r.status_code == 403:
+                    all_bars = []
+                    break
+                if r.status_code == 401:
+                    logger.warning("Alpaca 401 Unauthorized — check ALPACA_API_KEY / ALPACA_SECRET_KEY env vars")
+                    return None
+                r.raise_for_status()
+                payload = r.json()
+                page = payload.get("bars", []) or []
+                if not page:
+                    break
+                all_bars.extend(page)
+                page_token = payload.get("next_page_token")
+                if not page_token:
+                    break
+            if all_bars:
+                logger.info(f"✅ Alpaca: {symbol} {timeframe} feed={attempt_feed or 'default'} ({len(all_bars)} bars) from {start}")
+                return all_bars[:requested]
         except requests.exceptions.HTTPError as e:
             if e.response is not None and e.response.status_code == 403:
                 continue
-            logger.warning(f"Alpaca bars {symbol} {timeframe} feed={attempt_feed}: {e}")
+            logger.warning(f"Alpaca bars {symbol} timeframe={timeframe} feed={attempt_feed}: {e}")
         except Exception as e:
-            logger.warning(f"Alpaca bars {symbol} {timeframe}: {e}")
+            logger.warning(f"Alpaca bars {symbol} timeframe={timeframe}: {e}")
             break
     logger.warning(f"⚠️ Alpaca bars failed for {symbol} — falling back to Yahoo")
     return None
