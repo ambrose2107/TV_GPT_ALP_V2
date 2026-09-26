@@ -278,8 +278,8 @@ function downloadCombinedCsv(){
    for(const t of (d.trades||[])){
      rows.push([now,'TRADE',defs[k].name,'DONE',d.symbol||'',d.data_source||(k==='v3'||k==='fib'?'existing XAUUSD loader':'Alpaca/GLD'),
        d.bars||'',d.data_start||'',d.data_end||'',m.num_trades??'',m.win_rate??'',m.profit_factor??'',m.expectancy_R??'',m.total_R??'',
-       m.total_return_pct??'',m.max_drawdown_pct??'',m.final_equity??'',t.entry_time??'',t.exit_time??'',t.side??'',t.entry??'',t.sl??'',t.tp??'',
-       t.R??'',t.equity??'',t.reason??'']);
+       m.total_return_pct??'',m.max_drawdown_pct??'',m.final_equity??'',t.entry_time??'',t.exit_time??'',t.side??'',t.entry??t.entry_price??'',t.exit_price??t.exit??'',t.sl??t.sl_initial??'',t.tp??t.tp1??'',
+       t.R??'',t.equity??'',t.reason??t.exit_reason??'']);
    }
  }
  if(rows.length===1){alert('Run at least one strategy first.');return;}
