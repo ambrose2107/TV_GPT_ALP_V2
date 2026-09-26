@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<title>Gold Strategy Lab V1 — Legacy Strategies</title>
+<title>Gold Strategy Lab V2 — Stable 7-Strategy Lab</title>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <style>
 :root{--bg:#0d1117;--panel:#161b22;--line:#30363d;--text:#c9d1d9;--muted:#8b949e;--good:#7ee787;--warn:#d29922;--bad:#ff7b72}
@@ -28,8 +28,8 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
 </style>
 </head>
 <body>
-<h1>Gold Strategy Lab V1</h1>
-<div class="muted">Legacy V1 workspace — seven original research strategies. This page is preserved for comparison; new development moves to Strategy Lab V2.</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px"><a href="/xauusd-strategy-lab-v1" style="padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:#21262d;color:var(--text)">V1 Legacy Lab</a><a href="/xauusd-strategy-lab-v2" style="padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:#238636;color:#fff">V2 Active Research Lab</a><a href="/" style="padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:#21262d;color:var(--text)">Backtest / Dashboard</a></div>
+<h1>Gold Strategy Lab V2</h1>
+<div class="muted">Stable V2 workspace — seven original research strategies. This is the known-working lab. The newer three-strategy research lab is on V1.</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px"><a href="/xauusd-strategy-lab-v1" style="padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:#21262d;color:var(--text)">V1 New Research Lab</a><a href="/xauusd-strategy-lab-v2" style="padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:#238636;color:#fff">V2 Stable 7-Strategy Lab</a><a href="/" style="padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:#21262d;color:var(--text)">Backtest / Dashboard</a></div>
 
 <div class="toolbar">
   <div class="controls">
@@ -41,7 +41,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
     <label>5m bars <input id="bars" type="number" min="100" max="60000" value="15600"></label>
     <label>Risk % <input id="risk" type="number" min=".01" step=".05" value=".50"></label>
     <label>Min trades <input id="minTrades" type="number" min="2" value="20"></label>
-    <button id="runAll" class="primary">Run All 7 V1</button>
+    <button id="runAll" class="primary">Run All 7 V2</button>
     <button id="runOpen">Run Expanded</button>
     <button id="clear">Clear Results</button>
     <button id="downloadCsv" onclick="downloadCombinedCsv()" disabled>📥 Download Results CSV</button>
@@ -54,7 +54,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
     <span id="globalStatus" class="muted">Ready</span>
   </div>
   <div class="muted" style="margin-top:8px">
-    All seven V1 strategies receive the same selected ticker. V3/Fib use their existing Yahoo loader; V4/Pullback/EMA/Quad use Alpaca; Triple RSI uses daily Alpaca data. The comparison shows the actual data source. The comparison table shows the data source returned by each strategy so results are not mistaken for identical instruments.
+    All seven V2 lab strategies receive the same selected ticker. V3/Fib use their existing Yahoo loader; V4/Pullback/EMA/Quad use Alpaca; Triple RSI uses daily Alpaca data. The comparison shows the actual data source. The comparison table shows the data source returned by each strategy so results are not mistaken for identical instruments.
   </div>
 </div>
 
@@ -67,7 +67,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
 <div class="compare" id="failure-analysis">
   <h2>🔎 Multi-Strategy Trade & Failure Analysis</h2>
   <div class="muted" style="margin:6px 0 10px">
-    One interactive price chart with trades from all seven V1 strategies. Use the strategy checkboxes to isolate entries/exits and inspect where losing trades occurred relative to EMA/VWAP and price structure.
+    One interactive price chart with trades from all seven V2 lab strategies. Use the strategy checkboxes to isolate entries/exits and inspect where losing trades occurred relative to EMA/VWAP and price structure.
   </div>
   <div class="controls" style="margin-bottom:10px">
     <label>Chart timeframe
