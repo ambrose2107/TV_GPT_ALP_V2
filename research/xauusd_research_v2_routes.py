@@ -18,6 +18,7 @@ from research.xauusd_confluence_v4 import load_data as v4_load_data
 bp = Blueprint("xauusd_research_v2", __name__)
 _DATA_CACHE = {}
 _CACHE_TTL = 300
+_LAST_RUN = {"status": "never", "updated": None, "summary": {}}
 
 
 def _safe(v):
@@ -181,7 +182,7 @@ def run_all():
                         "strategy": "all V2", "symbol": symbol}), 500
 
 
-@bp.route("/api/xauusd-research-v2/<strategy>", methods=["POST"])
+@bp.route("/api/xauusd-research-v2/status", methods=["GET"])\ndef status():\n    if not session.get("logged_in"):\n        return jsonify({"error": "Unauthorized"}), 401\n    return jsonify(_safe(_LAST_RUN))\n\n@bp.route("/api/xauusd-research-v2/<strategy>", methods=["POST"])
 def run(strategy):
     if not session.get("logged_in"):
         return jsonify({"error": "Unauthorized"}), 401
