@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<title>Gold Strategy Lab — 7 Strategy Comparison</title>
+<title>Gold Strategy Lab V1 — Legacy Strategies</title>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <style>
 :root{--bg:#0d1117;--panel:#161b22;--line:#30363d;--text:#c9d1d9;--muted:#8b949e;--good:#7ee787;--warn:#d29922;--bad:#ff7b72}
@@ -28,8 +28,8 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
 </style>
 </head>
 <body>
-<h1>Gold Strategy Lab</h1>
-<div class="muted">One workspace for seven independent research strategies. Expand/minimize any strategy, run one, or run all and compare the same backtest metrics.</div>
+<h1>Gold Strategy Lab V1</h1>
+<div class="muted">Legacy V1 workspace — seven original research strategies. This page is preserved for comparison; new development moves to Strategy Lab V2.</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px"><a href="/xauusd-strategy-lab-v1" style="padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:#21262d;color:var(--text)">V1 Legacy Lab</a><a href="/xauusd-strategy-lab-v2" style="padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:#238636;color:#fff">V2 Active Research Lab</a><a href="/" style="padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:#21262d;color:var(--text)">Backtest / Dashboard</a></div>
 
 <div class="toolbar">
   <div class="controls">
@@ -41,7 +41,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
     <label>5m bars <input id="bars" type="number" min="100" max="60000" value="15600"></label>
     <label>Risk % <input id="risk" type="number" min=".01" step=".05" value=".50"></label>
     <label>Min trades <input id="minTrades" type="number" min="2" value="20"></label>
-    <button id="runAll" class="primary">Run All 7</button>
+    <button id="runAll" class="primary">Run All 7 V1</button>
     <button id="runOpen">Run Expanded</button>
     <button id="clear">Clear Results</button>
     <button id="downloadCsv" onclick="downloadCombinedCsv()" disabled>📥 Download Results CSV</button>
@@ -54,7 +54,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
     <span id="globalStatus" class="muted">Ready</span>
   </div>
   <div class="muted" style="margin-top:8px">
-    All seven strategies receive the same selected ticker. V3/Fib use their existing Yahoo loader; V4/Pullback/EMA/Quad use Alpaca; Triple RSI uses daily Alpaca data. The comparison shows the actual data source. The comparison table shows the data source returned by each strategy so results are not mistaken for identical instruments.
+    All seven V1 strategies receive the same selected ticker. V3/Fib use their existing Yahoo loader; V4/Pullback/EMA/Quad use Alpaca; Triple RSI uses daily Alpaca data. The comparison shows the actual data source. The comparison table shows the data source returned by each strategy so results are not mistaken for identical instruments.
   </div>
 </div>
 
@@ -67,7 +67,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
 <div class="compare" id="failure-analysis">
   <h2>🔎 Multi-Strategy Trade & Failure Analysis</h2>
   <div class="muted" style="margin:6px 0 10px">
-    One interactive price chart with trades from all seven strategies. Use the strategy checkboxes to isolate entries/exits and inspect where losing trades occurred relative to EMA/VWAP and price structure.
+    One interactive price chart with trades from all seven V1 strategies. Use the strategy checkboxes to isolate entries/exits and inspect where losing trades occurred relative to EMA/VWAP and price structure.
   </div>
   <div class="controls" style="margin-bottom:10px">
     <label>Chart timeframe
@@ -79,7 +79,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
     <label><input type="checkbox" id="showEma50" checked> EMA50</label>
     <label><input type="checkbox" id="showEma200"> EMA200</label>
     <label><input type="checkbox" id="showVwap"> VWAP</label>
-    <button id="runChart" class="primary">▶ Run All 7 + Chart</button>
+    <button id="runChart" class="primary">▶ Run All 7 V1 + Chart</button>
     <button id="refreshChart">🔄 Refresh Chart</button>
     <button id="fitChart">Auto Fit</button>
     <button id="resetChart">Reset Zoom</button>
@@ -94,17 +94,6 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
   </div>
 </div>
 
-<div class="card" style="margin:16px 0;border:2px solid #30363d">
-  <h2>🧪 Focused V2 Research — 3 Candidates</h2>
-  <div class="muted">These are deliberately small rule changes based on the failure patterns we observed. They are research candidates, not guaranteed profitable systems. Run them on the same ticker/history as V1 before comparing.</div>
-  <p><button id="runV2" class="primary">▶ Run Focused V2 Set</button> <span id="v2Status" class="muted">Ready</span></p>
-  <div id="v2Results" class="scroll"><table><tr><th>Strategy</th><th>Trades</th><th>Win %</th><th>PF</th><th>Expectancy R</th><th>Total R</th><th>Max DD %</th><th>Return %</th></tr></table></div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-    <button onclick="runV2One('pullback')">Pullback V2</button>
-    <button onclick="runV2One('ema')">EMA Retest V2</button>
-    <button onclick="runV2One('triple')">Triple RSI V2</button>
-  </div>
-</div>
 <div class="strategy-list">
 <details class="card" id="card-v3" open>
   <summary><span>1. XAUUSD V3 — Institutional Confluence</span><span class="badge">5m + DXY + Silver</span><span class="status" id="status-v3">Ready</span></summary>
@@ -261,33 +250,6 @@ async function runKeys(keys){
  renderFailureStats();
  $('globalStatus').innerHTML='<span class="ok">All selected runs finished.</span>';
 }
-const v2defs={
- pullback:{name:'Pullback Breakout V2',risk:.5},
- ema:{name:'EMA 20/50 Retest V2',risk:1},
- triple:{name:'Triple RSI V2',risk:.5}
-};
-let v2Results={};
-function v2Payload(k){
- const n=bars(),risk=v2defs[k].risk;
- if(k==='pullback')return {symbol:selectedSymbol(),n_bars:n,config:{risk_pct:risk}};
- if(k==='ema')return {symbol:selectedSymbol(),n_bars:n,config:{risk_pct:risk,rr:2.5}};
- return {symbol:selectedSymbol(),n_bars:Math.max(20000,Math.min(60000,n)),config:{risk_pct:risk,require_reversal:true}};
-}
-async function runV2One(k){
- $('v2Status').textContent='Running '+v2defs[k].name+'…';
- try{
-  const r=await fetch('/api/xauusd-research-v2/'+k,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify(v2Payload(k))});
-  const d=await r.json();if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
-  v2Results[k]=d;renderV2();
-  $('v2Status').innerHTML='<span class="ok">'+esc(v2defs[k].name)+' complete</span>';
-  return d;
- }catch(e){$('v2Status').innerHTML='<span class="bad">'+esc(e.message)+'</span>';return null;}
-}
-function renderV2(){
- const rows=Object.keys(v2defs).map(k=>{const d=v2Results[k],m=d&&d.metrics||{};return '<tr><td>'+esc(v2defs[k].name)+'</td><td>'+num(m.num_trades)+'</td><td>'+num(m.win_rate)+'</td><td>'+num(m.profit_factor)+'</td><td>'+num(m.expectancy_R)+'</td><td>'+num(m.total_R)+'</td><td>'+num(m.max_drawdown_pct)+'</td><td>'+num(m.total_return_pct)+'</td></tr>';}).join('');
- $('v2Results').innerHTML='<table><tr><th>Strategy</th><th>Trades</th><th>Win %</th><th>PF</th><th>Expectancy R</th><th>Total R</th><th>Max DD %</th><th>Return %</th></tr>'+rows+'</table>';
-}
-$('runV2').onclick=async()=>{ $('v2Status').textContent='Running focused V2 set…'; for(const k of Object.keys(v2defs))await runV2One(k); $('v2Status').innerHTML='<span class="ok">Focused V2 set complete.</span>'; };
 $('runAll').onclick=()=>runKeys(Object.keys(defs));
 function csvCell(v){
  const s=v==null?'':String(v);
