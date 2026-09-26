@@ -12,6 +12,7 @@ from core.market_data import alpaca_get_bars, get_bars
 from research.xauusd_pullback_v2 import PullbackV2Config, backtest as pullback_backtest
 from research.xauusd_ema_retest_v2 import EMARetestV2Config, backtest as ema_backtest
 from research.xauusd_triple_rsi_v2 import TripleRSIV2Config, backtest as triple_backtest
+from research.xauusd_confluence_v4 import load_data as v4_load_data
 
 bp = Blueprint("xauusd_research_v2", __name__)
 
@@ -71,20 +72,30 @@ def _bars_to_df(raw, symbol, timeframe):
 
 
 def _intraday(symbol, n):
-    """Shared Alpaca 5m loader with Yahoo/demo fallback handled by core."""
-    n = max(250, min(60000, int(n)))
-    raw = alpaca_get_bars(symbol, "5Min", limit=n)
-    source = "Alpaca"
-    if not raw:
-        raw = get_bars(symbol, "5m")
-        source = "Analyzer Pro fallback"
-    df = _bars_to_df(raw, symbol, "5m")
-    if len(df) < 100:
-        raise ValueError(
-            f"Only {len(df)} 5m bars available for {symbol}; "
-            f"need at least 100."
-        )
-    return df.tail(n), source
+    """Load enough 5m history for V2, with a proven paginated fallback."""
+    n = max(500, min(30000, int(n)))
+    try:
+        raw = alpaca_get_bars(symbol, "5Min", limit=n)
+        if raw:
+            df = _bars_to_df(raw, symbol, "5m")
+            if len(df) >= 500:
+                return df.tail(n), "Alpaca"
+    except Exception:
+        pass
+
+    try:
+        df = v4_load_data(use_live=True, n_bars=n, symbol=symbol,
+                          data_source="alpaca")["m5"]
+        if df is not None and len(df) >= 500:
+            return df.tail(n), "Alpaca/V4 paginated fallback"
+        fallback_error = "fallback returned insufficient bars"
+    except Exception as exc:
+        fallback_error = str(exc)
+
+    raise ValueError(
+        f"V2 could not obtain enough 5m history for {symbol}. "
+        f"Need at least 500 bars. {fallback_error}"
+    )
 
 
 def _daily(symbol, n):
@@ -108,12 +119,12 @@ def run(strategy):
 
     try:
         if strategy == "triple":
-            daily_bars = int(body.get("daily_bars", 500))
+            daily_bars = int(body.get("daily_bars", 250))
             df, source = _daily(symbol, daily_bars)
             cfg = _cfg(TripleRSIV2Config, body.get("config"))
             result = triple_backtest(df, cfg)
         elif strategy == "pullback":
-            bars = int(body.get("n_bars", 15600))
+            bars = int(body.get("n_bars", 5000))
             df, source = _intraday(symbol, bars)
             cfg = _cfg(PullbackV2Config, body.get("config"))
             result = pullback_backtest(df, cfg)
