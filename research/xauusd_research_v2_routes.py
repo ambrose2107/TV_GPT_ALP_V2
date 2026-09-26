@@ -6,6 +6,7 @@ consistent with the rest of the application.
 """
 import math
 import pandas as pd
+import time
 from flask import Blueprint, jsonify, request, session
 
 from core.market_data import alpaca_get_bars, get_bars
@@ -15,6 +16,8 @@ from research.xauusd_triple_rsi_v2 import TripleRSIV2Config, backtest as triple_
 from research.xauusd_confluence_v4 import load_data as v4_load_data
 
 bp = Blueprint("xauusd_research_v2", __name__)
+_DATA_CACHE = {}
+_CACHE_TTL = 300
 
 
 def _safe(v):
@@ -74,12 +77,18 @@ def _bars_to_df(raw, symbol, timeframe):
 def _intraday(symbol, n):
     """Load enough 5m history for V2, with a proven paginated fallback."""
     n = max(500, min(30000, int(n)))
+    key = ("5m", symbol, n)
+    cached = _DATA_CACHE.get(key)
+    if cached and time.time() - cached[0] < _CACHE_TTL:
+        return cached[1].copy(), cached[2]
     try:
         raw = alpaca_get_bars(symbol, "5Min", limit=n)
         if raw:
             df = _bars_to_df(raw, symbol, "5m")
             if len(df) >= 500:
-                return df.tail(n), "Alpaca"
+                out = df.tail(n)
+                _DATA_CACHE[key] = (time.time(), out.copy(), "Alpaca")
+                return out, "Alpaca"
     except Exception:
         pass
 
@@ -87,7 +96,9 @@ def _intraday(symbol, n):
         df = v4_load_data(use_live=True, n_bars=n, symbol=symbol,
                           data_source="alpaca")["m5"]
         if df is not None and len(df) >= 500:
-            return df.tail(n), "Alpaca/V4 paginated fallback"
+            out = df.tail(n)
+            _DATA_CACHE[key] = (time.time(), out.copy(), "Alpaca/V4 paginated fallback")
+            return out, "Alpaca/V4 paginated fallback"
         fallback_error = "fallback returned insufficient bars"
     except Exception as exc:
         fallback_error = str(exc)
@@ -100,12 +111,18 @@ def _intraday(symbol, n):
 
 def _daily(symbol, n):
     n = max(250, min(5000, int(n)))
+    key = ("1d", symbol, n)
+    cached = _DATA_CACHE.get(key)
+    if cached and time.time() - cached[0] < _CACHE_TTL:
+        return cached[1].copy(), cached[2]
     raw = alpaca_get_bars(symbol, "1Day", limit=n)
     source = "Alpaca"
     if not raw:
         raw = get_bars(symbol, "1y")
         source = "Analyzer Pro fallback"
-    return _bars_to_df(raw, symbol, "1Day").tail(n), source
+    out = _bars_to_df(raw, symbol, "1Day").tail(n)
+    _DATA_CACHE[key] = (time.time(), out.copy(), source)
+    return out, source
 
 
 @bp.route("/api/xauusd-research-v2/all", methods=["POST"])
