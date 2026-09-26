@@ -1,71 +1,157 @@
-"""Authenticated API for the focused V2 research candidates."""
+"""Authenticated API for the focused V2 research candidates.
+
+V2 deliberately uses the shared Analyzer Pro/Alpaca data path rather than the
+older V4 loader. This keeps API-key naming, pagination and feed fallback
+consistent with the rest of the application.
+"""
 import math
+import pandas as pd
 from flask import Blueprint, jsonify, request, session
+
 from core.market_data import alpaca_get_bars, get_bars
-from research.xauusd_v3.data_loader import get_data as v3_get_data
-from research.xauusd_confluence_v4 import load_data
 from research.xauusd_pullback_v2 import PullbackV2Config, backtest as pullback_backtest
 from research.xauusd_ema_retest_v2 import EMARetestV2Config, backtest as ema_backtest
 from research.xauusd_triple_rsi_v2 import TripleRSIV2Config, backtest as triple_backtest
 
 bp = Blueprint("xauusd_research_v2", __name__)
 
+
 def _safe(v):
-    if isinstance(v, dict): return {str(k): _safe(x) for k,x in v.items()}
-    if isinstance(v, (list,tuple)): return [_safe(x) for x in v]
+    if isinstance(v, dict):
+        return {str(k): _safe(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_safe(x) for x in v]
     if hasattr(v, "item"):
-        try: return _safe(v.item())
-        except Exception: pass
-    if isinstance(v, float) and not math.isfinite(v): return None
+        try:
+            return _safe(v.item())
+        except Exception:
+            pass
+    if isinstance(v, float) and not math.isfinite(v):
+        return None
     return v
+
 
 def _cfg(cls, raw):
     raw = raw or {}
-    return cls(**{k:v for k,v in raw.items() if k in cls.__dataclass_fields__})
+    return cls(**{k: v for k, v in raw.items() if k in cls.__dataclass_fields__})
+
+
+def _bars_to_df(raw, symbol, timeframe):
+    if not raw:
+        raise ValueError(f"No {timeframe} market data returned for {symbol}")
+
+    df = pd.DataFrame(raw)
+    rename = {"t": "timestamp", "o": "Open", "h": "High", "l": "Low",
+              "c": "Close", "v": "Volume"}
+    df = df.rename(columns=rename)
+
+    # Accept both Alpaca's compact keys and any normalized bars returned by a
+    # fallback provider.
+    required = {"timestamp", "Open", "High", "Low", "Close"}
+    missing = required.difference(df.columns)
+    if missing:
+        raise ValueError(
+            f"Market-data format error for {symbol} {timeframe}: "
+            f"missing {sorted(missing)}; columns={list(df.columns)}"
+        )
+
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
+    for col in ("Open", "High", "Low", "Close"):
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    if "Volume" not in df.columns:
+        df["Volume"] = 0
+    df["Volume"] = pd.to_numeric(df["Volume"], errors="coerce").fillna(0)
+
+    df = (
+        df.dropna(subset=["timestamp", "Open", "High", "Low", "Close"])
+          .set_index("timestamp")
+          .sort_index()
+    )
+    return df[["Open", "High", "Low", "Close", "Volume"]]
+
+
+def _intraday(symbol, n):
+    """Shared Alpaca 5m loader with Yahoo/demo fallback handled by core."""
+    n = max(250, min(60000, int(n)))
+    raw = alpaca_get_bars(symbol, "5Min", limit=n)
+    source = "Alpaca"
+    if not raw:
+        raw = get_bars(symbol, "5m")
+        source = "Analyzer Pro fallback"
+    df = _bars_to_df(raw, symbol, "5m")
+    if len(df) < 100:
+        raise ValueError(
+            f"Only {len(df)} 5m bars available for {symbol}; "
+            f"need at least 100."
+        )
+    return df.tail(n), source
+
 
 def _daily(symbol, n):
-    raw = alpaca_get_bars(symbol, "1Day", limit=max(250,min(5000,n)))
+    n = max(250, min(5000, int(n)))
+    raw = alpaca_get_bars(symbol, "1Day", limit=n)
     source = "Alpaca"
     if not raw:
         raw = get_bars(symbol, "1y")
-        source = "Analyzer Pro/Yahoo fallback"
-    if not raw:
-        raise ValueError(f"No daily data available for {symbol}")
-    import pandas as pd
-    df = pd.DataFrame(raw)
-    if {"t","o","h","l","c"}.issubset(df.columns):
-        df["t"]=pd.to_datetime(df["t"],utc=True); df=df.set_index("t").sort_index().rename(columns={"o":"Open","h":"High","l":"Low","c":"Close","v":"Volume"})
-    return df,source
+        source = "Analyzer Pro fallback"
+    return _bars_to_df(raw, symbol, "1Day").tail(n), source
+
 
 @bp.route("/api/xauusd-research-v2/<strategy>", methods=["POST"])
 def run(strategy):
-    if not session.get("logged_in"): return jsonify({"error":"Unauthorized"}),401
-    body=request.get_json(silent=True) or {}
-    symbol=str(body.get("symbol","GLD")).strip().upper()
-    bars=max(250,min(60000,int(body.get("n_bars",15600))))
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    body = request.get_json(silent=True) or {}
+    strategy = str(strategy).strip().lower()
+    symbol = str(body.get("symbol", "GLD")).strip().upper()
+
     try:
-        if strategy=="triple":
-            df,source=_daily(symbol,int(body.get("daily_bars",max(250,min(5000,bars//78 or 250)))))
-            cfg=_cfg(TripleRSIV2Config,body.get("config"))
-            r=triple_backtest(df,cfg)
-            data_bars=len(df)
+        if strategy == "triple":
+            daily_bars = int(body.get("daily_bars", 500))
+            df, source = _daily(symbol, daily_bars)
+            cfg = _cfg(TripleRSIV2Config, body.get("config"))
+            result = triple_backtest(df, cfg)
+        elif strategy == "pullback":
+            bars = int(body.get("n_bars", 15600))
+            df, source = _intraday(symbol, bars)
+            cfg = _cfg(PullbackV2Config, body.get("config"))
+            result = pullback_backtest(df, cfg)
+        elif strategy == "ema":
+            bars = int(body.get("n_bars", 15600))
+            df, source = _intraday(symbol, bars)
+            cfg = _cfg(EMARetestV2Config, body.get("config"))
+            result = ema_backtest(df, cfg)
         else:
-            data=load_data(use_live=True,n_bars=bars,symbol=symbol,data_source="alpaca")
-            if not data or data.get("m5") is None or len(data["m5"]) < 100:
-                raise ValueError(f"Alpaca returned insufficient 5m data for {symbol}")
-            source="Alpaca"
-            if strategy=="pullback":
-                cfg=_cfg(PullbackV2Config,body.get("config")); r=pullback_backtest(data["m5"],cfg)
-            elif strategy=="ema":
-                cfg=_cfg(EMARetestV2Config,body.get("config")); r=ema_backtest(data["m5"],cfg)
-            else:
-                return jsonify({"error":"Unknown V2 strategy"}),400
-            data_bars=len(data["m5"])
-        trades=r.get("trades",[])
-        if hasattr(trades,"to_dict"): trades=trades.to_dict(orient="records")
-        sig=r.get("signals")
-        if hasattr(sig,"tail"): sig=sig.tail(500).reset_index().to_dict(orient="records")
-        return jsonify(_safe({"strategy":strategy+" V2","symbol":symbol,"data_source":source,"bars":data_bars,
-            "metrics":r["metrics"],"trades":trades,"signals":sig,"diagnostics":r.get("diagnostics",{})}))
-    except Exception as e:
-        return jsonify({"error":f"{type(e).__name__}: {e}"}),500
+            return jsonify({"error": f"Unknown V2 strategy: {strategy}"}), 400
+
+        trades = result.get("trades", [])
+        if hasattr(trades, "to_dict"):
+            trades = trades.to_dict(orient="records")
+
+        signals = result.get("signals")
+        if hasattr(signals, "tail"):
+            signals = (
+                signals.tail(500)
+                .reset_index()
+                .to_dict(orient="records")
+            )
+
+        return jsonify(_safe({
+            "strategy": strategy + " V2",
+            "symbol": symbol,
+            "data_source": source,
+            "bars": len(df),
+            "metrics": result.get("metrics", {}),
+            "trades": trades,
+            "signals": signals,
+            "diagnostics": result.get("diagnostics", {}),
+        }))
+    except Exception as exc:
+        # Always return JSON so the V2 page can display the real backend
+        # failure instead of showing a generic "not running" message.
+        return jsonify({
+            "error": f"{type(exc).__name__}: {exc}",
+            "strategy": strategy + " V2",
+            "symbol": symbol,
+        }), 500
