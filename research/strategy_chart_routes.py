@@ -96,6 +96,13 @@ def strategy_lab_export():
             "volume": b.get("v"),
         })
 
+    def pick(t, *keys):
+        for key in keys:
+            value = t.get(key)
+            if value is not None:
+                return value
+        return None
+
     trade_count = 0
     for strategy, trades in strategies.items():
         for t in (trades or []):
@@ -106,15 +113,15 @@ def strategy_lab_export():
                 "symbol": symbol,
                 "timeframe": timeframe,
                 "data_source": "strategy backtest",
-                "entry_time": t.get("entry_time"),
-                "exit_time": t.get("exit_time"),
-                "side": t.get("side"),
-                "entry": t.get("entry"),
-                "sl": t.get("sl"),
-                "tp": t.get("tp"),
-                "R": t.get("R"),
-                "equity": t.get("equity"),
-                "reason": t.get("reason"),
+                "entry_time": pick(t, "entry_time"),
+                "exit_time": pick(t, "exit_time"),
+                "side": pick(t, "side"),
+                "entry": pick(t, "entry", "entry_price"),
+                "sl": pick(t, "sl", "sl_initial"),
+                "tp": pick(t, "tp", "tp", "tp1"),
+                "R": pick(t, "R"),
+                "equity": pick(t, "equity"),
+                "reason": pick(t, "reason", "exit_reason"),
             })
             trade_count += 1
 
