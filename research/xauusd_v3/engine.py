@@ -113,6 +113,7 @@ def _core_loop_impl(open_, high, low, close, atr, signal,
                 t_pnl[pos_trade_idx] += pnl
                 equity += pnl
                 t_exit_idx[pos_trade_idx] = i
+                t_exit_price[pos_trade_idx] = exit_price
                 t_sl_final[pos_trade_idx] = pos_sl
                 t_be_triggered[pos_trade_idx] = 1 if pos_be_done else 0
                 in_position = False
