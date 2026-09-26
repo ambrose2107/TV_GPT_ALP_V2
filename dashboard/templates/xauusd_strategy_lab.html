@@ -260,7 +260,7 @@ function downloadCombinedCsv(){
  const now=new Date().toISOString();
  const common=['timestamp','record_type','strategy','status','symbol','data_source','bars','data_start','data_end',
    'num_trades','win_rate','profit_factor','expectancy_R','total_R','total_return_pct','max_drawdown_pct','final_equity',
-   'entry_time','exit_time','side','entry','sl','tp','R','equity','reason'];
+   'entry_time','exit_time','side','entry','exit_price','sl','tp','R','equity','reason'];
  rows.push(common);
  for(const k of Object.keys(defs)){
    const d=lastResults[k];
