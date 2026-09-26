@@ -73,7 +73,7 @@ def strategy_lab_export():
         "exported_at_utc", "record_type", "strategy", "symbol",
         "timeframe", "data_source", "timestamp",
         "open", "high", "low", "close", "volume",
-        "entry_time", "exit_time", "side", "entry", "sl", "tp", "R", "equity",
+        "entry_time", "exit_time", "side", "entry", "exit_price", "sl", "tp", "R", "equity",
         "reason"
     ]
     out = io.StringIO()
@@ -117,6 +117,7 @@ def strategy_lab_export():
                 "exit_time": pick(t, "exit_time"),
                 "side": pick(t, "side"),
                 "entry": pick(t, "entry", "entry_price"),
+                "exit_price": pick(t, "exit_price", "exit"),
                 "sl": pick(t, "sl", "sl_initial"),
                 "tp": pick(t, "tp", "tp", "tp1"),
                 "R": pick(t, "R"),
