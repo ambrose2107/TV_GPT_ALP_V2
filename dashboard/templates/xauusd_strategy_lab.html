@@ -94,6 +94,17 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
   </div>
 </div>
 
+<div class="card" style="margin:16px 0;border:2px solid #30363d">
+  <h2>🧪 Focused V2 Research — 3 Candidates</h2>
+  <div class="muted">These are deliberately small rule changes based on the failure patterns we observed. They are research candidates, not guaranteed profitable systems. Run them on the same ticker/history as V1 before comparing.</div>
+  <p><button id="runV2" class="primary">▶ Run Focused V2 Set</button> <span id="v2Status" class="muted">Ready</span></p>
+  <div id="v2Results" class="scroll"><table><tr><th>Strategy</th><th>Trades</th><th>Win %</th><th>PF</th><th>Expectancy R</th><th>Total R</th><th>Max DD %</th><th>Return %</th></tr></table></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+    <button onclick="runV2One('pullback')">Pullback V2</button>
+    <button onclick="runV2One('ema')">EMA Retest V2</button>
+    <button onclick="runV2One('triple')">Triple RSI V2</button>
+  </div>
+</div>
 <div class="strategy-list">
 <details class="card" id="card-v3" open>
   <summary><span>1. XAUUSD V3 — Institutional Confluence</span><span class="badge">5m + DXY + Silver</span><span class="status" id="status-v3">Ready</span></summary>
@@ -250,6 +261,33 @@ async function runKeys(keys){
  renderFailureStats();
  $('globalStatus').innerHTML='<span class="ok">All selected runs finished.</span>';
 }
+const v2defs={
+ pullback:{name:'Pullback Breakout V2',risk:.5},
+ ema:{name:'EMA 20/50 Retest V2',risk:1},
+ triple:{name:'Triple RSI V2',risk:.5}
+};
+let v2Results={};
+function v2Payload(k){
+ const n=bars(),risk=v2defs[k].risk;
+ if(k==='pullback')return {symbol:selectedSymbol(),n_bars:n,config:{risk_pct:risk}};
+ if(k==='ema')return {symbol:selectedSymbol(),n_bars:n,config:{risk_pct:risk,rr:2.5}};
+ return {symbol:selectedSymbol(),n_bars:Math.max(20000,Math.min(60000,n)),config:{risk_pct:risk,require_reversal:true}};
+}
+async function runV2One(k){
+ $('v2Status').textContent='Running '+v2defs[k].name+'…';
+ try{
+  const r=await fetch('/api/xauusd-research-v2/'+k,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify(v2Payload(k))});
+  const d=await r.json();if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
+  v2Results[k]=d;renderV2();
+  $('v2Status').innerHTML='<span class="ok">'+esc(v2defs[k].name)+' complete</span>';
+  return d;
+ }catch(e){$('v2Status').innerHTML='<span class="bad">'+esc(e.message)+'</span>';return null;}
+}
+function renderV2(){
+ const rows=Object.keys(v2defs).map(k=>{const d=v2Results[k],m=d&&d.metrics||{};return '<tr><td>'+esc(v2defs[k].name)+'</td><td>'+num(m.num_trades)+'</td><td>'+num(m.win_rate)+'</td><td>'+num(m.profit_factor)+'</td><td>'+num(m.expectancy_R)+'</td><td>'+num(m.total_R)+'</td><td>'+num(m.max_drawdown_pct)+'</td><td>'+num(m.total_return_pct)+'</td></tr>';}).join('');
+ $('v2Results').innerHTML='<table><tr><th>Strategy</th><th>Trades</th><th>Win %</th><th>PF</th><th>Expectancy R</th><th>Total R</th><th>Max DD %</th><th>Return %</th></tr>'+rows+'</table>';
+}
+$('runV2').onclick=async()=>{ $('v2Status').textContent='Running focused V2 set…'; for(const k of Object.keys(v2defs))await runV2One(k); $('v2Status').innerHTML='<span class="ok">Focused V2 set complete.</span>'; };
 $('runAll').onclick=()=>runKeys(Object.keys(defs));
 function csvCell(v){
  const s=v==null?'':String(v);
