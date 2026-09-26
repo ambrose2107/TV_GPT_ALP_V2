@@ -2,19 +2,19 @@
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Cache-Control" content="no-cache,no-store,must-revalidate">
-<title>Gold Strategy Lab V2</title>
+<title>Gold Strategy Lab V1 — New Research</title>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 <style>
 :root{--bg:#0d1117;--panel:#161b22;--line:#30363d;--text:#c9d1d9;--muted:#8b949e;--good:#7ee787;--bad:#ff7b72;--warn:#d29922}
 *{box-sizing:border-box}body{margin:0 auto;padding:16px;max-width:1500px;background:var(--bg);color:var(--text);font:13px system-ui,-apple-system,Segoe UI,sans-serif}h1,h2,h3{margin:0 0 8px}.muted{color:var(--muted)}a{color:#58a6ff}.toolbar,.card,.compare{background:var(--panel);border:1px solid var(--line);border-radius:10px;margin:12px 0}.toolbar{padding:14px;position:sticky;top:0;z-index:20}.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center}input,select,button{background:#21262d;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:8px}input{width:86px}button{cursor:pointer;font-weight:600}button:hover{filter:brightness(1.15)}button:disabled{opacity:.5;cursor:wait}.primary{background:#238636}.scroll{overflow:auto;max-height:360px;border:1px solid var(--line);border-radius:6px}table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px solid var(--line);white-space:nowrap;text-align:right}th{position:sticky;top:0;background:var(--panel)}td:first-child,th:first-child{text-align:left}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.body{padding:14px}.status{float:right}.ok{color:var(--good)}.bad{color:var(--bad)}.warn{color:var(--warn)}#failureChart{height:620px}.empty{padding:12px;color:var(--muted)}@media(max-width:900px){.grid{grid-template-columns:1fr}.toolbar{position:static}body{padding:9px}#failureChart{height:520px}}
 </style></head><body>
 <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-<a href="/xauusd-strategy-lab-v1" style="padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:#21262d;color:var(--text)">V1 Legacy Lab</a>
-<a href="/xauusd-strategy-lab-v2" style="padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:#238636;color:#fff">V2 Active Research Lab</a>
+<a href="/xauusd-strategy-lab-v1" style="padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:#238636;color:#fff">V1 New Research Lab</a>
+<a href="/xauusd-strategy-lab-v2" style="padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:#21262d;color:var(--text)">V2 Stable 7-Strategy Lab</a>
 <a href="/" style="padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:#21262d;color:var(--text)">Backtest / Dashboard</a>
 </div>
-<h1>Gold Strategy Lab V2</h1>
-<div class="muted">Active research workspace. V2 changes are deliberately small and are evaluated against the original V1 implementations. A green backtest is not treated as proof of future profitability.</div>
+<h1>Gold Strategy Lab V1 — New Research</h1>
+<div class="muted">New research workspace. The backend engines are still versioned V2 internally; this page is intentionally exposed as V1 while we stabilize the UI/API path. and are evaluated against the original V1 implementations. A green backtest is not treated as proof of future profitability.</div>
 
 <div class="toolbar">
 <div class="controls">
@@ -24,7 +24,7 @@
 <label>5m bars <input id="bars" type="number" min="500" max="30000" value="5000"></label>
 <label>Risk % <input id="risk" type="number" min=".01" step=".05" value=".50"></label>
 <label>Min trades <input id="minTrades" type="number" min="2" value="20"></label>
-<button id="runAll" class="primary" type="button" onclick="runAllV2()">▶ Run All V2</button>
+<button id="runAll" class="primary" type="button" onclick="runAllV2()">▶ Run All V1</button>
 <button id="runOpen" type="button" onclick="runExpandedV2()">Run Expanded</button>
 <button id="clear">Clear Results</button>
 <button id="downloadCsv" disabled>📥 Download V2 CSV</button>
@@ -56,7 +56,7 @@
 <div class="controls" style="margin:10px 0">
 <label>Chart TF <select id="failureTf"><option value="5m">5m</option><option value="15m" selected>15m</option><option value="1h">1h</option><option value="1d">1D</option></select></label>
 <label><input type="checkbox" id="showEma20" checked> EMA20</label><label><input type="checkbox" id="showEma50" checked> EMA50</label><label><input type="checkbox" id="showEma200"> EMA200</label><label><input type="checkbox" id="showVwap"> VWAP</label>
-<button id="runChart" class="primary" type="button" onclick="runAllV2Chart()">▶ Run All V2 + Chart</button><button id="refreshChart">🔄 Refresh</button><button id="fitChart">Auto Fit</button><button id="resetChart">Reset Zoom</button>
+<button id="runChart" class="primary" type="button" onclick="runAllV2Chart()">▶ Run All V1 + Chart</button><button id="refreshChart">🔄 Refresh</button><button id="fitChart">Auto Fit</button><button id="resetChart">Reset Zoom</button>
 </div>
 <div id="failureChecks" style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0"></div>
 <div id="failureSummary" class="muted">Run V2 strategies to populate the chart.</div>
