@@ -50,6 +50,7 @@ def _core_loop_impl(open_, high, low, close, atr, signal,
     t_exit_idx = np.full(max_trades, -1, dtype=np.int64)
     t_side = np.zeros(max_trades, dtype=np.int64)
     t_entry_price = np.zeros(max_trades)
+    t_exit_price = np.full(max_trades, np.nan)
     t_sl_initial = np.zeros(max_trades)
     t_sl_final = np.zeros(max_trades)
     t_risk_distance = np.zeros(max_trades)
@@ -99,6 +100,7 @@ def _core_loop_impl(open_, high, low, close, atr, signal,
                 t_pnl[pos_trade_idx] += pnl
                 equity += pnl
                 t_exit_idx[pos_trade_idx] = i
+                t_exit_price[pos_trade_idx] = exit_price
                 t_sl_final[pos_trade_idx] = pos_sl
                 t_be_triggered[pos_trade_idx] = 1 if pos_be_done else 0
                 in_position = False
@@ -154,6 +156,7 @@ def _core_loop_impl(open_, high, low, close, atr, signal,
                         equity += pnl
                         pos_remaining_frac = 0.0
                     t_exit_idx[pos_trade_idx] = i
+                    t_exit_price[pos_trade_idx] = exit_price
                     t_sl_final[pos_trade_idx] = pos_sl
                     in_position = False
 
@@ -216,11 +219,12 @@ def _core_loop_impl(open_, high, low, close, atr, signal,
         t_pnl[pos_trade_idx] += pnl
         equity += pnl
         t_exit_idx[pos_trade_idx] = n - 1
+        t_exit_price[pos_trade_idx] = exit_price
         t_sl_final[pos_trade_idx] = pos_sl
         equity_curve[n - 1] = equity
 
     return (t_entry_idx[:n_trades], t_exit_idx[:n_trades], t_side[:n_trades], t_entry_price[:n_trades],
-            t_sl_initial[:n_trades], t_sl_final[:n_trades], t_risk_distance[:n_trades], t_risk_money[:n_trades],
+            t_exit_price[:n_trades], t_sl_initial[:n_trades], t_sl_final[:n_trades], t_risk_distance[:n_trades], t_risk_money[:n_trades],
             t_tp[:n_trades], t_be_triggered[:n_trades], t_be_idx[:n_trades], t_pnl[:n_trades],
             t_targets_hit[:n_trades], equity_curve)
 
@@ -243,7 +247,7 @@ def simulate_trades(df: pd.DataFrame, cfg: EngineConfig, use_numba: bool = True)
     idx = d.index
 
     fn = _core_loop_numba if (use_numba and NUMBA_AVAILABLE) else _core_loop_impl
-    (entry_idx, exit_idx, side, entry_price, sl_initial, sl_final, risk_distance, risk_money,
+    (entry_idx, exit_idx, side, entry_price, exit_price, sl_initial, sl_final, risk_distance, risk_money,
      tp, be_triggered, be_idx, pnl, targets_hit, equity_curve) = fn(
         open_, high, low, close, atr_v, signal,
         cfg.sl_atr_mult, cfg.rr, cfg.n_targets, cfg.risk_pct, cfg.initial_equity,
@@ -256,6 +260,7 @@ def simulate_trades(df: pd.DataFrame, cfg: EngineConfig, use_numba: bool = True)
         "exit_time": [idx[i] if i >= 0 else None for i in exit_idx],
         "side": np.where(side == 1, "LONG", "SHORT"),
         "entry_price": entry_price,
+        "exit_price": exit_price,
         "sl_initial": sl_initial,
         "sl_final": sl_final,
         "tp1": tp[:, 0] if n_trades else [],
