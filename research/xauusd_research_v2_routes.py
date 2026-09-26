@@ -108,6 +108,62 @@ def _daily(symbol, n):
     return _bars_to_df(raw, symbol, "1Day").tail(n), source
 
 
+@bp.route("/api/xauusd-research-v2/all", methods=["POST"])
+def run_all():
+    """Run all V2 candidates while sharing the expensive market-data fetch."""
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    symbol = str(body.get("symbol", "GLD")).strip().upper()
+    bars = int(body.get("n_bars", 5000))
+    daily_bars = int(body.get("daily_bars", 250))
+    risk = float(body.get("risk_pct", 0.5))
+    try:
+        m5, intraday_source = _intraday(symbol, bars)
+        out = {}
+        for name, cls, fn, extra in (
+            ("pullback", PullbackV2Config, pullback_backtest, {}),
+            ("ema", EMARetestV2Config, ema_backtest, {"rr": 2.5}),
+        ):
+            raw_cfg = dict(extra)
+            raw_cfg["risk_pct"] = risk
+            result = fn(m5, _cfg(cls, raw_cfg))
+            trades = result.get("trades", [])
+            if hasattr(trades, "to_dict"):
+                trades = trades.to_dict(orient="records")
+            signals = result.get("signals")
+            if hasattr(signals, "tail"):
+                signals = signals.tail(500).reset_index().to_dict(orient="records")
+            out[name] = _safe({
+                "strategy": name + " V2", "symbol": symbol,
+                "data_source": intraday_source, "bars": len(m5),
+                "metrics": result.get("metrics", {}), "trades": trades,
+                "signals": signals, "diagnostics": result.get("diagnostics", {}),
+            })
+
+        daily, daily_source = _daily(symbol, daily_bars)
+        triple_cfg = _cfg(TripleRSIV2Config, {
+            "risk_pct": risk, "require_reversal": True
+        })
+        result = triple_backtest(daily, triple_cfg)
+        trades = result.get("trades", [])
+        if hasattr(trades, "to_dict"):
+            trades = trades.to_dict(orient="records")
+        signals = result.get("signals")
+        if hasattr(signals, "tail"):
+            signals = signals.tail(500).reset_index().to_dict(orient="records")
+        out["triple"] = _safe({
+            "strategy": "triple V2", "symbol": symbol,
+            "data_source": daily_source, "bars": len(daily),
+            "metrics": result.get("metrics", {}), "trades": trades,
+            "signals": signals, "diagnostics": result.get("diagnostics", {}),
+        })
+        return jsonify({"results": out})
+    except Exception as exc:
+        return jsonify({"error": f"{type(exc).__name__}: {exc}",
+                        "strategy": "all V2", "symbol": symbol}), 500
+
+
 @bp.route("/api/xauusd-research-v2/<strategy>", methods=["POST"])
 def run(strategy):
     if not session.get("logged_in"):
