@@ -2,6 +2,7 @@
 import math
 from flask import Blueprint, jsonify, request, session
 from core.market_data import alpaca_get_bars, get_bars
+from research.xauusd_v3.data_loader import get_data as v3_get_data
 from research.xauusd_confluence_v4 import load_data
 from research.xauusd_pullback_v2 import PullbackV2Config, backtest as pullback_backtest
 from research.xauusd_ema_retest_v2 import EMARetestV2Config, backtest as ema_backtest
@@ -50,6 +51,8 @@ def run(strategy):
             data_bars=len(df)
         else:
             data=load_data(use_live=True,n_bars=bars,symbol=symbol,data_source="alpaca")
+            if not data or data.get("m5") is None or len(data["m5"]) < 100:
+                raise ValueError(f"Alpaca returned insufficient 5m data for {symbol}")
             source="Alpaca"
             if strategy=="pullback":
                 cfg=_cfg(PullbackV2Config,body.get("config")); r=pullback_backtest(data["m5"],cfg)
