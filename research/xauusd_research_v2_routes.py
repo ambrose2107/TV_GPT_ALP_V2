@@ -1,8 +1,8 @@
-"""Authenticated API for the focused V2 research candidates.
+"""Authenticated API for the focused research candidates, using the known-working V1 engines as the baseline.
 
-V2 deliberately uses the shared Analyzer Pro/Alpaca data path rather than the
-older V4 loader. This keeps API-key naming, pagination and feed fallback
-consistent with the rest of the application.
+The first pass intentionally uses the exact known-working V1 strategy engines and
+V4/Alpaca data loader. We will improve each engine only after baseline trades are
+visible and validated.
 """
 import math
 import pandas as pd
@@ -10,9 +10,9 @@ import time
 from flask import Blueprint, jsonify, request, session
 
 from core.market_data import alpaca_get_bars, get_bars
-from research.xauusd_pullback_v2 import PullbackV2Config, backtest as pullback_backtest
-from research.xauusd_ema_retest_v2 import EMARetestV2Config, backtest as ema_backtest
-from research.xauusd_triple_rsi_v2 import TripleRSIV2Config, backtest as triple_backtest
+from research.xauusd_pullback_v1 import PullbackConfig, backtest as pullback_backtest
+from research.xauusd_ema_retest_v1 import EMARetestConfig, backtest as ema_backtest
+from research.xauusd_triple_rsi_v1 import TripleRSIConfig, backtest as triple_backtest
 from research.xauusd_confluence_v4 import load_data as v4_load_data
 
 bp = Blueprint("xauusd_research_v2", __name__)
@@ -139,8 +139,8 @@ def run_all():
         m5, intraday_source = _intraday(symbol, bars)
         out = {}
         for name, cls, fn, extra in (
-            ("pullback", PullbackV2Config, pullback_backtest, {}),
-            ("ema", EMARetestV2Config, ema_backtest, {"rr": 2.5}),
+            ("pullback", PullbackConfig, pullback_backtest, {}),
+            ("ema", EMARetestConfig, ema_backtest, {"rr": 2.5}),
         ):
             raw_cfg = dict(extra)
             raw_cfg["risk_pct"] = risk
@@ -152,14 +152,14 @@ def run_all():
             if hasattr(signals, "tail"):
                 signals = signals.tail(500).reset_index().to_dict(orient="records")
             out[name] = _safe({
-                "strategy": name + " V2", "symbol": symbol,
+                "strategy": name + " baseline", "symbol": symbol,
                 "data_source": intraday_source, "bars": len(m5),
                 "metrics": result.get("metrics", {}), "trades": trades,
                 "signals": signals, "diagnostics": result.get("diagnostics", {}),
             })
 
         daily, daily_source = _daily(symbol, daily_bars)
-        triple_cfg = _cfg(TripleRSIV2Config, {
+        triple_cfg = _cfg(TripleRSIConfig, {
             "risk_pct": risk, "require_reversal": True
         })
         result = triple_backtest(daily, triple_cfg)
@@ -170,7 +170,7 @@ def run_all():
         if hasattr(signals, "tail"):
             signals = signals.tail(500).reset_index().to_dict(orient="records")
         out["triple"] = _safe({
-            "strategy": "triple V2", "symbol": symbol,
+            "strategy": "triple baseline", "symbol": symbol,
             "data_source": daily_source, "bars": len(daily),
             "metrics": result.get("metrics", {}), "trades": trades,
             "signals": signals, "diagnostics": result.get("diagnostics", {}),
@@ -222,7 +222,7 @@ def run(strategy):
             )
 
         return jsonify(_safe({
-            "strategy": strategy + " V2",
+            "strategy": strategy + " baseline",
             "symbol": symbol,
             "data_source": source,
             "bars": len(df),
