@@ -32,7 +32,7 @@ def backtest(m5,cfg=EMARetestV2Config(),initial_equity=10000.):
     for i in range(len(s)):
         row=s.iloc[i];ts=s.index[i]
         if pos:
-            hi,lo=float(row.High),float(row.Low);sl=lo<=pos["sl"] if pos["side"]==1 else hi>=pos["tp"];tp=hi>=pos["tp"] if pos["side"]==1 else lo<=pos["tp"]
+            hi,lo=float(row.High),float(row.Low);sl=lo<=pos["sl"] if pos["side"]==1 else hi>=pos["sl"];tp=hi>=pos["tp"] if pos["side"]==1 else lo<=pos["tp"]
             if sl or tp:
                 r=-1. if sl else cfg.rr;eq+=pos["risk_cash"]*r;trades.append({"entry_time":str(pos["entry_time"]),"exit_time":str(ts),"side":"LONG" if pos["side"]==1 else "SHORT","entry":pos["entry"],"exit_price":pos["sl"] if sl else pos["tp"],"sl":pos["sl"],"tp":pos["tp"],"R":r,"equity":eq,"reason":pos["reason"]+" | "+("SL" if sl else "TP")});pos=None
         if pos is None and i+1<len(s) and int(row.signal)!=0:
