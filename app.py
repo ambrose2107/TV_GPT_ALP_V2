@@ -20,6 +20,7 @@ from research.xauusd_fib_mtf_routes import xauusd_fib_mtf_bp
 from research.xauusd_pullback_v1_routes import xauusd_pullback_v1_bp
 from research.xauusd_strategy_lab_routes import xauusd_strategy_lab_bp
 from research.xauusd_ema_retest_v1_routes import xauusd_ema_retest_v1_bp
+from research.xauusd_research_v2_routes import bp as xauusd_research_v2_bp
 from research.xauusd_quad_rsi_v1_routes import xauusd_quad_rsi_v1_bp
 from research.xauusd_triple_rsi_v1_routes import xauusd_triple_rsi_v1_bp
 from research.strategy_chart_routes import strategy_chart_bp
@@ -54,6 +55,7 @@ def create_app():
     app.register_blueprint(xauusd_pullback_v1_bp)
     app.register_blueprint(xauusd_strategy_lab_bp)
     app.register_blueprint(xauusd_ema_retest_v1_bp)
+    app.register_blueprint(xauusd_research_v2_bp)
     app.register_blueprint(xauusd_quad_rsi_v1_bp)
     app.register_blueprint(xauusd_triple_rsi_v1_bp)
     app.register_blueprint(strategy_chart_bp)
