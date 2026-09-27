@@ -12,7 +12,7 @@ import json
 import uuid
 import itertools
 from datetime import datetime, timezone
-from flask import Blueprint, jsonify, request, session, send_file
+from flask import Blueprint, jsonify, request, session, send_file, render_template, redirect, url_for
 
 from core.market_data import alpaca_get_bars, get_bars
 from research.xauusd_pullback_v2 import PullbackV2Config, backtest as pullback_v2_backtest
@@ -133,6 +133,26 @@ def _daily(symbol, n):
     out = _bars_to_df(raw, symbol, "1Day").tail(n)
     _DATA_CACHE[key] = (time.time(), out.copy(), source)
     return out, source
+
+
+
+_STRATEGY_META = {
+    "pullback": {"name":"Pullback Breakout V2","subtitle":"Trend + controlled pullback + displacement breakout","description":"EMA trend separation, ATR regime filtering, controlled pullback and displacement breakout with next-bar execution.","default_symbol":"SPY","chart_tf":"15m","kind":"intraday"},
+    "ema": {"name":"EMA 20/50 Third Retest V2","subtitle":"20/50 direction + distinct third retest + 1H confirmation","description":"Confirmed 20/50 direction, distinct retest events, rejection quality, EMA separation and completed 1H alignment.","default_symbol":"SPY","chart_tf":"15m","kind":"intraday"},
+    "triple": {"name":"Triple RSI — Multi-Horizon","subtitle":"RSI(5) + RSI(14) + RSI(50)","description":"Daily long-only mean reversion using RSI(5) < 45, RSI(14) < 65, RSI(50) < 55, with RSI-based exits.","default_symbol":"SPY","chart_tf":"1d","kind":"daily"},
+    "williams": {"name":"Williams %R Mean Reversion","subtitle":"Extreme oversold recovery","description":"Daily long-only mean reversion using Williams %R(2) < -98, price above the 175-day moving average, next-session entry and Williams %R recovery exit.","default_symbol":"SPY","chart_tf":"1d","kind":"daily"},
+    "cci": {"name":"CCI Oversold Recovery","subtitle":"CCI(16) extreme oversold recovery","description":"Daily long-only recovery strategy: CCI(16) crosses back above -180, buy next session open, exit when CCI > +150.","default_symbol":"SPY","chart_tf":"1d","kind":"daily"},
+}
+
+@bp.route("/xauusd-research-v2/<strategy>", methods=["GET"])
+def strategy_detail(strategy):
+    if not session.get("logged_in"):
+        return redirect(url_for("dashboard.login"))
+    key = str(strategy).strip().lower()
+    meta = _STRATEGY_META.get(key)
+    if not meta:
+        return jsonify({"error": f"Unknown V2 strategy: {key}"}), 404
+    return render_template("xauusd_strategy_detail.html", strategy_key=key, strategy_meta=meta, chart_symbol=meta["default_symbol"], chart_default_tf=meta["chart_tf"], chart_strategy=key)
 
 
 @bp.route("/api/xauusd-research-v2/status", methods=["GET"])
