@@ -15,7 +15,6 @@ from flask import Blueprint, jsonify, request, session, send_file
 from core.market_data import alpaca_get_bars, get_bars
 from research.xauusd_pullback_v2 import PullbackV2Config, backtest as pullback_v2_backtest
 from research.xauusd_ema_retest_v2 import EMARetestV2Config, backtest as ema_v2_backtest
-from research.xauusd_triple_rsi_v2 import TripleRSIV2Config, backtest as triple_v2_backtest
 from research.xauusd_daily_research_v2 import (
     WilliamsRConfig, CCIConfig, MultiHorizonRSIConfig,
     backtest_williams_r, backtest_cci, backtest_multi_rsi,
@@ -204,10 +203,10 @@ def run(strategy):
 
     try:
         if strategy == "triple":
-            daily_bars = int(body.get("daily_bars", 250))
+            daily_bars = int(body.get("daily_bars", 1000))
             df, source = _daily(symbol, daily_bars)
-            cfg = _cfg(TripleRSIV2Config, body.get("config"))
-            result = triple_v2_backtest(df, cfg)
+            cfg = _cfg(MultiHorizonRSIConfig, body.get("config"))
+            result = backtest_multi_rsi(df, cfg)
         elif strategy in ("williams", "cci", "multi_rsi"):
             daily_bars = int(body.get("daily_bars", 1000))
             df, source = _daily(symbol, daily_bars)
