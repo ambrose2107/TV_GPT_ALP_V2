@@ -223,363 +223,63 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
 const $=id=>document.getElementById(id);
 let lastResults={};
 const defs={
- v3:{name:'V3 — Institutional Confluence',url:'/api/xauusd-v3/run'},
- fib:{name:'Fib MTF — Liquidity + Structure',url:'/api/xauusd-fib-mtf/run'},
- v4:{name:'Confluence V4',url:'/api/xauusd-confluence-v4/run'},
- pullback:{name:'Pullback Breakout V1',url:'/api/xauusd-pullback-v1/run'},
- ema:{name:'EMA 20/50 Third Retest V1',url:'/api/xauusd-ema-retest-v1/run'},
- quad:{name:'Quad RSI Mean Reversion V1',url:'/api/xauusd-quad-rsi-v1/run'},
- triple:{name:'Triple RSI Mean Reversion V1',url:'/api/xauusd-triple-rsi-v1/run'}
+ pullback:{name:'Pullback Breakout V2',url:'/api/xauusd-research-v2/pullback'},
+ ema:{name:'EMA 20/50 Third Retest V2',url:'/api/xauusd-research-v2/ema'},
+ triple:{name:'Triple RSI V2',url:'/api/xauusd-research-v2/triple'}
 };
 function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function num(v){return typeof v==='number'&&isFinite(v)?v.toFixed(2):'—';}
-function setStatus(k,s,cls='muted'){$('status-'+k).className='status '+cls;$('status-'+k).textContent=s;}
-function bars(){return Math.min(60000,Math.max(100,Math.round((Number($('bars').value)||1560))));}
-function selectedSymbol(){
- const custom=($('customSymbol').value||'').trim().toUpperCase();
- return custom || $('symbol').value || 'GLD';
-}
+function bars(){return Math.min(60000,Math.max(100,Math.round(Number($('bars').value)||15600)));}
+function selectedSymbol(){const c=($('customSymbol').value||'').trim().toUpperCase();return c||$('symbol').value||'GLD';}
 $('customSymbol').oninput=()=>{if($('customSymbol').value.trim())$('symbol').value='';};
 $('symbol').onchange=()=>{if($('symbol').value)$('customSymbol').value='';};
-$('days').oninput=()=>{$('bars').value=Math.min(60000,Math.max(100,Math.round((Number($('days').value)||1)*78)));};
-function payload(k){
- const n=bars(), risk=Number($('risk').value)||.5, minTrades=Number($('minTrades').value)||20;
- if(k==='v3') return {interval:'5m',use_live:true,n_bars:n,symbol:selectedSymbol()};
- if(k==='fib') return {use_live:true,n_bars:n,symbol:selectedSymbol()};
- if(k==='v4') return {symbol:selectedSymbol(),data_source:'alpaca',n_bars:n,mode:'backtest',min_trades:minTrades,config:{risk_pct:risk,min_score:12,min_rr:1.5}};
- if(k==='pullback') return {symbol:selectedSymbol(),n_bars:n,mode:'backtest',min_trades:minTrades,config:{risk_pct:risk}};
- if(k==='ema') return {symbol:selectedSymbol(),n_bars:n,config:{risk_pct:risk,rr:2.5}};
- if(k==='triple') return {symbol:selectedSymbol(),n_bars:1000,config:{risk_pct:risk}};
- return {symbol:selectedSymbol(),n_bars:n,config:{risk_pct:risk}};
+$('days').oninput=()=>{$('bars').value=Math.min(60000,Math.max(100,Math.round((Number($('days').value)||200)*78)));};
+function newPayload(k){
+ const risk=Number($('risk').value)||.5;
+ if(k==='triple') return {symbol:selectedSymbol(),daily_bars:Math.max(250,Number($('days').value)||250),config:{risk_pct:risk}};
+ return {symbol:selectedSymbol(),n_bars:bars(),config:{risk_pct:risk}};
 }
+function setStatus(k,s,cls='muted'){$('status-new-'+k).className='status '+cls;$('status-new-'+k).textContent=s;}
 function renderMetrics(k,d){
  const m=d.metrics||{};
  const keys=['num_trades','win_rate','profit_factor','expectancy_R','total_R','total_return_pct','max_drawdown_pct','final_equity'];
- $('metrics-'+k).innerHTML='<table>'+keys.map(x=>'<tr><td>'+esc(x)+'</td><td>'+esc(num(m[x]))+'</td></tr>').join('')+'</table>'+
-   '<div class="muted" style="margin-top:6px">Source: '+esc(d.data_source|| (k==='v3'||k==='fib'?'existing XAUUSD loader':'Alpaca/GLD'))+
-   (d.bars?' | Bars: '+esc(d.bars):'')+'</div>';
+ $('metrics-new-'+k).innerHTML='<table>'+keys.map(x=>'<tr><td>'+esc(x)+'</td><td>'+esc(num(m[x]))+'</td></tr>').join('')+'</table><div class="muted" style="margin-top:6px">Source: '+esc(d.data_source||'Alpaca')+' | Symbol: '+esc(d.symbol||selectedSymbol())+' | Bars: '+esc(d.bars||'—')+'</div>';
  const t=d.trades||[];
  if(t.length){
-   const cols=Object.keys(t[0]).slice(0,12);
-   $('trades-'+k).innerHTML='<h3>Recent Trades</h3><div class="scroll"><table><tr>'+cols.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr>'+
-   t.slice(-50).reverse().map(r=>'<tr>'+cols.map(c=>'<td>'+esc(typeof r[c]==='number'?num(r[c]):r[c])+'</td>').join('')+'</tr>').join('')+'</table></div>';
- } else $('trades-'+k).innerHTML='';
+  const cols=Object.keys(t[0]).slice(0,12);
+  $('trades-new-'+k).innerHTML='<h3>Recent Trades</h3><div class="scroll"><table><tr>'+cols.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr>'+t.slice(-50).reverse().map(r=>'<tr>'+cols.map(c=>'<td>'+esc(typeof r[c]==='number'?num(r[c]):r[c])+'</td>').join('')+'</tr>').join('')+'</table></div>';
+ } else $('trades-new-'+k).innerHTML='<div class="muted" style="padding-top:8px">No closed trades in this sample.</div>';
 }
 function updateComparison(k,status,d){
- const m=d&&d.metrics||{};
- let row=document.querySelector('#comparison tr[data-k="'+k+'"]');
- if(!row){row=document.createElement('tr');row.dataset.k=k;$('comparison').appendChild(row);}
- row.innerHTML='<td>'+esc(defs[k].name)+'</td><td>'+esc(status)+'</td><td>'+esc(num(m.num_trades))+'</td><td>'+esc(num(m.win_rate))+'</td><td>'+esc(num(m.profit_factor))+'</td><td>'+esc(num(m.expectancy_R))+'</td><td>'+esc(num(m.total_R))+'</td><td>'+esc(num(m.total_return_pct))+'</td><td>'+esc(num(m.max_drawdown_pct))+'</td><td>'+esc(d&&d.data_source||(k==='v3'||k==='fib'?'XAUUSD loader':'Alpaca/GLD'))+'</td>';
-}
-async function runOne(k){
- const dfn=defs[k];setStatus(k,'Running…','warn');updateComparison(k,'Running…',{});
- try{
-  const r=await fetch(dfn.url,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload(k))});
-  const raw=await r.text();let d;try{d=JSON.parse(raw)}catch(_){d={error:raw||'Empty response'}};
-  if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
-  renderMetrics(k,d);lastResults[k]=d;setStatus(k,'Done','ok');updateComparison(k,'Done',d);$('downloadCsv').disabled=false;return {k,d};
- }catch(e){
-  $('metrics-'+k).innerHTML='<div class="bad">Error: '+esc(e.message)+'</div>';setStatus(k,'Failed','bad');updateComparison(k,'Failed',{error:e.message});lastResults[k]={error:e.message};$('downloadCsv').disabled=false;return {k,error:e};
- }
-}
-function renderFailureStats(){
- const rows=Object.keys(defs).map(k=>{
-   const t=(lastResults[k]&&lastResults[k].trades)||[];
-   const wins=t.filter(x=>Number(x.R)>0), losses=t.filter(x=>Number(x.R)<0);
-   const longs=t.filter(x=>String(x.side||'').toLowerCase().includes('long')).length;
-   const shorts=t.filter(x=>String(x.side||'').toLowerCase().includes('short')).length;
-   const avg=a=>a.length?a.reduce((s,x)=>s+Number(x.R),0)/a.length:null;
-   return {name:defs[k].name,trades:t.length,wins:wins.length,losses:losses.length,winR:avg(wins),lossR:avg(losses),longs,shorts};
- });
- $('failureStats').innerHTML='<table><tr><th>Strategy</th><th>Trades</th><th>Wins</th><th>Losses</th><th>Avg win R</th><th>Avg loss R</th><th>Long</th><th>Short</th></tr>'+
- rows.map(r=>'<tr><td>'+esc(r.name)+'</td><td>'+r.trades+'</td><td>'+r.wins+'</td><td>'+r.losses+'</td><td>'+num(r.winR)+'</td><td>'+num(r.lossR)+'</td><td>'+r.longs+'</td><td>'+r.shorts+'</td></tr>').join('')+'</table>'+
- '<div class="muted" style="padding:8px">This is descriptive backtest diagnostics. It does not establish future profitability; compare on held-out/walk-forward data before changing rules.</div>';
-}
-async function runKeys(keys){
- $('globalStatus').textContent='Running '+keys.length+' strategy'+(keys.length>1?'ies':'')+'…';
- const queue=[...keys]; const workers=Array.from({length:Math.min(3,queue.length)},async()=>{
-   while(queue.length){const k=queue.shift();await runOne(k);}
- });
- await Promise.all(workers);
- renderFailureStats();
- $('globalStatus').innerHTML='<span class="ok">All selected runs finished.</span>';
-}
-$('runAll').onclick=()=>runKeys(Object.keys(defs));
-function csvCell(v){
- const s=v==null?'':String(v);
- return '"'+s.replace(/"/g,'""')+'"';
-}
-function downloadCombinedCsv(){
- const rows=[];
- const now=new Date().toISOString();
- const common=['timestamp','record_type','strategy','status','symbol','data_source','bars','data_start','data_end',
-   'num_trades','win_rate','profit_factor','expectancy_R','total_R','total_return_pct','max_drawdown_pct','final_equity',
-   'entry_time','exit_time','side','entry','exit_price','sl','tp','R','equity','reason'];
- rows.push(common);
- for(const k of Object.keys(defs)){
-   const d=lastResults[k];
-   if(!d) continue;
-   const m=d.metrics||{};
-   const status=d.error?'FAILED':'DONE';
-   const base=[now,'SUMMARY',defs[k].name,status,d.symbol||'',d.data_source||(k==='v3'||k==='fib'?'existing XAUUSD loader':'Alpaca/GLD'),
-     d.bars||'',d.data_start||'',d.data_end||'',m.num_trades??'',m.win_rate??'',m.profit_factor??'',m.expectancy_R??'',
-     m.total_R??'',m.total_return_pct??'',m.max_drawdown_pct??'',m.final_equity??''];
-   rows.push(base);
-   if(d.error){
-     rows.push([now,'ERROR',defs[k].name,'FAILED','','','','','','','','','','','','','','','','','','','','','','',d.error]);
-     continue;
-   }
-   for(const t of (d.trades||[])){
-     rows.push([now,'TRADE',defs[k].name,'DONE',d.symbol||'',d.data_source||(k==='v3'||k==='fib'?'existing XAUUSD loader':'Alpaca/GLD'),
-       d.bars||'',d.data_start||'',d.data_end||'',m.num_trades??'',m.win_rate??'',m.profit_factor??'',m.expectancy_R??'',m.total_R??'',
-       m.total_return_pct??'',m.max_drawdown_pct??'',m.final_equity??'',t.entry_time??'',t.exit_time??'',t.side??'',t.entry??t.entry_price??'',t.exit_price??t.exit??'',t.sl??t.sl_initial??'',t.tp??t.tp1??'',
-       t.R??'',t.equity??'',t.reason??t.exit_reason??'']);
-   }
- }
- if(rows.length===1){alert('Run at least one strategy first.');return;}
- const csv=rows.map(r=>r.map(csvCell).join(',')).join('\n');
- const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
- const a=document.createElement('a');
- a.href=URL.createObjectURL(blob);
- a.download='gold_strategy_lab_results_'+new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)+'.csv';
- document.body.appendChild(a);a.click();a.remove();
- setTimeout(()=>URL.revokeObjectURL(a.href),1000);
-}
-
-async function downloadMarketDataWithTrades(){
- const completed=Object.fromEntries(Object.entries(lastResults).filter(([k,d])=>d&&!d.error).map(([k,d])=>[defs[k].name,d.trades||[]]));
- if(!Object.keys(completed).length){
-   alert('Run at least one strategy first so the export can include its trades.');
-   return;
- }
- const btn=$('exportMarketTrades'); btn.disabled=true; $('globalStatus').textContent='Downloading Alpaca market data…';
- try{
-   const r=await fetch('/api/strategy-lab/export',{method:'POST',credentials:'same-origin',cache:'no-store',
-     headers:{'Content-Type':'application/json'},
-     body:JSON.stringify({symbol:selectedSymbol(),timeframe:$('exportTf').value,bars:Math.min(100000,Math.max(100,Number($('exportBars').value)||5000)),strategies:completed})});
-   if(!r.ok){
-     const txt=await r.text(); let msg=txt; try{msg=JSON.parse(txt).error||txt;}catch(_){}
-     throw new Error(msg);
-   }
-   const blob=await r.blob();
-   const cd=r.headers.get('Content-Disposition')||'';
-   const match=cd.match(/filename="([^"]+)"/i);
-   const name=match?match[1]:'strategy_lab_market_data_trades.csv';
-   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;
-   document.body.appendChild(a);a.click();a.remove();
-   setTimeout(()=>URL.revokeObjectURL(a.href),1000);
-   $('globalStatus').innerHTML='<span class="ok">Alpaca market data + strategy trades exported.</span>';
- }catch(e){
-   $('globalStatus').innerHTML='<span class="bad">Export error: '+esc(e.message)+'</span>';
- }finally{btn.disabled=false;}
-}
-$('runOpen').onclick=()=>runKeys(Object.keys(defs).filter(k=>$('card-'+k).open));
-$('clear').onclick=()=>{lastResults={};$('downloadCsv').disabled=true;Object.keys(defs).forEach(k=>{setStatus(k,'Ready');$('metrics-'+k).innerHTML='<div class="empty">No result yet.</div>';$('trades-'+k).innerHTML='';const r=document.querySelector('#comparison tr[data-k="'+k+'"]');if(r)r.remove()});$('failureStats').innerHTML='<div class="empty">Loss diagnostics will appear after the runs.</div>';$('globalStatus').textContent='Ready';};
-
-const newDefs={
- pullback:{name:'NEW — Pullback Breakout V2',url:'/api/xauusd-research-v2/pullback'},
- ema:{name:'NEW — EMA 20/50 Third Retest V2',url:'/api/xauusd-research-v2/ema'},
- triple:{name:'NEW — Triple RSI V2',url:'/api/xauusd-research-v2/triple'}
-};
-function setNewStatus(k,s,cls='muted'){
-  $('status-new-'+k).className='status '+cls;
-  $('status-new-'+k).textContent=s;
-}
-function newPayload(k){
-  const n=bars(), risk=Number($('risk').value)||.5;
-  if(k==='triple') return {symbol:selectedSymbol(),daily_bars:Math.max(250,Number($('days').value)||250),config:{risk_pct:risk}};
-  return {symbol:selectedSymbol(),n_bars:n,config:{risk_pct:risk}};
+ const m=d?.metrics||{};
+ let row=document.querySelector('#newComparison tr[data-k="'+k+'"]');
+ if(!row){row=document.createElement('tr');row.dataset.k=k;$('newComparison').appendChild(row);}
+ row.innerHTML='<td>'+esc(defs[k].name)+'</td><td>'+esc(status)+'</td><td>'+esc(num(m.num_trades))+'</td><td>'+esc(num(m.win_rate))+'</td><td>'+esc(num(m.profit_factor))+'</td><td>'+esc(num(m.expectancy_R))+'</td><td>'+esc(num(m.total_R))+'</td><td>'+esc(num(m.total_return_pct))+'</td><td>'+esc(num(m.max_drawdown_pct))+'</td><td>'+esc(d?.data_source||'—')+'</td>';
 }
 async function runNew(k){
-  const dfn=newDefs[k];
-  setNewStatus(k,'Running…','warn');
-  $('newStatus').textContent='Running '+dfn.name+'…';
-  try{
-    const r=await fetch(dfn.url,{method:'POST',credentials:'same-origin',cache:'no-store',
-      headers:{'Content-Type':'application/json'},body:JSON.stringify(newPayload(k))});
-    const raw=await r.text();
-    let d; try{d=JSON.parse(raw)}catch(_){d={error:raw||'Empty response'}};
-    if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
-    renderNewMetrics(k,d);
-    lastResults['new-'+k]=d;
-    setNewStatus(k,'Done','ok');
-    $('newStatus').innerHTML='<span class="ok">'+esc(dfn.name)+' finished.</span>';
-    return {k,d};
-  }catch(e){
-    $('metrics-new-'+k).innerHTML='<div class="bad">Error: '+esc(e.message)+'</div>';
-    setNewStatus(k,'Failed','bad');
-    $('newStatus').innerHTML='<span class="bad">'+esc(dfn.name)+' failed: '+esc(e.message)+'</span>';
-    return {k,error:e};
-  }
-}
-function renderNewMetrics(k,d){
-  const m=d.metrics||{};
-  const keys=['num_trades','win_rate','profit_factor','expectancy_R','total_R','total_return_pct','max_drawdown_pct','final_equity'];
-  $('metrics-new-'+k).innerHTML='<table>'+keys.map(x=>'<tr><td>'+esc(x)+'</td><td>'+esc(num(m[x]))+'</td></tr>').join('')+'</table>'+
-    '<div class="muted" style="margin-top:6px">Source: '+esc(d.data_source||'Alpaca')+' | Symbol: '+esc(d.symbol||selectedSymbol())+' | Bars: '+esc(d.bars||'—')+'</div>';
-  const t=d.trades||[];
-  if(t.length){
-    const cols=Object.keys(t[0]).slice(0,12);
-    $('trades-new-'+k).innerHTML='<h3>Recent Trades</h3><div class="scroll"><table><tr>'+
-      cols.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr>'+
-      t.slice(-50).reverse().map(r=>'<tr>'+cols.map(c=>'<td>'+esc(typeof r[c]==='number'?num(r[c]):r[c])+'</td>').join('')+'</tr>').join('')+
-      '</table></div>';
-  }else{
-    $('trades-new-'+k).innerHTML='<div class="muted" style="padding-top:8px">No closed trades in this sample. Check the diagnostics/backend response before changing rules.</div>';
-  }
+ const dfn=defs[k]; setStatus(k,'Running…','warn'); updateComparison(k,'Running…',{});
+ try{
+  const r=await fetch(dfn.url,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify(newPayload(k))});
+  const raw=await r.text(); let d; try{d=JSON.parse(raw)}catch(_){d={error:raw||'Empty response'}};
+  if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
+  renderMetrics(k,d); updateComparison(k,'Done',d); lastResults[k]=d; setStatus(k,'Done','ok');
+  return d;
+ }catch(e){
+  $('metrics-new-'+k).innerHTML='<div class="bad">Error: '+esc(e.message)+'</div>';
+  updateComparison(k,'Failed',{error:e.message}); setStatus(k,'Failed','bad'); lastResults[k]={error:e.message}; return null;
+ }
 }
 async function runNewAll(){
-  $('runNewAll').disabled=true;
-  $('newStatus').textContent='Running all 3 new strategies…';
-  for(const k of ['pullback','ema','triple']) await runNew(k);
-  $('runNewAll').disabled=false;
-  $('newStatus').innerHTML='<span class="ok">All 3 new strategy runs finished.</span>';
+ $('runNewAll').disabled=true; $('globalStatus').textContent='Running all 3 new strategies…';
+ for(const k of ['pullback','ema','triple']) await runNew(k);
+ $('runNewAll').disabled=false; $('globalStatus').innerHTML='<span class="ok">All 3 new strategy runs finished.</span>';
 }
 $('runNewAll').onclick=runNewAll;
-
-function openPage(p){window.location.href=p}
-$('days').dispatchEvent(new Event('input'));
-const failureColors=['#58a6ff','#d29922','#a371f7','#3fb950','#f778ba','#79c0ff','#ff7b72'];
-let failureChartData=null;
-function renderFailureChecks(){
-  const el=$('failureChecks');
-  el.innerHTML=Object.keys(defs).map((k,i)=>'<label style="display:inline-flex;align-items:center;gap:4px"><input type="checkbox" data-failure-k="'+k+'" checked> '+esc(defs[k].name)+'</label>').join('');
-  el.querySelectorAll('input[data-failure-k]').forEach(x=>x.onchange=renderFailureChart);
-}
-function chartBarsForTf(tf){const caps={'5m':6000,'15m':6000,'1h':3000,'1d':1500};return caps[tf]||6000;}
-function failureSelected(){
-  return Object.keys(defs).filter(k=>{const x=document.querySelector('input[data-failure-k="'+k+'"]');return x&&x.checked;});
-}
-async function loadFailureChart(){
-  const symbol=selectedSymbol();
-  const timeframe=$('failureTf').value;
-  $('failureSummary').textContent='Loading '+symbol+' '+timeframe+' price data…';
-  try{
-    const r=await fetch('/api/strategy-chart',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({symbol,n_bars:chartBarsForTf(timeframe),timeframe})});
-    const d=await r.json();
-    if(!r.ok) throw new Error(d.error||('HTTP '+r.status));
-    failureChartData=d;
-    renderFailureChart();
-  }catch(e){
-    $('failureSummary').innerHTML='<span class="bad">Chart error: '+esc(e.message)+'</span>';
-  }
-}
-function nearestChartIndex(ts){
-  if(!failureChartData||!failureChartData.ohlcv||!ts)return -1;
-  const target=Date.parse(ts);
-  if(!Number.isFinite(target))return -1;
-  let best=-1,bestDiff=Infinity;
-  failureChartData.ohlcv.forEach((r,i)=>{
-    const t=Date.parse(r.t); if(!Number.isFinite(t))return;
-    const diff=Math.abs(t-target);
-    if(diff<bestDiff){bestDiff=diff;best=i;}
-  });
-  return best;
-}
-function pct(v){return Number.isFinite(v)?(v>=0?'+':'')+v.toFixed(2)+'%':'—';}
-function fmtR(v){return Number.isFinite(v)?(v>=0?'+':'')+v.toFixed(2)+'R':'—';}
-function strategyTradeContext(k,t){
-  const d=failureChartData||{}, rows=d.ohlcv||[], inds=d.indicators||{};
-  const ei=nearestChartIndex(t.entry_time||t.entry_timestamp||t.entryTime);
-  const xi=nearestChartIndex(t.exit_time||t.exit_timestamp||t.exitTime);
-  const end=xi>=0?xi:(rows.length-1), start=ei>=0?ei:0;
-  const slice=rows.slice(Math.min(start,end),Math.max(start,end)+1);
-  const entry=Number(t.entry), side=String(t.side||'').toLowerCase();
-  const risk=Math.abs(entry-Number(t.sl));
-  let mfe=null,mae=null,mfePrice=null,maePrice=null;
-  if(Number.isFinite(entry)&&slice.length){
-    const highs=slice.map(r=>Number(r.h)).filter(Number.isFinite);
-    const lows=slice.map(r=>Number(r.l)).filter(Number.isFinite);
-    if(highs.length&&lows.length){
-      if(side.includes('short')){
-        mfePrice=entry-Math.min(...lows); maePrice=entry-Math.max(...highs);
-      }else{
-        mfePrice=Math.max(...highs)-entry; maePrice=Math.min(...lows)-entry;
-      }
-      mfe=mfePrice/(risk||NaN); mae=maePrice/(risk||NaN);
-    }
-  }
-  const c=ei>=0?rows[ei]:null;
-  const ema20=ei>=0?inds.ema20?.[ei]:null, ema50=ei>=0?inds.ema50?.[ei]:null;
-  const ema200=ei>=0?inds.ema200?.[ei]:null, vwap=ei>=0?inds.vwap?.[ei]:null;
-  const px=Number.isFinite(entry)?entry:(c?Number(c.c):NaN);
-  const distance=level=>Number.isFinite(px)&&Number.isFinite(level)?(px-level)/level*100:null;
-  const et=t.entry_time||t.entry_timestamp||t.entryTime||'', xt=t.exit_time||t.exit_timestamp||t.exitTime||'';
-  let duration='—';
-  if(et&&xt){const ms=Date.parse(xt)-Date.parse(et);if(Number.isFinite(ms)&&ms>=0){const mins=Math.round(ms/60000);duration=mins>=60?Math.floor(mins/60)+'h '+mins%60+'m':mins+'m';}}
-  const session=et?new Date(et).toISOString().slice(11,16)+' UTC':'—';
-  return {strategy:defs[k].name,side:(t.side||'—').toUpperCase(),outcome:Number(t.R)>=0?'WIN':'LOSS',
-    entry,exit:Number(t.exit),sl:Number(t.sl),tp:Number(t.tp),R:Number(t.R),reason:t.reason||'—',
-    entryTime:et||'—',exitTime:xt||'—',duration,session,ema20,ema50,ema200,vwap,
-    ema20Dist:distance(ema20),ema50Dist:distance(ema50),ema200Dist:distance(ema200),vwapDist:distance(vwap),
-    candle:c,mfe,mae,mfePrice,maePrice};
-}
-function showFailureTradeDetail(k,t){
-  const x=strategyTradeContext(k,t), cls=x.outcome==='WIN'?'ok':'bad';
-  const f=v=>Number.isFinite(v)?Number(v).toFixed(2):'—';
-  const pr=(label,v)=>'<tr><td>'+esc(label)+'</td><td>'+(Number.isFinite(v)?'$'+f(v):'—')+'</td></tr>';
-  $('failureTradeDetail').style.display='block';
-  $('failureTradeDetailBody').innerHTML='<table><tr><th>Field</th><th>Value</th></tr>'+
-    '<tr><td>Strategy</td><td><strong>'+esc(x.strategy)+'</strong></td></tr>'+
-    '<tr><td>Direction</td><td>'+esc(x.side)+'</td></tr>'+
-    '<tr><td>Result</td><td class="'+cls+'"><strong>'+x.outcome+' '+fmtR(x.R)+'</strong></td></tr>'+
-    '<tr><td>Entry</td><td>'+(Number.isFinite(x.entry)?'$'+f(x.entry):'—')+'</td></tr>'+
-    '<tr><td>Stop / Target</td><td>'+(Number.isFinite(x.sl)?'$'+f(x.sl):'—')+' / '+(Number.isFinite(x.tp)?'$'+f(x.tp):'—')+'</td></tr>'+
-    '<tr><td>Entry time</td><td>'+esc(x.entryTime)+'</td></tr>'+
-    '<tr><td>Exit time</td><td>'+esc(x.exitTime)+'</td></tr>'+
-    '<tr><td>Time in trade</td><td>'+esc(x.duration)+'</td></tr>'+
-    '<tr><td>Entry session</td><td>'+esc(x.session)+'</td></tr>'+
-    '<tr><td>Exit reason</td><td>'+esc(x.reason)+'</td></tr>'+
-    pr('EMA20 at entry',x.ema20)+'<tr><td>Distance to EMA20</td><td>'+pct(x.ema20Dist)+'</td></tr>'+
-    pr('EMA50 at entry',x.ema50)+'<tr><td>Distance to EMA50</td><td>'+pct(x.ema50Dist)+'</td></tr>'+
-    pr('EMA200 at entry',x.ema200)+'<tr><td>Distance to EMA200</td><td>'+pct(x.ema200Dist)+'</td></tr>'+
-    pr('VWAP at entry',x.vwap)+'<tr><td>Distance to VWAP</td><td>'+pct(x.vwapDist)+'</td></tr>'+
-    '<tr><td>MAE</td><td>'+(Number.isFinite(x.maePrice)?'$'+f(x.maePrice)+' ('+fmtR(x.mae)+')':'—')+'</td></tr>'+
-    '<tr><td>MFE</td><td>'+(Number.isFinite(x.mfePrice)?'$'+f(x.mfePrice)+' ('+fmtR(x.mfe)+')':'—')+'</td></tr></table>'+
-    '<div class="muted" style="margin-top:8px">MAE/MFE are descriptive measurements from the selected chart timeframe between entry and exit.</div>';
-  $('failureTradeDetail').scrollIntoView({behavior:'smooth',block:'nearest'});
-}
-function renderFailureChart(){
-  if(!failureChartData||!window.Plotly)return;
-  const d=failureChartData, rows=d.ohlcv||[], inds=d.indicators||{}, x=rows.map(r=>r.t);
-  const traces=[{x,open:rows.map(r=>r.o),high:rows.map(r=>r.h),low:rows.map(r=>r.l),close:rows.map(r=>r.c),
-    type:'candlestick',name:d.symbol+' price',increasing:{line:{color:'#3fb950'}},decreasing:{line:{color:'#f85149'}}}];
-  const addLine=(key,name,show)=>{if(!show)return;const vals=inds[key]||[];traces.push({x,y:vals,type:'scatter',mode:'lines',name,line:{width:1.4}});};
-  addLine('ema20','EMA20',$('showEma20').checked); addLine('ema50','EMA50',$('showEma50').checked);
-  addLine('ema200','EMA200',$('showEma200').checked); addLine('vwap','VWAP',$('showVwap').checked);
-  const selected=failureSelected(); let markerCount=0;
-  selected.forEach((k,idx)=>{
-    const d0=lastResults[k]; if(!d0||d0.error)return;
-    const entries=[],exits=[],entryTexts=[],exitTexts=[],entryCustom=[],exitCustom=[];
-    (d0.trades||[]).forEach((t,tradeIndex)=>{
-      const et=t.entry_time||t.entry_timestamp||t.entryTime, xt=t.exit_time||t.exit_timestamp||t.exitTime;
-      if(et){entries.push([et,t.entry]);entryTexts.push(defs[k].name+' | '+(t.side||'')+' | entry '+num(t.entry));entryCustom.push({k,t,tradeIndex});}
-      if(xt){exits.push([xt,t.exit]);exitTexts.push(defs[k].name+' | '+(t.R>=0?'WIN':'LOSS')+' | '+num(t.R)+'R');exitCustom.push({k,t,tradeIndex});}
-    });
-    if(entries.length)traces.push({x:entries.map(a=>a[0]),y:entries.map(a=>a[1]),type:'scatter',mode:'markers',name:defs[k].name+' entries',
-      marker:{size:10,symbol:'triangle-up',color:failureColors[idx],line:{width:1}},text:entryTexts,customdata:entryCustom,hovertemplate:'%{text}<br>%{x}<br><b>Click for trade analysis</b><extra></extra>'});
-    markerCount+=entries.length;
-    if(exits.length)traces.push({x:exits.map(a=>a[0]),y:exits.map(a=>a[1]),type:'scatter',mode:'markers',name:defs[k].name+' exits',
-      marker:{size:9,symbol:'x',color:failureColors[idx],line:{width:1}},text:exitTexts,customdata:exitCustom,hovertemplate:'%{text}<br>%{x}<br><b>Click for trade analysis</b><extra></extra>'});
-  });
-  Plotly.react('failureChart',traces,{title:{text:d.symbol+' — Seven-Strategy Failure Analysis ('+d.timeframe+')',font:{size:16}},
-    paper_bgcolor:'#161b22',plot_bgcolor:'#0d1117',font:{color:'#c9d1d9'},
-    xaxis:{autorange:true,type:'date',fixedrange:false,showspikes:true,spikemode:'across',spikesnap:'cursor',rangeselector:{buttons:[{count:1,label:'1D',step:'day',stepmode:'backward'},{count:5,label:'5D',step:'day',stepmode:'backward'},{count:1,label:'1M',step:'month',stepmode:'backward'},{count:3,label:'3M',step:'month',stepmode:'backward'},{step:'all',label:'All'}],font:{size:11}}},yaxis:{autorange:true,fixedrange:false,side:'right',showspikes:true,spikemode:'across'},
-    hovermode:'x unified',legend:{orientation:'h',y:1.02,x:0},margin:{l:45,r:70,t:55,b:45},dragmode:'zoom'},
-    {responsive:true,displaylogo:false,scrollZoom:true});
-  const chartEl=$('failureChart');
-  if(!chartEl.__tradeClickBound){chartEl.on('plotly_click',ev=>{const p=ev?.points?.[0],cd=p?.customdata;if(cd&&cd.k&&cd.t)showFailureTradeDetail(cd.k,cd.t);});chartEl.__tradeClickBound=true;}
-  $('failureSummary').textContent='Showing '+rows.length+' candles and '+markerCount+' entry markers. Click any entry/exit marker for trade diagnostics including MAE/MFE, EMA/VWAP distance, session and exit reason.';
-}
-$('runChart').onclick=async()=>{await runKeys(Object.keys(defs));await loadFailureChart();$('failure-analysis').scrollIntoView({behavior:'smooth',block:'start'});};
-$('refreshChart').onclick=loadFailureChart;
-$('failureTf').onchange=loadFailureChart;
-['showEma20','showEma50','showEma200','showVwap'].forEach(id=>$(id).onchange=renderFailureChart);
-$('fitChart').onclick=()=>{if(window.Plotly&&failureChartData)Plotly.relayout('failureChart',{xaxis:{autorange:true},yaxis:{autorange:true}});};
-$('resetChart').onclick=()=>{if(window.Plotly&&failureChartData)Plotly.relayout('failureChart',{xaxis:{autorange:true},yaxis:{autorange:true}});};
-renderFailureChecks();
-
+$('clear').onclick=()=>{
+ lastResults={}; document.querySelectorAll('#newComparison tr[data-k]').forEach(x=>x.remove());
+ for(const k of Object.keys(defs)){setStatus(k,'Ready');$('metrics-new-'+k).innerHTML='<div class="empty">No result yet.</div>';$('trades-new-'+k).innerHTML='';}
+ $('globalStatus').textContent='Ready';
+};
 </script>
 </body>
 </html>
