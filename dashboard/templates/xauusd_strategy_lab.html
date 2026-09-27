@@ -56,6 +56,18 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
       <span id="exportStatus" class="muted">Exports selected ticker market data plus V2 trades.</span>
     </div>
   </div>
+  <div class="export-panel">
+    <div style="font-weight:bold;margin-bottom:8px">🧠 SPY / QQQ Parameter Optimizer</div>
+    <div class="controls">
+      <label>Strategy <select id="optStrategy"><option value="pullback">Pullback V2</option><option value="ema">EMA 20/50 V2</option></select></label>
+      <label>Train % <input id="optTrain" type="number" min="50" max="80" value="70" style="width:70px"></label>
+      <label>Min train trades <input id="optMinTrain" type="number" min="5" value="10" style="width:85px"></label>
+      <label>Min test trades <input id="optMinTest" type="number" min="3" value="5" style="width:85px"></label>
+      <button id="runOptimizer" class="primary">🧠 Optimize</button>
+      <span id="optimizerStatus" class="muted">Chronological train/test.</span>
+    </div>
+    <div id="optimizerResults" class="scroll" style="margin-top:10px;max-height:420px"><div class="empty">No optimization run yet.</div></div>
+  </div>
 </div>
 
 <div class="compare">
@@ -143,7 +155,7 @@ async function runOne(k){
 async function runAll(){
  $('runAll').disabled=true;$('globalStatus').textContent='Running all 3 new strategies…';
  for(const k of ['pullback','ema','triple','williams','cci']) await runOne(k);
- $('runAll').disabled=false;$('globalStatus').innerHTML='<span class="ok">All 3 new strategy runs finished.</span>';
+ $('runAll').disabled=false;$('globalStatus').innerHTML='<span class="ok">All 5 new strategy runs finished.</span>';
 }
 function csvCell(v){if(v==null)return '';let s=typeof v==='object'?JSON.stringify(v):String(v);return '"'+s.replace(/"/g,'""')+'"';}
 function downloadResultsCsv(){
@@ -161,13 +173,25 @@ function downloadResultsCsv(){
  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='gold_strategy_lab_v2_results_'+new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)+'.csv';a.click();URL.revokeObjectURL(a.href);
  $('globalStatus').innerHTML='<span class="ok">V2 results CSV exported.</span>';
 }
+async function runOptimizer(){
+ const btn=$('runOptimizer');btn.disabled=true;$('optimizerStatus').textContent='Optimizing '+selectedSymbol()+'…';
+ try{
+  const r=await fetch('/api/xauusd-research-v2/optimize',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({strategy:$('optStrategy').value,symbol:selectedSymbol(),n_bars:bars(),train_pct:(Number($('optTrain').value)||70)/100,min_train_trades:Number($('optMinTrain').value)||10,min_test_trades:Number($('optMinTest').value)||5})});
+  const d=await r.json();if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
+  const rows=d.results||[];
+  if(!rows.length){$('optimizerResults').innerHTML='<div class="empty">No configurations passed the trade-count filters.</div>';}
+  else{const cols=Object.keys(rows[0]);$('optimizerResults').innerHTML='<table><tr>'+cols.map(x=>'<th>'+esc(x)+'</th>').join('')+'</tr>'+rows.map(row=>'<tr>'+cols.map(x=>'<td>'+esc(typeof row[x]==='number'?num(row[x]):row[x])+'</td>').join('')+'</tr>').join('')+'</table>';}
+  $('optimizerStatus').innerHTML='<span class="ok">Tested '+esc(d.tested)+' combinations; '+esc(d.passed)+' passed. '+esc(d.train_bars)+' train / '+esc(d.test_bars)+' test bars.</span>';
+ }catch(e){$('optimizerStatus').innerHTML='<span class="bad">Optimizer error: '+esc(e.message)+'</span>';}
+ finally{btn.disabled=false;}
+}
 async function exportMarketDataWithTrades(){
  const completed=Object.entries(lastResults).filter(([k,d])=>d&&!d.error).map(([k,d])=>({strategy:defs[k].name,trades:d.trades||[]}));
  if(!completed.length){$('exportStatus').textContent='Run at least one V2 strategy first.';return;}
  const btn=$('exportMarketTrades');btn.disabled=true;$('exportStatus').textContent='Downloading Alpaca market data…';
  try{
   const r=await fetch('/api/strategy-lab/export',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({symbol:selectedSymbol(),timeframe:$('exportTf').value,bars:Math.min(100000,Math.max(100,Number($('exportBars').value)||5000)),strategies:completed})});
+   body:JSON.stringify({symbol:selectedSymbol(),timeframe:$('exportTf').value,bars:Math.min(100000,Math.max(100,Number($('exportBars').value)||5000)),run_id:(lastResults[Object.keys(lastResults)[0]]||{}).run_id||'',strategies:completed})});
   if(!r.ok){let d={};try{d=await r.json()}catch(_){}throw new Error(d.error||('HTTP '+r.status));}
   const blob=await r.blob();const cd=r.headers.get('Content-Disposition')||'';const match=cd.match(/filename="?([^"]+)"?/i);
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=match?match[1]:'strategy_lab_v2_market_data_trades.csv';a.click();URL.revokeObjectURL(a.href);
@@ -175,7 +199,7 @@ async function exportMarketDataWithTrades(){
  }catch(e){$('exportStatus').innerHTML='<span class="bad">Export error: '+esc(e.message)+'</span>';}
  finally{btn.disabled=false;}
 }
-$('runAll').onclick=runAll;$('downloadCsv').onclick=downloadResultsCsv;$('exportMarketTrades').onclick=exportMarketDataWithTrades;
+$('runAll').onclick=runAll;$('runOptimizer').onclick=runOptimizer;$('downloadCsv').onclick=downloadResultsCsv;$('exportMarketTrades').onclick=exportMarketDataWithTrades;
 $('clear').onclick=()=>{
  lastResults={};document.querySelectorAll('#comparison tr[data-k]').forEach(x=>x.remove());
  for(const k of Object.keys(defs)){setStatus(k,'Ready');$('metrics-'+k).innerHTML='<div class="empty">No result yet.</div>';$('trades-'+k).innerHTML='';}
