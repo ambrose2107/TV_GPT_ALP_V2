@@ -9,6 +9,8 @@ import time
 import io
 import csv
 import json
+import uuid
+import itertools
 from datetime import datetime, timezone
 from flask import Blueprint, jsonify, request, session, send_file
 
@@ -25,6 +27,7 @@ bp = Blueprint("xauusd_research_v2", __name__)
 _DATA_CACHE = {}
 _CACHE_TTL = 300
 _LAST_RUN = {"status": "never", "updated": None, "summary": {}}
+_RUN_DATA = {}
 
 
 def _safe(v):
@@ -141,6 +144,47 @@ def status():
 
 
 
+@bp.route("/api/xauusd-research-v2/optimize", methods=["POST"])
+def optimize():
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    strategy = str(body.get("strategy", "pullback")).strip().lower()
+    symbol = str(body.get("symbol", "SPY")).strip().upper()
+    bars = max(1000, min(30000, int(body.get("n_bars", 15600))))
+    train_pct = min(0.8, max(0.5, float(body.get("train_pct", 0.7))))
+    min_train = max(5, int(body.get("min_train_trades", 10)))
+    min_test = max(3, int(body.get("min_test_trades", 5)))
+    try:
+        df, source = _intraday(symbol, bars)
+        split = max(500, min(len(df)-100, int(len(df) * train_pct)))
+        train = df.iloc[:split].copy()
+        test = df.iloc[split:].copy()
+        rows = []
+        if strategy == "pullback":
+            grid = list(itertools.product([0.05, 0.10], [0.15, 0.25, 0.35], [1.5, 2.0, 2.5], [6, 8, 12], [18, 19, 20, 21]))
+            for buf, body_min, rr, cooldown, end_hour in grid:
+                cfg = PullbackV2Config(breakout_buffer_atr=buf, min_body_atr=body_min, rr=rr, cooldown_bars=cooldown, session_end_utc=end_hour)
+                a = pullback_v2_backtest(train, cfg)["metrics"]; b = pullback_v2_backtest(test, cfg)["metrics"]
+                if a["num_trades"] < min_train or b["num_trades"] < min_test: continue
+                ap, bp = float(a["profit_factor"] or 0), float(b["profit_factor"] or 0)
+                rows.append({"breakout_buffer_atr":buf,"min_body_atr":body_min,"rr":rr,"cooldown_bars":cooldown,"session_end_utc":end_hour,"train_trades":a["num_trades"],"train_pf":ap,"train_expectancy_R":a["expectancy_R"],"test_trades":b["num_trades"],"test_pf":bp,"test_expectancy_R":b["expectancy_R"],"test_total_R":b["total_R"],"test_return_pct":b["total_return_pct"],"test_max_dd_pct":b["max_drawdown_pct"],"robust_score":min(ap,bp)+0.25*float(b["expectancy_R"])})
+        elif strategy == "ema":
+            grid = list(itertools.product([0.05,0.10,0.20], [0.05,0.10,0.20], [2.0,2.5,3.0], [1,2]))
+            for gap, rej, rr, sep in grid:
+                cfg = EMARetestV2Config(min_gap_atr=gap,min_rejection_body_atr=rej,rr=rr,separation_bars=sep)
+                a = ema_v2_backtest(train,cfg)["metrics"]; b = ema_v2_backtest(test,cfg)["metrics"]
+                if a["num_trades"] < min_train or b["num_trades"] < min_test: continue
+                ap,bp=float(a["profit_factor"] or 0),float(b["profit_factor"] or 0)
+                rows.append({"min_gap_atr":gap,"min_rejection_body_atr":rej,"rr":rr,"separation_bars":sep,"train_trades":a["num_trades"],"train_pf":ap,"train_expectancy_R":a["expectancy_R"],"test_trades":b["num_trades"],"test_pf":bp,"test_expectancy_R":b["expectancy_R"],"test_total_R":b["total_R"],"test_return_pct":b["total_return_pct"],"test_max_dd_pct":b["max_drawdown_pct"],"robust_score":min(ap,bp)+0.25*float(b["expectancy_R"])})
+        else:
+            return jsonify({"error":"Optimizer supports Pullback V2 and EMA 20/50 V2."}),400
+        rows.sort(key=lambda x:(x["robust_score"],x["test_pf"],x["test_total_R"]),reverse=True)
+        return jsonify(_safe({"strategy":strategy,"symbol":symbol,"data_source":source,"bars":len(df),"train_bars":len(train),"test_bars":len(test),"train_pct":train_pct,"tested":len(grid),"passed":len(rows),"results":rows[:25],"note":"Chronological train/test research only; not a future-performance guarantee."}))
+    except Exception as exc:
+        return jsonify({"error":f"{type(exc).__name__}: {exc}"}),500
+
+
 @bp.route("/api/strategy-lab/export", methods=["POST"])
 def export_strategy_lab():
     """Export Alpaca OHLCV data plus the completed V2 strategy trades as CSV."""
@@ -156,9 +200,27 @@ def export_strategy_lab():
     if not alpaca_tf:
         return jsonify({"error": f"Unsupported export timeframe: {timeframe}"}), 400
     try:
-        raw = alpaca_get_bars(symbol, alpaca_tf, limit=bars)
+        run_id = str(body.get("run_id", "")).strip()
+        raw = None
+        if run_id and run_id in _RUN_DATA:
+            saved = _RUN_DATA[run_id]["df"]
+            if timeframe == "5m":
+                z = saved
+            elif timeframe == "15m":
+                z = saved.resample("15min", label="left", closed="left").agg({"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"}).dropna()
+            elif timeframe == "1h":
+                z = saved.resample("1h", label="left", closed="left").agg({"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"}).dropna()
+            elif timeframe in ("1d","1D"):
+                z = saved.resample("1D").agg({"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"}).dropna()
+            else:
+                z = None
+            if z is not None:
+                raw = [{"t":ts.isoformat(),"o":float(row.Open),"h":float(row.High),"l":float(row.Low),"c":float(row.Close),"v":float(row.Volume)} for ts,row in z.iterrows()]
+        if raw is None:
+            raw = alpaca_get_bars(symbol, alpaca_tf, limit=bars)
         if not raw:
             return jsonify({"error": f"No Alpaca {timeframe} data returned for {symbol}"}), 404
+        raw = raw[-bars:]
         exported = datetime.now(timezone.utc).isoformat()
         rows = [{
             "exported_at_utc": exported, "record_type": "market_data", "strategy": "",
@@ -244,11 +306,19 @@ def run(strategy):
                 .to_dict(orient="records")
             )
 
+        run_id = uuid.uuid4().hex
+        _RUN_DATA[run_id] = {"df":df.copy(),"symbol":symbol,"source":source,"created":time.time()}
+        if len(_RUN_DATA) > 20:
+            for key,_ in sorted(_RUN_DATA.items(),key=lambda kv:kv[1]["created"])[:5]:
+                _RUN_DATA.pop(key,None)
         return jsonify(_safe({
-            "strategy": strategy + " baseline",
+            "run_id": run_id,
+            "strategy": strategy + " V2",
             "symbol": symbol,
             "data_source": source,
             "bars": len(df),
+            "data_start": df.index.min().isoformat(),
+            "data_end": df.index.max().isoformat(),
             "metrics": result.get("metrics", {}),
             "trades": trades,
             "signals": signals,
