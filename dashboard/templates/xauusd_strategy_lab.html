@@ -50,10 +50,10 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
   <div class="export-panel">
     <div style="font-weight:bold;margin-bottom:8px">📦 Alpaca Data Export</div>
     <div class="controls">
-      <label>Export TF <select id="exportTf"><option value="5m">5m</option><option value="15m">15m</option><option value="1h">1H</option><option value="1d">1D</option><option value="1w">1W</option></select></label>
-      <label>Export bars <input id="exportBars" type="number" min="100" max="100000" value="5000" style="width:95px"></label>
-      <button id="exportMarketTrades">📦 Export Alpaca Data + Trades</button>
-      <span id="exportStatus" class="muted">Exports selected ticker market data plus V2 trades.</span>
+      <label>Export TFs <select id="exportTfs" multiple size="5" style="min-width:85px"><option value="5m" selected>5m</option><option value="15m" selected>15m</option><option value="1h" selected>1H</option><option value="1d" selected>1D</option><option value="1w">1W</option></select></label>
+      <label>Bars / TF <input id="exportBars" type="number" min="100" max="100000" value="5000" style="width:95px"></label>
+      <button id="exportMarketTrades">📦 Export Selected TF Data + Trades</button>
+      <span id="exportStatus" class="muted">Select one or more timeframes. Multiple TFs download as one ZIP.</span>
     </div>
   </div>
   <div class="export-panel">
@@ -191,11 +191,11 @@ async function exportMarketDataWithTrades(){
  const btn=$('exportMarketTrades');btn.disabled=true;$('exportStatus').textContent='Downloading Alpaca market data…';
  try{
   const r=await fetch('/api/strategy-lab/export',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},
-   body:JSON.stringify({symbol:selectedSymbol(),timeframe:$('exportTf').value,bars:Math.min(100000,Math.max(100,Number($('exportBars').value)||5000)),run_id:(lastResults[Object.keys(lastResults)[0]]||{}).run_id||'',strategies:completed})});
+   body:JSON.stringify({symbol:selectedSymbol(),timeframes:Array.from($('exportTfs').selectedOptions).map(o=>o.value),bars:Math.min(100000,Math.max(100,Number($('exportBars').value)||5000)),run_id:(lastResults[Object.keys(lastResults)[0]]||{}).run_id||'',strategies:completed})});
   if(!r.ok){let d={};try{d=await r.json()}catch(_){}throw new Error(d.error||('HTTP '+r.status));}
   const blob=await r.blob();const cd=r.headers.get('Content-Disposition')||'';const match=cd.match(/filename="?([^"]+)"?/i);
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=match?match[1]:'strategy_lab_v2_market_data_trades.csv';a.click();URL.revokeObjectURL(a.href);
-  $('exportStatus').innerHTML='<span class="ok">Alpaca '+esc($('exportTf').value)+' data + V2 trades exported.</span>';
+  $('exportStatus').innerHTML='<span class="ok">Selected timeframe data + V2 trades exported.</span>';
  }catch(e){$('exportStatus').innerHTML='<span class="bad">Export error: '+esc(e.message)+'</span>';}
  finally{btn.disabled=false;}
 }
