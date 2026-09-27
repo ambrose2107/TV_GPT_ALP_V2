@@ -20,7 +20,7 @@ button:hover{filter:brightness(1.15)}button:disabled{opacity:.5;cursor:wait}.pri
 .status{margin-left:auto;font-weight:normal;font-size:13px}.ok{color:var(--good)}.warn{color:var(--warn)}.bad{color:var(--bad)}
 table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px solid var(--line);white-space:nowrap;text-align:right}th{position:sticky;top:0;background:var(--panel);z-index:2}td:first-child,th:first-child{text-align:left}
 .scroll{max-height:300px;overflow:auto;border:1px solid var(--line);border-radius:6px}.compare{padding:14px}.compare .scroll{max-height:460px}.empty{color:var(--muted);padding:12px}
-.export-panel{margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:8px;background:#11161d}
+.export-panel{margin-top:12px;padding:12px;border:1px solid var(--line);border-radius:8px;background:#11161d}.detail-link{display:inline-block;padding:8px 10px;border:1px solid var(--line);border-radius:6px;color:var(--text);text-decoration:none;background:#21262d}
 @media(max-width:900px){.strategy-list{grid-template-columns:1fr}.toolbar{position:static}body{padding:10px}}
 </style>
 </head>
@@ -78,27 +78,27 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
 <div class="strategy-list">
 <details class="card" open><summary><span>1. Pullback Breakout V2</span><span class="badge">Trend + Pullback + Displacement</span><span class="status" id="status-pullback">Ready</span></summary>
 <div class="body"><div class="muted">EMA trend separation, ATR regime filter, controlled pullback and displacement breakout.</div>
-<p><button class="primary" onclick="runOne('pullback')">▶ Run Pullback V2</button></p>
+<p><button class="primary" onclick="runOne('pullback')">▶ Run Pullback V2</button> <a class="detail-link" href="/xauusd-research-v2/pullback">📊 Open Detailed Chart</a></p>
 <div id="metrics-pullback" class="empty">No result yet.</div><div id="trades-pullback"></div></div></details>
 
 <details class="card" open><summary><span>2. EMA 20/50 Third Retest V2</span><span class="badge">Distinct Retests + 1H</span><span class="status" id="status-ema">Ready</span></summary>
 <div class="body"><div class="muted">Distinct retest events, rejection quality, EMA separation and completed 1H alignment.</div>
-<p><button class="primary" onclick="runOne('ema')">▶ Run EMA 20/50 V2</button></p>
+<p><button class="primary" onclick="runOne('ema')">▶ Run EMA 20/50 V2</button> <a class="detail-link" href="/xauusd-research-v2/ema">📊 Open Detailed Chart</a></p>
 <div id="metrics-ema" class="empty">No result yet.</div><div id="trades-ema"></div></div></details>
 
 <details class="card" open><summary><span>3. Triple RSI — Multi-Horizon</span><span class="badge">RSI5 + RSI14 + RSI50</span><span class="status" id="status-triple">Ready</span></summary>
 <div class="body"><div class="muted">RSI(5) &lt; 45, RSI(14) &lt; 65, RSI(50) &lt; 55; exit when RSI(5) &gt; 90 or RSI(14) &gt; 65. Long only.</div>
-<p><button class="primary" onclick="runOne('triple')">▶ Run Triple RSI</button></p>
+<p><button class="primary" onclick="runOne('triple')">▶ Run Triple RSI</button> <a class="detail-link" href="/xauusd-research-v2/triple">📊 Open Detailed Chart</a></p>
 <div id="metrics-triple" class="empty">No result yet.</div><div id="trades-triple"></div></div></details>
 
 <details class="card" open><summary><span>4. Williams %R Mean Reversion</span><span class="badge">Williams %R(2) + SMA175</span><span class="status" id="status-williams">Ready</span></summary>
 <div class="body"><div class="muted">Williams %R(2) &lt; -98 with Close above SMA175; buy next open; exit when Williams %R &gt; -50.</div>
-<p><button class="primary" onclick="runOne('williams')">▶ Run Williams %R</button></p>
+<p><button class="primary" onclick="runOne('williams')">▶ Run Williams %R</button> <a class="detail-link" href="/xauusd-research-v2/williams">📊 Open Detailed Chart</a></p>
 <div id="metrics-williams" class="empty">No result yet.</div><div id="trades-williams"></div></div></details>
 
 <details class="card" open><summary><span>5. CCI Oversold Recovery</span><span class="badge">CCI(16) -180 → +150</span><span class="status" id="status-cci">Ready</span></summary>
 <div class="body"><div class="muted">CCI(16) crosses back above -180; buy next open; exit when CCI &gt; +150. Long only.</div>
-<p><button class="primary" onclick="runOne('cci')">▶ Run CCI</button></p>
+<p><button class="primary" onclick="runOne('cci')">▶ Run CCI</button> <a class="detail-link" href="/xauusd-research-v2/cci">📊 Open Detailed Chart</a></p>
 <div id="metrics-cci" class="empty">No result yet.</div><div id="trades-cci"></div></div></details>
 </div>
 
