@@ -7,7 +7,11 @@ visible and validated.
 import math
 import pandas as pd
 import time
-from flask import Blueprint, jsonify, request, session
+import io
+import csv
+import json
+from datetime import datetime, timezone
+from flask import Blueprint, jsonify, request, session, send_file
 
 from core.market_data import alpaca_get_bars, get_bars
 from research.xauusd_pullback_v1 import PullbackConfig, backtest as pullback_backtest
@@ -191,6 +195,59 @@ def status():
         return jsonify({"error": "Unauthorized"}), 401
     return jsonify(_safe(_LAST_RUN))
 
+
+
+
+@bp.route("/api/strategy-lab/export", methods=["POST"])
+def export_strategy_lab():
+    """Export Alpaca OHLCV data plus the completed V2 strategy trades as CSV."""
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    symbol = str(body.get("symbol", "GLD")).strip().upper()
+    timeframe = str(body.get("timeframe", "5m")).strip()
+    bars = max(100, min(100000, int(body.get("bars", 5000))))
+    strategies = body.get("strategies", []) or []
+    tf_map = {"5m":"5Min","15m":"15Min","1h":"1Hour","1d":"1Day","1D":"1Day","1w":"1Week","1W":"1Week"}
+    alpaca_tf = tf_map.get(timeframe)
+    if not alpaca_tf:
+        return jsonify({"error": f"Unsupported export timeframe: {timeframe}"}), 400
+    try:
+        raw = alpaca_get_bars(symbol, alpaca_tf, limit=bars)
+        if not raw:
+            return jsonify({"error": f"No Alpaca {timeframe} data returned for {symbol}"}), 404
+        exported = datetime.now(timezone.utc).isoformat()
+        rows = [{
+            "exported_at_utc": exported, "record_type": "market_data", "strategy": "",
+            "symbol": symbol, "timeframe": timeframe, "timestamp": b.get("t", ""),
+            "open": b.get("o"), "high": b.get("h"), "low": b.get("l"),
+            "close": b.get("c"), "volume": b.get("v")
+        } for b in raw]
+        for item in strategies:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("strategy") or item.get("name") or "").strip()
+            for trade in (item.get("trades") or []):
+                if not isinstance(trade, dict):
+                    continue
+                row = {"exported_at_utc": exported, "record_type": "trade",
+                       "strategy": name, "symbol": symbol, "timeframe": timeframe}
+                for key, value in trade.items():
+                    row[str(key)] = json.dumps(value, ensure_ascii=False, separators=(",", ":")) if isinstance(value, (dict, list)) else value
+                rows.append(row)
+        base = ["exported_at_utc","record_type","strategy","symbol","timeframe",
+                "timestamp","open","high","low","close","volume"]
+        extra = sorted({k for row in rows for k in row} - set(base))
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=base + extra, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+        payload = io.BytesIO(output.getvalue().encode("utf-8-sig"))
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        return send_file(payload, mimetype="text/csv; charset=utf-8", as_attachment=True,
+                         download_name=f"{symbol}_strategy_lab_v2_{timeframe}_{stamp}.csv")
+    except Exception as exc:
+        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
 
 @bp.route("/api/xauusd-research-v2/<strategy>", methods=["POST"])
 def run(strategy):
