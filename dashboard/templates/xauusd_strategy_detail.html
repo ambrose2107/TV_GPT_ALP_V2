@@ -55,6 +55,7 @@ async function run(){
   if(!r.ok||d.error)throw new Error(d.error||'Run failed');last=d;render(d);$('export-detail').disabled=false;
   $('detail-status').innerHTML='<span class="good">Completed · '+esc(d.metrics?.num_trades||0)+' trades</span>';
   window.dispatchEvent(new CustomEvent('strategy-result',{detail:{symbol:d.symbol,trades:d.trades||[],chart_timeframe:{{ chart_default_tf|tojson }}}}));
+  if(window.strategyChartLoad) setTimeout(()=>window.strategyChartLoad(),80);
  }catch(e){$('detail-status').innerHTML='<span class="bad">'+esc(e.message)+'</span>'}finally{$('run-detail').disabled=false}
 }
 async function exportRun(){
