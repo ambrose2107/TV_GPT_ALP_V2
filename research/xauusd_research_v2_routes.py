@@ -11,9 +11,9 @@ from flask import Blueprint, jsonify, request, session
 
 from core.market_data import alpaca_get_bars, get_bars
 from research.xauusd_pullback_v1 import PullbackConfig, backtest as pullback_backtest
-from research.xauusd_pullback_v2 import PullbackV2Config
-from research.xauusd_ema_retest_v2 import EMARetestV2Config
-from research.xauusd_triple_rsi_v2 import TripleRSIV2Config
+from research.xauusd_pullback_v2 import PullbackV2Config, backtest as pullback_v2_backtest
+from research.xauusd_ema_retest_v2 import EMARetestV2Config, backtest as ema_v2_backtest
+from research.xauusd_triple_rsi_v2 import TripleRSIV2Config, backtest as triple_v2_backtest
 from research.xauusd_ema_retest_v1 import EMARetestConfig, backtest as ema_backtest
 from research.xauusd_triple_rsi_v1 import TripleRSIConfig, backtest as triple_backtest
 from research.xauusd_confluence_v4 import load_data as v4_load_data
@@ -206,17 +206,17 @@ def run(strategy):
             daily_bars = int(body.get("daily_bars", 250))
             df, source = _daily(symbol, daily_bars)
             cfg = _cfg(TripleRSIV2Config, body.get("config"))
-            result = triple_backtest(df, cfg)
+            result = triple_v2_backtest(df, cfg)
         elif strategy == "pullback":
             bars = int(body.get("n_bars", 5000))
             df, source = _intraday(symbol, bars)
             cfg = _cfg(PullbackV2Config, body.get("config"))
-            result = pullback_backtest(df, cfg)
+            result = pullback_v2_backtest(df, cfg)
         elif strategy == "ema":
             bars = int(body.get("n_bars", 15600))
             df, source = _intraday(symbol, bars)
             cfg = _cfg(EMARetestV2Config, body.get("config"))
-            result = ema_backtest(df, cfg)
+            result = ema_v2_backtest(df, cfg)
         else:
             return jsonify({"error": f"Unknown V2 strategy: {strategy}"}), 400
 
