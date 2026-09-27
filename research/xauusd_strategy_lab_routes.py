@@ -1,8 +1,8 @@
 """Strategy Lab routes.
 
-The stable/original seven-strategy lab is exposed as V2 because it is the
-known-working workspace. The newer three-strategy research lab is exposed as
-V1 so the two can be run independently without changing their backend engines.
+The original seven-strategy lab is preserved as V1.
+V2 is the stable page plus the new research strategies, each runnable
+independently through their direct backend endpoints.
 """
 from flask import Blueprint, render_template, session, redirect, url_for
 
@@ -20,4 +20,4 @@ def xauusd_strategy_lab_v2_page():
 
 @xauusd_strategy_lab_bp.route("/xauusd-strategy-lab-v1")
 def xauusd_strategy_lab_v1_page():
-    return _auth_page("xauusd_strategy_lab_v2.html")
+    return _auth_page("xauusd_strategy_lab_v1_stable.html")
