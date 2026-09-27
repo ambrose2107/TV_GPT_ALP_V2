@@ -26,7 +26,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
 </head>
 <body>
 <h1>Gold Strategy Lab V2 — New Research</h1>
-<div class="muted">V2 is dedicated to the three newer research strategies. The older seven-strategy lab remains available separately in V1.</div>
+<div class="muted">V2 is dedicated to the newer research strategies: Pullback, EMA 20/50, and four screenshot-derived daily strategies. The older seven-strategy lab remains available separately in V1.</div>
 <div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px">
   <a href="/xauusd-strategy-lab-v1" style="padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:#21262d;color:var(--text)">V1 Legacy Lab</a>
   <a href="/xauusd-strategy-lab-v2" style="padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:#238636;color:#fff">V2 New Research</a>
@@ -40,7 +40,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
     <label>Days <input id="days" type="number" min="1" max="770" value="200"></label>
     <label>5m bars <input id="bars" type="number" min="100" max="60000" value="15600"></label>
     <label>Risk % <input id="risk" type="number" min=".01" step=".05" value=".50"></label>
-    <button id="runAll" class="primary">▶ Run All 3</button>
+    <button id="runAll" class="primary">▶ Run All 5</button>
     <button id="downloadCsv" disabled>📥 Download Results CSV</button>
     <button id="clear">Clear Results</button>
     <span id="globalStatus" class="muted">Ready</span>
@@ -74,10 +74,20 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
 <p><button class="primary" onclick="runOne('ema')">▶ Run EMA 20/50 V2</button></p>
 <div id="metrics-ema" class="empty">No result yet.</div><div id="trades-ema"></div></div></details>
 
-<details class="card" open><summary><span>3. Triple RSI V2</span><span class="badge">Daily RSI5 + SMA200</span><span class="status" id="status-triple">Ready</span></summary>
-<div class="body"><div class="muted">Original RSI5/SMA200 setup with reversal confirmation and next-open execution.</div>
-<p><button class="primary" onclick="runOne('triple')">▶ Run Triple RSI V2</button></p>
+<details class="card" open><summary><span>3. Triple RSI — Multi-Horizon</span><span class="badge">RSI5 + RSI14 + RSI50</span><span class="status" id="status-triple">Ready</span></summary>
+<div class="body"><div class="muted">RSI(5) &lt; 45, RSI(14) &lt; 65, RSI(50) &lt; 55; exit when RSI(5) &gt; 90 or RSI(14) &gt; 65. Long only.</div>
+<p><button class="primary" onclick="runOne('triple')">▶ Run Triple RSI</button></p>
 <div id="metrics-triple" class="empty">No result yet.</div><div id="trades-triple"></div></div></details>
+
+<details class="card" open><summary><span>4. Williams %R Mean Reversion</span><span class="badge">Williams %R(2) + SMA175</span><span class="status" id="status-williams">Ready</span></summary>
+<div class="body"><div class="muted">Williams %R(2) &lt; -98 with Close above SMA175; buy next open; exit when Williams %R &gt; -50.</div>
+<p><button class="primary" onclick="runOne('williams')">▶ Run Williams %R</button></p>
+<div id="metrics-williams" class="empty">No result yet.</div><div id="trades-williams"></div></div></details>
+
+<details class="card" open><summary><span>5. CCI Oversold Recovery</span><span class="badge">CCI(16) -180 → +150</span><span class="status" id="status-cci">Ready</span></summary>
+<div class="body"><div class="muted">CCI(16) crosses back above -180; buy next open; exit when CCI &gt; +150. Long only.</div>
+<p><button class="primary" onclick="runOne('cci')">▶ Run CCI</button></p>
+<div id="metrics-cci" class="empty">No result yet.</div><div id="trades-cci"></div></div></details>
 </div>
 
 <script>
@@ -86,7 +96,9 @@ let lastResults={};
 const defs={
  pullback:{name:'Pullback Breakout V2',url:'/api/xauusd-research-v2/pullback'},
  ema:{name:'EMA 20/50 Third Retest V2',url:'/api/xauusd-research-v2/ema'},
- triple:{name:'Triple RSI V2',url:'/api/xauusd-research-v2/triple'}
+ triple:{name:'Triple RSI — Multi-Horizon',url:'/api/xauusd-research-v2/triple'},
+ williams:{name:'Williams %R Mean Reversion',url:'/api/xauusd-research-v2/williams'},
+ cci:{name:'CCI Oversold Recovery',url:'/api/xauusd-research-v2/cci'}
 };
 function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function num(v){return typeof v==='number'&&isFinite(v)?v.toFixed(2):'—';}
@@ -97,7 +109,7 @@ $('symbol').onchange=()=>{if($('symbol').value)$('customSymbol').value='';};
 $('days').oninput=()=>{$('bars').value=Math.min(60000,Math.max(100,Math.round((Number($('days').value)||200)*78)));};
 function payload(k){
  const risk=Number($('risk').value)||.5;
- if(k==='triple') return {symbol:selectedSymbol(),daily_bars:Math.max(250,Number($('days').value)||250),config:{risk_pct:risk}};
+ if(['triple','williams','cci'].includes(k)) return {symbol:selectedSymbol(),daily_bars:Math.max(250,Number($('days').value)||1000),config:{risk_pct:risk}};
  return {symbol:selectedSymbol(),n_bars:bars(),config:{risk_pct:risk}};
 }
 function setStatus(k,s,cls='muted'){$('status-'+k).className='status '+cls;$('status-'+k).textContent=s;}
@@ -130,7 +142,7 @@ async function runOne(k){
 }
 async function runAll(){
  $('runAll').disabled=true;$('globalStatus').textContent='Running all 3 new strategies…';
- for(const k of ['pullback','ema','triple']) await runOne(k);
+ for(const k of ['pullback','ema','triple','williams','cci']) await runOne(k);
  $('runAll').disabled=false;$('globalStatus').innerHTML='<span class="ok">All 3 new strategy runs finished.</span>';
 }
 function csvCell(v){if(v==null)return '';let s=typeof v==='object'?JSON.stringify(v):String(v);return '"'+s.replace(/"/g,'""')+'"';}
