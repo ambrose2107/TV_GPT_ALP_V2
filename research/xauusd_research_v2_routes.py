@@ -11,6 +11,7 @@ import csv
 import json
 import uuid
 import itertools
+import zipfile
 from datetime import datetime, timezone
 from flask import Blueprint, jsonify, request, session, send_file, render_template, redirect, url_for
 
@@ -207,72 +208,98 @@ def optimize():
 
 @bp.route("/api/strategy-lab/export", methods=["POST"])
 def export_strategy_lab():
-    """Export Alpaca OHLCV data plus the completed V2 strategy trades as CSV."""
+    """Export one or many Alpaca OHLCV timeframes plus completed V2 trades."""
     if not session.get("logged_in"):
         return jsonify({"error": "Unauthorized"}), 401
     body = request.get_json(silent=True) or {}
     symbol = str(body.get("symbol", "GLD")).strip().upper()
-    timeframe = str(body.get("timeframe", "5m")).strip()
+    selected = body.get("timeframes")
+    if not selected:
+        selected = [str(body.get("timeframe", "5m")).strip()]
+    if isinstance(selected, str):
+        selected = [selected]
+    aliases = {"5m":"5m","15m":"15m","1h":"1h","1d":"1d","1D":"1d","1w":"1w","1W":"1w"}
+    timeframes = []
+    for tf in selected:
+        key = aliases.get(str(tf).strip())
+        if key and key not in timeframes:
+            timeframes.append(key)
+    if not timeframes:
+        return jsonify({"error": "Select at least one supported timeframe: 5m, 15m, 1H, 1D, 1W"}), 400
     bars = max(100, min(100000, int(body.get("bars", 5000))))
     strategies = body.get("strategies", []) or []
-    tf_map = {"5m":"5Min","15m":"15Min","1h":"1Hour","1d":"1Day","1D":"1Day","1w":"1Week","1W":"1Week"}
-    alpaca_tf = tf_map.get(timeframe)
-    if not alpaca_tf:
-        return jsonify({"error": f"Unsupported export timeframe: {timeframe}"}), 400
-    try:
-        run_id = str(body.get("run_id", "")).strip()
+    run_id = str(body.get("run_id", "")).strip()
+    saved = _RUN_DATA.get(run_id)
+    exported = datetime.now(timezone.utc).isoformat()
+
+    def rows_for_tf(tf):
         raw = None
-        if run_id and run_id in _RUN_DATA:
-            saved = _RUN_DATA[run_id]["df"]
-            if timeframe == "5m":
-                z = saved
-            elif timeframe == "15m":
-                z = saved.resample("15min", label="left", closed="left").agg({"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"}).dropna()
-            elif timeframe == "1h":
-                z = saved.resample("1h", label="left", closed="left").agg({"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"}).dropna()
-            elif timeframe in ("1d","1D"):
-                z = saved.resample("1D").agg({"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"}).dropna()
+        if saved:
+            saved_df = saved["df"]
+            # Preserve the exact run bars for the native timeframe. Derived
+            # timeframes are aggregated from those exact bars when possible.
+            native = str(saved.get("native_tf", "")).lower()
+            if tf == native:
+                z = saved_df
+            elif tf == "15m":
+                z = saved_df.resample("15min", label="left", closed="left").agg({"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"}).dropna()
+            elif tf == "1h":
+                z = saved_df.resample("1h", label="left", closed="left").agg({"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"}).dropna()
+            elif tf == "1d":
+                z = saved_df.resample("1D").agg({"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"}).dropna()
+            elif tf == "1w":
+                z = saved_df.resample("W-MON", label="left", closed="left").agg({"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"}).dropna()
             else:
                 z = None
             if z is not None:
+                z = z.tail(bars)
                 raw = [{"t":ts.isoformat(),"o":float(row.Open),"h":float(row.High),"l":float(row.Low),"c":float(row.Close),"v":float(row.Volume)} for ts,row in z.iterrows()]
         if raw is None:
-            raw = alpaca_get_bars(symbol, alpaca_tf, limit=bars)
+            tf_map = {"5m":"5Min","15m":"15Min","1h":"1Hour","1d":"1Day","1w":"1Week"}
+            raw = alpaca_get_bars(symbol, tf_map[tf], limit=bars)
+            raw = raw[-bars:]
         if not raw:
-            return jsonify({"error": f"No Alpaca {timeframe} data returned for {symbol}"}), 404
-        raw = raw[-bars:]
-        exported = datetime.now(timezone.utc).isoformat()
+            raise ValueError(f"No Alpaca {tf} data returned for {symbol}")
         rows = [{
-            "exported_at_utc": exported, "record_type": "market_data", "strategy": "",
-            "symbol": symbol, "timeframe": timeframe, "timestamp": b.get("t", ""),
-            "open": b.get("o"), "high": b.get("h"), "low": b.get("l"),
-            "close": b.get("c"), "volume": b.get("v")
+            "exported_at_utc":exported,"record_type":"market_data","strategy":"",
+            "symbol":symbol,"timeframe":tf,"timestamp":b.get("t",""),
+            "open":b.get("o"),"high":b.get("h"),"low":b.get("l"),"close":b.get("c"),"volume":b.get("v")
         } for b in raw]
         for item in strategies:
-            if not isinstance(item, dict):
-                continue
-            name = str(item.get("strategy") or item.get("name") or "").strip()
-            for trade in (item.get("trades") or []):
-                if not isinstance(trade, dict):
-                    continue
-                row = {"exported_at_utc": exported, "record_type": "trade",
-                       "strategy": name, "symbol": symbol, "timeframe": timeframe}
-                for key, value in trade.items():
-                    row[str(key)] = json.dumps(value, ensure_ascii=False, separators=(",", ":")) if isinstance(value, (dict, list)) else value
+            if not isinstance(item,dict): continue
+            name=str(item.get("strategy") or item.get("name") or "").strip()
+            for trade in item.get("trades") or []:
+                if not isinstance(trade,dict): continue
+                row={"exported_at_utc":exported,"record_type":"trade","strategy":name,"symbol":symbol,"timeframe":tf}
+                for key,value in trade.items():
+                    row[str(key)] = json.dumps(value,ensure_ascii=False,separators=(",",":")) if isinstance(value,(dict,list)) else value
                 rows.append(row)
-        base = ["exported_at_utc","record_type","strategy","symbol","timeframe",
-                "timestamp","open","high","low","close","volume"]
-        extra = sorted({k for row in rows for k in row} - set(base))
-        output = io.StringIO()
-        writer = csv.DictWriter(output, fieldnames=base + extra, extrasaction="ignore")
-        writer.writeheader()
-        writer.writerows(rows)
-        payload = io.BytesIO(output.getvalue().encode("utf-8-sig"))
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        return send_file(payload, mimetype="text/csv; charset=utf-8", as_attachment=True,
-                         download_name=f"{symbol}_strategy_lab_v2_{timeframe}_{stamp}.csv")
+        return rows
+
+    try:
+        files = {}
+        base=["exported_at_utc","record_type","strategy","symbol","timeframe","timestamp","open","high","low","close","volume"]
+        for tf in timeframes:
+            rows=rows_for_tf(tf)
+            extra=sorted({k for row in rows for k in row}-set(base))
+            output=io.StringIO()
+            writer=csv.DictWriter(output,fieldnames=base+extra,extrasaction="ignore")
+            writer.writeheader();writer.writerows(rows)
+            files[f"{symbol}_strategy_lab_v2_{tf}.csv"]=output.getvalue().encode("utf-8-sig")
+        stamp=datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        if len(files)==1:
+            filename,payload=next(iter(files.items()))
+            return send_file(io.BytesIO(payload),mimetype="text/csv; charset=utf-8",as_attachment=True,
+                             download_name=filename.replace(".csv",f"_{stamp}.csv"))
+        archive=io.BytesIO()
+        with zipfile.ZipFile(archive,"w",zipfile.ZIP_DEFLATED) as zf:
+            for filename,payload in files.items():
+                zf.writestr(filename,payload)
+        archive.seek(0)
+        return send_file(archive,mimetype="application/zip",as_attachment=True,
+                         download_name=f"{symbol}_strategy_lab_v2_multitimeframe_{stamp}.zip")
     except Exception as exc:
-        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
+        return jsonify({"error":f"{type(exc).__name__}: {exc}"}),500
 
 @bp.route("/api/xauusd-research-v2/<strategy>", methods=["POST"])
 def run(strategy):
@@ -327,7 +354,7 @@ def run(strategy):
             )
 
         run_id = uuid.uuid4().hex
-        _RUN_DATA[run_id] = {"df":df.copy(),"symbol":symbol,"source":source,"created":time.time()}
+        _RUN_DATA[run_id] = {"df":df.copy(),"symbol":symbol,"source":source,"created":time.time(),"native_tf":("1d" if strategy in ("triple","williams","cci","multi_rsi") else "5m")}
         if len(_RUN_DATA) > 20:
             for key,_ in sorted(_RUN_DATA.items(),key=lambda kv:kv[1]["created"])[:5]:
                 _RUN_DATA.pop(key,None)
