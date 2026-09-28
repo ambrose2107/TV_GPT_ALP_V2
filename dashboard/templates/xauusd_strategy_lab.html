@@ -190,7 +190,7 @@ async function exportExcel(){
  if(!selected.length){$('exportStatus').textContent='Select at least one timeframe.';return;}
  $('exportExcel').disabled=true;$('exportStatus').textContent='Building Excel workbook…';
  try{
-  const completed=Object.entries(lastResults||{}).map(([key,v])=>({strategy:v.strategy||key,trades:v.trades||[]}));
+  const completed=Object.entries(lastResults||{}).map(([key,v])=>({strategy:v.strategy||key,run_id:v.run_id||'',trades:v.trades||[]}));
   const first=lastResults&&lastResults[Object.keys(lastResults)[0]];
   const r=await fetch('/api/strategy-lab/export-excel',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:selectedSymbol(),timeframes:selected,bars:Math.min(100000,Math.max(100,Number($('exportBars').value)||5000)),run_id:first?.run_id||'',strategies:completed})});
   if(!r.ok){const d=await r.json();throw new Error(d.error||'Excel export failed')}
@@ -200,7 +200,7 @@ async function exportExcel(){
  finally{$('exportExcel').disabled=false;}
 }
 async function exportMarketDataWithTrades(){
- const completed=Object.entries(lastResults).filter(([k,d])=>d&&!d.error).map(([k,d])=>({strategy:defs[k].name,trades:d.trades||[]}));
+ const completed=Object.entries(lastResults).filter(([k,d])=>d&&!d.error).map(([k,d])=>({strategy:defs[k].name,run_id:d.run_id||'',trades:d.trades||[]}));
  if(!completed.length){$('exportStatus').textContent='Run at least one V2 strategy first.';return;}
  const btn=$('exportMarketTrades');btn.disabled=true;$('exportStatus').textContent='Downloading Alpaca market data…';
  try{
