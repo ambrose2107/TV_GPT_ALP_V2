@@ -206,6 +206,58 @@ def optimize():
         return jsonify({"error":f"{type(exc).__name__}: {exc}"}),500
 
 
+@bp.route("/api/strategy-lab/export-excel", methods=["POST"])
+def export_strategy_lab_excel():
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    symbol = str(body.get("symbol", "SPY")).strip().upper()
+    selected = body.get("timeframes") or ["5m", "15m", "1h", "1d"]
+    if isinstance(selected, str): selected = [selected]
+    aliases = {"5m":"5m","15m":"15m","1h":"1h","1d":"1d","1D":"1d","1w":"1w","1W":"1w"}
+    timeframes = list(dict.fromkeys(aliases[str(x).strip()] for x in selected if str(x).strip() in aliases))
+    if not timeframes: return jsonify({"error":"Select at least one timeframe."}), 400
+    bars = max(100, min(100000, int(body.get("bars", 5000))))
+    strategies = body.get("strategies", []) or []
+    run_id = str(body.get("run_id", "")).strip()
+    saved = _RUN_DATA.get(run_id)
+    exported = datetime.now(timezone.utc).isoformat()
+
+    def frame(tf):
+        z = None
+        if saved:
+            d = saved["df"]; native = str(saved.get("native_tf", "")).lower()
+            if tf == native: z = d
+            elif tf == "15m": z = d.resample("15min", label="left", closed="left").agg({"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"}).dropna()
+            elif tf == "1h": z = d.resample("1h", label="left", closed="left").agg({"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"}).dropna()
+            elif tf == "1d": z = d.resample("1D").agg({"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"}).dropna()
+            elif tf == "1w": z = d.resample("W-MON", label="left", closed="left").agg({"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"}).dropna()
+            if z is not None: z = z.tail(bars)
+        if z is None:
+            mp={"5m":"5Min","15m":"15Min","1h":"1Hour","1d":"1Day","1w":"1Week"}
+            z = _bars_to_df(alpaca_get_bars(symbol, mp[tf], limit=bars), symbol, tf)
+        return z.reset_index().rename(columns={"index":"timestamp"})
+
+    try:
+        out = io.BytesIO()
+        with pd.ExcelWriter(out, engine="openpyxl") as writer:
+            pd.DataFrame([{"symbol":symbol,"exported_at_utc":exported,"run_id":run_id,"timeframes":", ".join(timeframes)}]).to_excel(writer, sheet_name="README", index=False)
+            for tf in timeframes:
+                frame(tf).to_excel(writer, sheet_name=tf.upper(), index=False)
+            trades=[]
+            for item in strategies:
+                if isinstance(item,dict):
+                    for t in item.get("trades") or []:
+                        if isinstance(t,dict):
+                            row={"strategy":item.get("strategy") or item.get("name") or "","symbol":symbol}
+                            row.update(t); trades.append(row)
+            pd.DataFrame(trades or [{"strategy":"","symbol":symbol,"note":"No closed trades"}]).to_excel(writer, sheet_name="Trades", index=False)
+        out.seek(0)
+        stamp=datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        return send_file(out, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", as_attachment=True, download_name=f"{symbol}_strategy_research_{stamp}.xlsx")
+    except Exception as exc:
+        return jsonify({"error":f"{type(exc).__name__}: {exc}"}), 500
+
 @bp.route("/api/strategy-lab/export", methods=["POST"])
 def export_strategy_lab():
     """Export one or many Alpaca OHLCV timeframes plus completed V2 trades."""
