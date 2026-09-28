@@ -31,6 +31,27 @@ _LAST_RUN = {"status": "never", "updated": None, "summary": {}}
 _RUN_DATA = {}
 
 
+def _excel_safe_value(v):
+    """Excel cannot store timezone-aware datetime values; normalize them to UTC-naive."""
+    if isinstance(v, pd.Timestamp):
+        if v.tzinfo is not None:
+            return v.tz_convert("UTC").tz_localize(None)
+        return v
+    if isinstance(v, datetime):
+        if v.tzinfo is not None:
+            return v.astimezone(timezone.utc).replace(tzinfo=None)
+        return v
+    return v
+
+
+def _excel_safe_df(df):
+    """Return a copy safe for openpyxl, including object columns containing tz datetimes."""
+    out = df.copy()
+    for col in out.columns:
+        out[col] = out[col].map(_excel_safe_value)
+    return out
+
+
 def _safe(v):
     if isinstance(v, dict):
         return {str(k): _safe(x) for k, x in v.items()}
@@ -236,7 +257,7 @@ def export_strategy_lab_excel():
         if z is None:
             mp={"5m":"5Min","15m":"15Min","1h":"1Hour","1d":"1Day","1w":"1Week"}
             z = _bars_to_df(alpaca_get_bars(symbol, mp[tf], limit=bars), symbol, tf)
-        return z.reset_index().rename(columns={"index":"timestamp"})
+        return _excel_safe_df(z.reset_index().rename(columns={"index":"timestamp"}))
 
     try:
         out = io.BytesIO()
@@ -251,7 +272,7 @@ def export_strategy_lab_excel():
                         if isinstance(t,dict):
                             row={"strategy":item.get("strategy") or item.get("name") or "","symbol":symbol}
                             row.update(t); trades.append(row)
-            pd.DataFrame(trades or [{"strategy":"","symbol":symbol,"note":"No closed trades"}]).to_excel(writer, sheet_name="Trades", index=False)
+            _excel_safe_df(pd.DataFrame(trades or [{"strategy":"","symbol":symbol,"note":"No closed trades"}])).to_excel(writer, sheet_name="Trades", index=False)
         out.seek(0)
         stamp=datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         return send_file(out, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", as_attachment=True, download_name=f"{symbol}_strategy_research_{stamp}.xlsx")
