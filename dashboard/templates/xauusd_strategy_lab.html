@@ -41,7 +41,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
     <label>5m bars <input id="bars" type="number" min="100" max="60000" value="15600"></label>
     <label>Risk % <input id="risk" type="number" min=".01" step=".05" value=".50"></label>
     <button id="runAll" class="primary">▶ Run All 5</button>
-    <button id="downloadCsv" disabled>📥 Download Results CSV</button>
+    <button id="downloadCsv" disabled>📥 Download Results CSV</button>\n    <button id="downloadJson" disabled>🧠 Download AI/ GitHub JSON</button>
     <button id="clear">Clear Results</button>
     <span id="globalStatus" class="muted">Ready</span>
   </div>
@@ -147,7 +147,7 @@ async function runOne(k){
   const r=await fetch(defs[k].url,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload(k))});
   const raw=await r.text();let d;try{d=JSON.parse(raw)}catch(_){d={error:raw||'Empty response'};}
   if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
-  renderMetrics(k,d);updateComparison(k,'Done',d);lastResults[k]=d;setStatus(k,'Done','ok');$('downloadCsv').disabled=false;return d;
+  renderMetrics(k,d);updateComparison(k,'Done',d);lastResults[k]=d;setStatus(k,'Done','ok');$('downloadCsv').disabled=false;$('downloadJson').disabled=false;return d;
  }catch(e){
   $('metrics-'+k).innerHTML='<div class="bad">Error: '+esc(e.message)+'</div>';updateComparison(k,'Failed',{error:e.message});setStatus(k,'Failed','bad');lastResults[k]={error:e.message};$('downloadCsv').disabled=false;return null;
  }
@@ -158,6 +158,25 @@ async function runAll(){
  $('runAll').disabled=false;$('globalStatus').innerHTML='<span class="ok">All 5 new strategy runs finished.</span>';
 }
 function csvCell(v){if(v==null)return '';let s=typeof v==='object'?JSON.stringify(v):String(v);return '"'+s.replace(/"/g,'""')+'"';}
+function downloadResultsJson(){
+ const completed={};
+ for(const k of Object.keys(defs)){
+  const d=lastResults[k]; if(!d) continue;
+  completed[k]=d;
+ }
+ if(!Object.keys(completed).length){$('globalStatus').textContent='Run a strategy before exporting results.';return;}
+ const payload={
+  schema_version:'strategy-lab-v2-readable-1',
+  export_version:'V2',
+  exported_at_utc:new Date().toISOString(),
+  symbol:selectedSymbol(),
+  strategies:completed,
+  note:'UTF-8 JSON intended for GitHub/AI analysis. Contains summary metrics and individual closed trades from the completed Strategy Lab runs.'
+ };
+ const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8;'});
+ const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=selectedSymbol()+'_strategy_lab_v2_readable_'+new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)+'.json';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(a.href);
+ $('globalStatus').innerHTML='<span class="ok">AI/GitHub-readable JSON exported.</span>';
+}
 function downloadResultsCsv(){
  const rows=[['exported_at_utc','record_type','strategy','status','symbol','data_source','metric','value']];
  const now=new Date().toISOString();
@@ -170,7 +189,7 @@ function downloadResultsCsv(){
  if(rows.length===1){$('globalStatus').textContent='Run a strategy before exporting results.';return;}
  const csv=rows.map(r=>r.map(csvCell).join(',')).join('\n');
  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});
- const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='gold_strategy_lab_v2_results_'+new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)+'.csv';a.click();URL.revokeObjectURL(a.href);
+ const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=selectedSymbol()+'_strategy_lab_v2_results_'+new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)+'.csv';a.click();URL.revokeObjectURL(a.href);
  $('globalStatus').innerHTML='<span class="ok">V2 results CSV exported.</span>';
 }
 async function runOptimizer(){
@@ -213,11 +232,11 @@ async function exportMarketDataWithTrades(){
  }catch(e){$('exportStatus').innerHTML='<span class="bad">Export error: '+esc(e.message)+'</span>';}
  finally{btn.disabled=false;}
 }
-$('runAll').onclick=runAll;$('runOptimizer').onclick=runOptimizer;$('downloadCsv').onclick=downloadResultsCsv;$('exportExcel').onclick=exportExcel;$('exportMarketTrades').onclick=exportMarketDataWithTrades;
+$('runAll').onclick=runAll;$('runOptimizer').onclick=runOptimizer;$('downloadCsv').onclick=downloadResultsCsv;$('downloadJson').onclick=downloadResultsJson;$('exportExcel').onclick=exportExcel;$('exportMarketTrades').onclick=exportMarketDataWithTrades;
 $('clear').onclick=()=>{
  lastResults={};document.querySelectorAll('#comparison tr[data-k]').forEach(x=>x.remove());
  for(const k of Object.keys(defs)){setStatus(k,'Ready');$('metrics-'+k).innerHTML='<div class="empty">No result yet.</div>';$('trades-'+k).innerHTML='';}
- $('downloadCsv').disabled=true;$('globalStatus').textContent='Ready';$('exportStatus').textContent='Exports selected ticker market data plus V2 trades.';
+ $('downloadCsv').disabled=true;$('downloadJson').disabled=true;$('globalStatus').textContent='Ready';$('exportStatus').textContent='Exports selected ticker market data plus V2 trades.';
 };
 </script>
 </body>
