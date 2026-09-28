@@ -52,7 +52,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
     <div class="controls">
       <label>Export TFs <select id="exportTfs" multiple size="5" style="min-width:85px"><option value="5m" selected>5m</option><option value="15m" selected>15m</option><option value="1h" selected>1H</option><option value="1d" selected>1D</option><option value="1w">1W</option></select></label>
       <label>Bars / TF <input id="exportBars" type="number" min="100" max="100000" value="5000" style="width:95px"></label>
-      <button id="exportMarketTrades">📦 Export Selected TF Data + Trades</button>
+      <button id="exportMarketTrades">📦 Export Selected TF Data + Trades</button> <button id="exportExcel">📊 Export One Excel Workbook</button>
       <span id="exportStatus" class="muted">Select one or more timeframes. Multiple TFs download as one ZIP.</span>
     </div>
   </div>
@@ -185,6 +185,20 @@ async function runOptimizer(){
  }catch(e){$('optimizerStatus').innerHTML='<span class="bad">Optimizer error: '+esc(e.message)+'</span>';}
  finally{btn.disabled=false;}
 }
+async function exportExcel(){
+ const selected=Array.from($('exportTfs').selectedOptions).map(o=>o.value);
+ if(!selected.length){$('exportStatus').textContent='Select at least one timeframe.';return;}
+ $('exportExcel').disabled=true;$('exportStatus').textContent='Building Excel workbook…';
+ try{
+  const completed=Object.entries(lastResults||{}).map(([key,v])=>({strategy:v.strategy||key,trades:v.trades||[]}));
+  const first=lastResults&&lastResults[Object.keys(lastResults)[0]];
+  const r=await fetch('/api/strategy-lab/export-excel',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:selectedSymbol(),timeframes:selected,bars:Math.min(100000,Math.max(100,Number($('exportBars').value)||5000)),run_id:first?.run_id||'',strategies:completed})});
+  if(!r.ok){const d=await r.json();throw new Error(d.error||'Excel export failed')}
+  const blob=await r.blob(),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=selectedSymbol()+'_strategy_research.xlsx';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(a.href);
+  $('exportStatus').innerHTML='<span class="ok">Excel workbook exported: '+selected.join(', ')+'</span>';
+ }catch(e){$('exportStatus').textContent='Export error: '+e.message}
+ finally{$('exportExcel').disabled=false;}
+}
 async function exportMarketDataWithTrades(){
  const completed=Object.entries(lastResults).filter(([k,d])=>d&&!d.error).map(([k,d])=>({strategy:defs[k].name,trades:d.trades||[]}));
  if(!completed.length){$('exportStatus').textContent='Run at least one V2 strategy first.';return;}
@@ -199,7 +213,7 @@ async function exportMarketDataWithTrades(){
  }catch(e){$('exportStatus').innerHTML='<span class="bad">Export error: '+esc(e.message)+'</span>';}
  finally{btn.disabled=false;}
 }
-$('runAll').onclick=runAll;$('runOptimizer').onclick=runOptimizer;$('downloadCsv').onclick=downloadResultsCsv;$('exportMarketTrades').onclick=exportMarketDataWithTrades;
+$('runAll').onclick=runAll;$('runOptimizer').onclick=runOptimizer;$('downloadCsv').onclick=downloadResultsCsv;$('exportExcel').onclick=exportExcel;$('exportMarketTrades').onclick=exportMarketDataWithTrades;
 $('clear').onclick=()=>{
  lastResults={};document.querySelectorAll('#comparison tr[data-k]').forEach(x=>x.remove());
  for(const k of Object.keys(defs)){setStatus(k,'Ready');$('metrics-'+k).innerHTML='<div class="empty">No result yet.</div>';$('trades-'+k).innerHTML='';}
