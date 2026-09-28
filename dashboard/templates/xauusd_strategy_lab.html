@@ -26,7 +26,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
 </head>
 <body>
 <h1>Gold Strategy Lab V2 — New Research</h1>
-<div class="muted">V2 is dedicated to the newer research strategies: Pullback, EMA 20/50, and four screenshot-derived daily strategies. The older seven-strategy lab remains available separately in V1.</div>
+<div class="muted">V2 is dedicated to the newer research strategies, including the BOSWaves-derived Trend Target Ribbon. The older seven-strategy lab remains available separately in V1.</div>
 <div style="display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px">
   <a href="/xauusd-strategy-lab-v1" style="padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:#21262d;color:var(--text)">V1 Legacy Lab</a>
   <a href="/xauusd-strategy-lab-v2" style="padding:8px 12px;border:1px solid var(--line);border-radius:6px;background:#238636;color:#fff">V2 New Research</a>
@@ -40,7 +40,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
     <label>Days <input id="days" type="number" min="1" max="770" value="200"></label>
     <label>5m bars <input id="bars" type="number" min="100" max="60000" value="15600"></label>
     <label>Risk % <input id="risk" type="number" min=".01" step=".05" value=".50"></label>
-    <button id="runAll" class="primary">▶ Run All 5</button>
+    <button id="runAll" class="primary">▶ Run All 6</button>
     <button id="downloadCsv" disabled>📥 Download Results CSV</button>\n    <button id="downloadJson" disabled>🧠 Download AI/ GitHub JSON</button>
     <button id="clear">Clear Results</button>
     <span id="globalStatus" class="muted">Ready</span>
@@ -100,6 +100,12 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
 <div class="body"><div class="muted">CCI(16) crosses back above -180; buy next open; exit when CCI &gt; +150. Long only.</div>
 <p><button class="primary" onclick="runOne('cci')">▶ Run CCI</button> <a class="detail-link" href="/xauusd-research-v2/cci">📊 Open Detailed Chart</a></p>
 <div id="metrics-cci" class="empty">No result yet.</div><div id="trades-cci"></div></div></details>
+<details class="card" open><summary><span>6. Trend Target Ribbon V2</span><span class="badge">ALMA + ATR + Deviation + Targets</span><span class="status" id="status-trend_ribbon">Ready</span></summary>
+<div class="body"><div class="muted">BOSWaves-derived ALMA trend flip with slope/deviation confirmation, structure/ATR stop and 1R–4R target diagnostics. P&L is plotted against time below.</div>
+<p><button class="primary" onclick="runOne('trend_ribbon')">▶ Run Trend Target Ribbon V2</button> <a class="detail-link" href="/xauusd-research-v2/trend_ribbon">📊 Open Detailed Chart</a></p>
+<div id="metrics-trend_ribbon" class="empty">No result yet.</div>
+<div id="pnl-trend_ribbon" class="empty">P&amp;L trend will appear after the run.</div>
+<div id="trades-trend_ribbon"></div></div></details>
 </div>
 
 <script>
@@ -110,7 +116,8 @@ const defs={
  ema:{name:'EMA 20/50 Third Retest V2',url:'/api/xauusd-research-v2/ema'},
  triple:{name:'Triple RSI — Multi-Horizon',url:'/api/xauusd-research-v2/triple'},
  williams:{name:'Williams %R Mean Reversion',url:'/api/xauusd-research-v2/williams'},
- cci:{name:'CCI Oversold Recovery',url:'/api/xauusd-research-v2/cci'}
+ cci:{name:'CCI Oversold Recovery',url:'/api/xauusd-research-v2/cci'},
+ trend_ribbon:{name:'Trend Target Ribbon V2',url:'/api/xauusd-research-v2/trend_ribbon'}
 };
 function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function num(v){return typeof v==='number'&&isFinite(v)?v.toFixed(2):'—';}
@@ -125,6 +132,16 @@ function payload(k){
  return {symbol:selectedSymbol(),n_bars:bars(),config:{risk_pct:risk}};
 }
 function setStatus(k,s,cls='muted'){$('status-'+k).className='status '+cls;$('status-'+k).textContent=s;}
+function renderPnl(k,d){
+ const box=$('pnl-'+k);const pts=d.pnl_curve||[];
+ if(!pts.length){box.innerHTML='<div class="muted">No P&L curve returned.</div>';return;}
+ const w=900,h=210,pad=28,vals=pts.map(p=>Number(p.pnl)||0),min=Math.min(0,...vals),max=Math.max(0,...vals),range=(max-min)||1;
+ const xy=(v,i)=>({x:pad+(w-2*pad)*(i/Math.max(1,pts.length-1)),y:h-pad-(h-2*pad)*((v-min)/range)});
+ const poly=vals.map((v,i)=>{const q=xy(v,i);return q.x.toFixed(1)+','+q.y.toFixed(1)}).join(' ');
+ const zero=xy(0,0).y;
+ const first=pts[0],last=pts[pts.length-1];
+ box.innerHTML='<div style="font-weight:bold;margin-bottom:6px">📈 P&L vs Time</div><div style="overflow:auto"><svg viewBox="0 0 '+w+' '+h+'" width="100%" height="210" role="img" aria-label="P&L trend over time"><line x1="'+pad+'" y1="'+zero+'" x2="'+(w-pad)+'" y2="'+zero+'" stroke="var(--line)" stroke-dasharray="4 4"/><polyline points="'+poly+'" fill="none" stroke="var(--good)" stroke-width="2"/><text x="'+pad+'" y="16" fill="var(--muted)" font-size="11">Start</text><text x="'+(w-pad)+'" y="16" text-anchor="end" fill="var(--muted)" font-size="11">End: '+esc(num(last.pnl))+' / '+esc(num(last.return_pct))+'%</text></svg></div><div class="muted">From '+esc(first.timestamp)+' to '+esc(last.timestamp)+' | P&amp;L '+esc(num(last.pnl))+' | Return '+esc(num(last.return_pct))+'%</div></div>';
+}
 function renderMetrics(k,d){
  const m=d.metrics||{};
  const keys=['num_trades','win_rate','profit_factor','expectancy_R','total_R','total_return_pct','max_drawdown_pct','final_equity'];
@@ -147,14 +164,14 @@ async function runOne(k){
   const r=await fetch(defs[k].url,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload(k))});
   const raw=await r.text();let d;try{d=JSON.parse(raw)}catch(_){d={error:raw||'Empty response'};}
   if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
-  renderMetrics(k,d);updateComparison(k,'Done',d);lastResults[k]=d;setStatus(k,'Done','ok');$('downloadCsv').disabled=false;$('downloadJson').disabled=false;return d;
+  renderMetrics(k,d);renderPnl(k,d);updateComparison(k,'Done',d);lastResults[k]=d;setStatus(k,'Done','ok');$('downloadCsv').disabled=false;$('downloadJson').disabled=false;return d;
  }catch(e){
   $('metrics-'+k).innerHTML='<div class="bad">Error: '+esc(e.message)+'</div>';updateComparison(k,'Failed',{error:e.message});setStatus(k,'Failed','bad');lastResults[k]={error:e.message};$('downloadCsv').disabled=false;return null;
  }
 }
 async function runAll(){
- $('runAll').disabled=true;$('globalStatus').textContent='Running all 3 new strategies…';
- for(const k of ['pullback','ema','triple','williams','cci']) await runOne(k);
+ $('runAll').disabled=true;$('globalStatus').textContent='Running all 6 new strategies…';
+ for(const k of ['pullback','ema','triple','williams','cci','trend_ribbon']) await runOne(k);
  $('runAll').disabled=false;$('globalStatus').innerHTML='<span class="ok">All 5 new strategy runs finished.</span>';
 }
 function csvCell(v){if(v==null)return '';let s=typeof v==='object'?JSON.stringify(v):String(v);return '"'+s.replace(/"/g,'""')+'"';}
@@ -235,7 +252,7 @@ async function exportMarketDataWithTrades(){
 $('runAll').onclick=runAll;$('runOptimizer').onclick=runOptimizer;$('downloadCsv').onclick=downloadResultsCsv;$('downloadJson').onclick=downloadResultsJson;$('exportExcel').onclick=exportExcel;$('exportMarketTrades').onclick=exportMarketDataWithTrades;
 $('clear').onclick=()=>{
  lastResults={};document.querySelectorAll('#comparison tr[data-k]').forEach(x=>x.remove());
- for(const k of Object.keys(defs)){setStatus(k,'Ready');$('metrics-'+k).innerHTML='<div class="empty">No result yet.</div>';$('trades-'+k).innerHTML='';}
+ for(const k of Object.keys(defs)){setStatus(k,'Ready');$('metrics-'+k).innerHTML='<div class="empty">No result yet.</div>';if($('pnl-'+k))$('pnl-'+k).innerHTML='<div class="empty">P&amp;L trend will appear after the run.</div>';$('trades-'+k).innerHTML='';}
  $('downloadCsv').disabled=true;$('downloadJson').disabled=true;$('globalStatus').textContent='Ready';$('exportStatus').textContent='Exports selected ticker market data plus V2 trades.';
 };
 </script>
