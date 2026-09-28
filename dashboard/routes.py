@@ -5,7 +5,7 @@ from flask import Blueprint, render_template, jsonify, request, session, redirec
 import io, json, csv
 from datetime import datetime, timezone
 from core.database import (get_recent_trades, get_recent_webhooks, get_closed_positions,
-                            get_closed_summary, log_closed_position)
+                            get_all_trades, get_all_closed_positions, get_closed_summary, log_closed_position)
 from core.config import Config
 from core.telegram import send_telegram, alert_kill_switch
 from core.excel_export import export_trades_excel
@@ -244,6 +244,28 @@ def api_closed_positions():
     return jsonify({
         "positions": get_closed_positions(200),
         "summary":   get_closed_summary(),
+    })
+
+@dashboard_bp.route("/api/strategy-lab/alpaca-trades")
+def api_strategy_lab_alpaca_trades():
+    """Return the full locally stored Alpaca execution/closed-trade history for AI exports."""
+    e = _auth()
+    if e: return e
+    sync_error = None
+    try:
+        from core.order_sync import sync_alpaca_orders
+        sync_alpaca_orders(days=30)
+    except Exception as ex:
+        sync_error = str(ex)
+        logger.warning(f"Strategy Lab Alpaca export sync skipped: {ex}")
+    closed_summary = get_closed_summary()
+    return jsonify({
+        "provider": "Alpaca",
+        "synced_days": 30,
+        "sync_error": sync_error,
+        "order_log": get_all_trades(),
+        "closed_positions": get_all_closed_positions(),
+        "closed_metrics": closed_summary,
     })
 
 @dashboard_bp.route("/api/close_position", methods=["POST"])
