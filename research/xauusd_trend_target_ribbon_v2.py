@@ -60,7 +60,7 @@ def _alma(series, length, offset, sigma):
 def build_signals(df, cfg=TrendTargetRibbonConfig()):
     x = df[["Open", "High", "Low", "Close", "Volume"]].copy().sort_index()
     x["alma"] = _alma(x.Close, cfg.alma_len, cfg.alma_offset, cfg.alma_sigma)
-    x["dev"] = x.Close.rolling(cfg.dev_len, min_periods=cfg.dev_len).std()
+    x["dev"] = x.Close.rolling(cfg.dev_len, min_periods=cfg.dev_len).std(ddof=0)
     x["atr"] = _atr(x, cfg.atr_len)
     x["slope_score"] = (
         (x.alma - x.alma.shift(cfg.slope_len)) / x.atr.replace(0, np.nan)
@@ -134,9 +134,8 @@ def build_signals(df, cfg=TrendTargetRibbonConfig()):
 
     # Remove invalid flips rather than opening positions with an undefined stop.
     valid = x.sl.notna()
-    x.loc[x.signal != 0, "signal"] = np.where(
-        (x.signal != 0) & valid, x.signal, 0
-    )
+    invalid_flip = (x.signal != 0) & ~valid
+    x.loc[invalid_flip, "signal"] = 0
     return x
 
 
