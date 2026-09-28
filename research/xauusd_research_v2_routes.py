@@ -240,29 +240,45 @@ def export_strategy_lab_excel():
     if not timeframes: return jsonify({"error":"Select at least one timeframe."}), 400
     bars = max(100, min(100000, int(body.get("bars", 5000))))
     strategies = body.get("strategies", []) or []
-    run_id = str(body.get("run_id", "")).strip()
-    saved = _RUN_DATA.get(run_id)
+    # Each strategy run gets its own run_id. Prefer an exact cached run only
+    # when its native timeframe matches the requested sheet; otherwise pull
+    # the requested timeframe directly so a 5m run cannot silently masquerade
+    # as exact 1D/1W data.
+    run_ids = [str(x.get("run_id", "")).strip() for x in strategies if isinstance(x, dict)]
+    run_cache = {rid: _RUN_DATA.get(rid) for rid in run_ids if rid}
     exported = datetime.now(timezone.utc).isoformat()
 
     def frame(tf):
         z = None
-        if saved:
-            d = saved["df"]; native = str(saved.get("native_tf", "")).lower()
-            if tf == native: z = d
-            elif tf == "15m": z = d.resample("15min", label="left", closed="left").agg({"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"}).dropna()
-            elif tf == "1h": z = d.resample("1h", label="left", closed="left").agg({"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"}).dropna()
-            elif tf == "1d": z = d.resample("1D").agg({"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"}).dropna()
-            elif tf == "1w": z = d.resample("W-MON", label="left", closed="left").agg({"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"}).dropna()
-            if z is not None: z = z.tail(bars)
+        # Prefer an exact native cached run for this timeframe.
+        for rid, saved in run_cache.items():
+            if not saved:
+                continue
+            native = str(saved.get("native_tf", "")).lower()
+            if native == tf:
+                z = saved["df"].tail(bars)
+                break
+
         if z is None:
-            mp={"5m":"5Min","15m":"15Min","1h":"1Hour","1d":"1Day","1w":"1Week"}
-            z = _bars_to_df(alpaca_get_bars(symbol, mp[tf], limit=bars), symbol, tf)
-        return _excel_safe_df(z.reset_index().rename(columns={"index":"timestamp"}))
+            mp = {"5m":"5Min","15m":"15Min","1h":"1Hour","1d":"1Day","1w":"1Week"}
+            raw = alpaca_get_bars(symbol, mp[tf], limit=bars)
+            z = _bars_to_df(raw, symbol, tf)
+
+        return _excel_safe_df(
+            z.reset_index().rename(columns={"index": "timestamp"})
+        )
 
     try:
         out = io.BytesIO()
         with pd.ExcelWriter(out, engine="openpyxl") as writer:
-            pd.DataFrame([{"symbol":symbol,"exported_at_utc":exported,"run_id":run_id,"timeframes":", ".join(timeframes)}]).to_excel(writer, sheet_name="README", index=False)
+            pd.DataFrame([{
+                "symbol": symbol,
+                "exported_at_utc": exported,
+                "run_ids": ", ".join(run_ids),
+                "timeframes": ", ".join(timeframes),
+                "trade_rows": sum(len(x.get("trades") or []) for x in strategies if isinstance(x, dict)),
+                "note": "Market sheets use exact cached native run data when available; otherwise direct Alpaca data for the requested timeframe."
+            }]).to_excel(writer, sheet_name="README", index=False)
             for tf in timeframes:
                 frame(tf).to_excel(writer, sheet_name=tf.upper(), index=False)
             trades=[]
@@ -270,7 +286,11 @@ def export_strategy_lab_excel():
                 if isinstance(item,dict):
                     for t in item.get("trades") or []:
                         if isinstance(t,dict):
-                            row={"strategy":item.get("strategy") or item.get("name") or "","symbol":symbol}
+                            row={
+                                "strategy": item.get("strategy") or item.get("name") or "",
+                                "symbol": symbol,
+                                "run_id": item.get("run_id", ""),
+                            }
                             row.update(t); trades.append(row)
             _excel_safe_df(pd.DataFrame(trades or [{"strategy":"","symbol":symbol,"note":"No closed trades"}])).to_excel(writer, sheet_name="Trades", index=False)
         out.seek(0)
