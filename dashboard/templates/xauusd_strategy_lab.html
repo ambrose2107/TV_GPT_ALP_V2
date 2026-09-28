@@ -79,27 +79,27 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
 <details class="card" open><summary><span>1. Pullback Breakout V2</span><span class="badge">Trend + Pullback + Displacement</span><span class="status" id="status-pullback">Ready</span></summary>
 <div class="body"><div class="muted">EMA trend separation, ATR regime filter, controlled pullback and displacement breakout.</div>
 <p><button class="primary" onclick="runOne('pullback')">▶ Run Pullback V2</button> <a class="detail-link" href="/xauusd-research-v2/pullback">📊 Open Detailed Chart</a></p>
-<div id="metrics-pullback" class="empty">No result yet.</div><div id="trades-pullback"></div></div></details>
+<div id="metrics-pullback" class="empty">No result yet.</div><div id="pnl-pullback" class="empty">P&amp;L trend will appear after the run.</div><div id="trades-pullback"></div></div></details>
 
 <details class="card" open><summary><span>2. EMA 20/50 Third Retest V2</span><span class="badge">Distinct Retests + 1H</span><span class="status" id="status-ema">Ready</span></summary>
 <div class="body"><div class="muted">Distinct retest events, rejection quality, EMA separation and completed 1H alignment.</div>
 <p><button class="primary" onclick="runOne('ema')">▶ Run EMA 20/50 V2</button> <a class="detail-link" href="/xauusd-research-v2/ema">📊 Open Detailed Chart</a></p>
-<div id="metrics-ema" class="empty">No result yet.</div><div id="trades-ema"></div></div></details>
+<div id="metrics-ema" class="empty">No result yet.</div><div id="pnl-ema" class="empty">P&amp;L trend will appear after the run.</div><div id="trades-ema"></div></div></details>
 
 <details class="card" open><summary><span>3. Triple RSI — Multi-Horizon</span><span class="badge">RSI5 + RSI14 + RSI50</span><span class="status" id="status-triple">Ready</span></summary>
 <div class="body"><div class="muted">RSI(5) &lt; 45, RSI(14) &lt; 65, RSI(50) &lt; 55; exit when RSI(5) &gt; 90 or RSI(14) &gt; 65. Long only.</div>
 <p><button class="primary" onclick="runOne('triple')">▶ Run Triple RSI</button> <a class="detail-link" href="/xauusd-research-v2/triple">📊 Open Detailed Chart</a></p>
-<div id="metrics-triple" class="empty">No result yet.</div><div id="trades-triple"></div></div></details>
+<div id="metrics-triple" class="empty">No result yet.</div><div id="pnl-triple" class="empty">P&amp;L trend will appear after the run.</div><div id="trades-triple"></div></div></details>
 
 <details class="card" open><summary><span>4. Williams %R Mean Reversion</span><span class="badge">Williams %R(2) + SMA175</span><span class="status" id="status-williams">Ready</span></summary>
 <div class="body"><div class="muted">Williams %R(2) &lt; -98 with Close above SMA175; buy next open; exit when Williams %R &gt; -50.</div>
 <p><button class="primary" onclick="runOne('williams')">▶ Run Williams %R</button> <a class="detail-link" href="/xauusd-research-v2/williams">📊 Open Detailed Chart</a></p>
-<div id="metrics-williams" class="empty">No result yet.</div><div id="trades-williams"></div></div></details>
+<div id="metrics-williams" class="empty">No result yet.</div><div id="pnl-williams" class="empty">P&amp;L trend will appear after the run.</div><div id="trades-williams"></div></div></details>
 
 <details class="card" open><summary><span>5. CCI Oversold Recovery</span><span class="badge">CCI(16) -180 → +150</span><span class="status" id="status-cci">Ready</span></summary>
 <div class="body"><div class="muted">CCI(16) crosses back above -180; buy next open; exit when CCI &gt; +150. Long only.</div>
 <p><button class="primary" onclick="runOne('cci')">▶ Run CCI</button> <a class="detail-link" href="/xauusd-research-v2/cci">📊 Open Detailed Chart</a></p>
-<div id="metrics-cci" class="empty">No result yet.</div><div id="trades-cci"></div></div></details>
+<div id="metrics-cci" class="empty">No result yet.</div><div id="pnl-cci" class="empty">P&amp;L trend will appear after the run.</div><div id="trades-cci"></div></div></details>
 <details class="card" open><summary><span>6. Trend Target Ribbon V2</span><span class="badge">ALMA + ATR + Deviation + Targets</span><span class="status" id="status-trend_ribbon">Ready</span></summary>
 <div class="body"><div class="muted">BOSWaves-derived ALMA trend flip with slope/deviation confirmation, structure/ATR stop and 1R–4R target diagnostics. P&L is plotted against time below.</div>
 <p><button class="primary" onclick="runOne('trend_ribbon')">▶ Run Trend Target Ribbon V2</button> <a class="detail-link" href="/xauusd-research-v2/trend_ribbon">📊 Open Detailed Chart</a></p>
@@ -133,7 +133,7 @@ function payload(k){
 }
 function setStatus(k,s,cls='muted'){$('status-'+k).className='status '+cls;$('status-'+k).textContent=s;}
 function renderPnl(k,d){
- const box=$('pnl-'+k);const pts=d.pnl_curve||[];
+ const box=$('pnl-'+k);if(!box)return;const pts=d.pnl_curve||[];
  if(!pts.length){box.innerHTML='<div class="muted">No P&L curve returned.</div>';return;}
  const w=900,h=210,pad=28,vals=pts.map(p=>Number(p.pnl)||0),min=Math.min(0,...vals),max=Math.max(0,...vals),range=(max-min)||1;
  const xy=(v,i)=>({x:pad+(w-2*pad)*(i/Math.max(1,pts.length-1)),y:h-pad-(h-2*pad)*((v-min)/range)});
