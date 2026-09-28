@@ -18,6 +18,7 @@ from flask import Blueprint, jsonify, request, session, send_file, render_templa
 from core.market_data import alpaca_get_bars, get_bars
 from research.xauusd_pullback_v2 import PullbackV2Config, backtest as pullback_v2_backtest
 from research.xauusd_ema_retest_v2 import EMARetestV2Config, backtest as ema_v2_backtest
+from research.xauusd_trend_target_ribbon_v2 import TrendTargetRibbonConfig, backtest as trend_ribbon_backtest
 from research.xauusd_daily_research_v2 import (
     WilliamsRConfig, CCIConfig, MultiHorizonRSIConfig,
     backtest_williams_r, backtest_cci, backtest_multi_rsi,
@@ -164,6 +165,7 @@ _STRATEGY_META = {
     "triple": {"name":"Triple RSI — Multi-Horizon","subtitle":"RSI(5) + RSI(14) + RSI(50)","description":"Daily long-only mean reversion using RSI(5) < 45, RSI(14) < 65, RSI(50) < 55, with RSI-based exits.","default_symbol":"SPY","chart_tf":"1d","kind":"daily"},
     "williams": {"name":"Williams %R Mean Reversion","subtitle":"Extreme oversold recovery","description":"Daily long-only mean reversion using Williams %R(2) < -98, price above the 175-day moving average, next-session entry and Williams %R recovery exit.","default_symbol":"SPY","chart_tf":"1d","kind":"daily"},
     "cci": {"name":"CCI Oversold Recovery","subtitle":"CCI(16) extreme oversold recovery","description":"Daily long-only recovery strategy: CCI(16) crosses back above -180, buy next session open, exit when CCI > +150.","default_symbol":"SPY","chart_tf":"1d","kind":"daily"},
+    "trend_ribbon": {"name":"Trend Target Ribbon V2","subtitle":"ALMA trend + deviation confirmation + ATR targets","description":"BOSWaves-derived ALMA trend-flip strategy with ATR-normalized slope, deviation confirmation, structure/ATR stop and 1R–4R target diagnostics.","default_symbol":"SPY","chart_tf":"5m","kind":"intraday"},
 }
 
 @bp.route("/xauusd-research-v2/<strategy>", methods=["GET"])
@@ -431,6 +433,11 @@ def run(strategy):
             df, source = _intraday(symbol, bars)
             cfg = _cfg(EMARetestV2Config, body.get("config"))
             result = ema_v2_backtest(df, cfg)
+        elif strategy in ("trend_ribbon", "trend-target-ribbon", "trend_target_ribbon"):
+            bars = int(body.get("n_bars", 15600))
+            df, source = _intraday(symbol, bars)
+            cfg = _cfg(TrendTargetRibbonConfig, body.get("config"))
+            result = trend_ribbon_backtest(df, cfg)
         else:
             return jsonify({"error": f"Unknown V2 strategy: {strategy}"}), 400
 
@@ -445,6 +452,24 @@ def run(strategy):
                 .reset_index()
                 .to_dict(orient="records")
             )
+
+        # Compact P&L/equity curve for the webpage and GitHub-readable JSON.
+        equity_curve = result.get("equity_curve")
+        pnl_curve = []
+        if hasattr(equity_curve, "items") and len(equity_curve):
+            points = equity_curve.astype(float)
+            step = max(1, int(len(points) / 300))
+            sampled = points.iloc[::step]
+            if sampled.index[-1] != points.index[-1]:
+                sampled = pd.concat([sampled, points.iloc[[-1]]])
+            initial = float(result.get("metrics", {}).get("initial_equity", 10000.0))
+            for ts, eq in sampled.items():
+                pnl_curve.append({
+                    "timestamp": ts.isoformat(),
+                    "equity": float(eq),
+                    "pnl": float(eq - initial),
+                    "return_pct": float((eq / initial - 1.0) * 100.0) if initial else 0.0,
+                })
 
         run_id = uuid.uuid4().hex
         _RUN_DATA[run_id] = {"df":df.copy(),"symbol":symbol,"source":source,"created":time.time(),"native_tf":("1d" if strategy in ("triple","williams","cci","multi_rsi") else "5m")}
@@ -463,6 +488,7 @@ def run(strategy):
             "trades": trades,
             "signals": signals,
             "diagnostics": result.get("diagnostics", {}),
+            "pnl_curve": pnl_curve,
         }))
     except Exception as exc:
         # Always return JSON so the V2 page can display the real backend
