@@ -175,24 +175,52 @@ async function runAll(){
  $('runAll').disabled=false;$('globalStatus').innerHTML='<span class="ok">All 5 new strategy runs finished.</span>';
 }
 function csvCell(v){if(v==null)return '';let s=typeof v==='object'?JSON.stringify(v):String(v);return '"'+s.replace(/"/g,'""')+'"';}
-function downloadResultsJson(){
+async function downloadResultsJson(){
  const completed={};
  for(const k of Object.keys(defs)){
   const d=lastResults[k]; if(!d) continue;
   completed[k]=d;
  }
  if(!Object.keys(completed).length){$('globalStatus').textContent='Run a strategy before exporting results.';return;}
- const payload={
-  schema_version:'strategy-lab-v2-readable-1',
-  export_version:'V2',
-  exported_at_utc:new Date().toISOString(),
-  symbol:selectedSymbol(),
-  strategies:completed,
-  note:'UTF-8 JSON intended for GitHub/AI analysis. Contains summary metrics and individual closed trades from the completed Strategy Lab runs.'
- };
- const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8;'});
- const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=selectedSymbol()+'_strategy_lab_v2_readable_'+new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)+'.json';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(a.href);
- $('globalStatus').innerHTML='<span class="ok">AI/GitHub-readable JSON exported.</span>';
+ $('downloadJson').disabled=true;
+ $('globalStatus').textContent='Collecting strategy + Alpaca trade history…';
+ try{
+  let alpaca={provider:'Alpaca',order_log:[],closed_positions:[],closed_metrics:{},sync_error:'unavailable'};
+  try{
+   const ar=await fetch('/api/strategy-lab/alpaca-trades',{credentials:'same-origin',cache:'no-store'});
+   const ad=await ar.json();
+   if(ar.ok) alpaca=ad;
+   else alpaca={...alpaca,error:ad.error||('HTTP '+ar.status)};
+  }catch(e){alpaca={...alpaca,error:String(e.message||e)};}
+  const payload={
+   schema_version:'strategy-lab-v2-readable-2',
+   export_version:'V2',
+   exported_at_utc:new Date().toISOString(),
+   symbol:selectedSymbol(),
+   strategies:completed,
+   alpaca:{
+    provider:alpaca.provider||'Alpaca',
+    synced_days:alpaca.synced_days??null,
+    sync_error:alpaca.sync_error||alpaca.error||null,
+    closed_metrics:alpaca.closed_metrics||{},
+    order_log:alpaca.order_log||[],
+    closed_positions:alpaca.closed_positions||[]
+   },
+   contents:{
+    strategy_metrics:'Full metrics returned by each completed Strategy Lab run.',
+    strategy_closed_trades:'Individual closed trades from each completed Strategy Lab run.',
+    alpaca_execution_log:'All locally stored Alpaca order/execution records available to the app.',
+    alpaca_closed_trades:'All locally stored closed Alpaca positions with P&L fields.',
+    alpaca_closed_metrics:'Aggregate metrics calculated from the stored closed-position history.'
+   },
+   note:'UTF-8 JSON intended for GitHub/AI analysis. Includes Strategy Lab results plus actual Alpaca execution/closed-position history; strategy backtest trades and broker trades are kept in separate sections.'
+  };
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8;'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=selectedSymbol()+'_strategy_lab_v2_readable_'+new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)+'.json';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(a.href);
+  $('globalStatus').innerHTML='<span class="ok">AI/GitHub-readable JSON exported with Alpaca trades + full metrics.</span>';
+ }catch(e){
+  $('globalStatus').innerHTML='<span class="bad">JSON export error: '+esc(e.message)+'</span>';
+ }finally{$('downloadJson').disabled=false;}
 }
 function downloadResultsCsv(){
  const rows=[['exported_at_utc','record_type','strategy','status','symbol','data_source','metric','value']];
