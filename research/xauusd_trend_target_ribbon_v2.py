@@ -34,6 +34,7 @@ class TrendTargetRibbonConfig:
     initial_equity: float = 10000.0
     max_hold_bars: int = 0  # 0 = source-style: hold until flip/stop
     cooldown_bars: int = 0
+    max_entry_body_atr: float = 0.0  # 0 = disabled; >0 rejects oversized signal candles
 
 
 def _atr(df, n):
@@ -109,6 +110,13 @@ def build_signals(df, cfg=TrendTargetRibbonConfig()):
         a = float(x.atr.iloc[i])
         entry = float(x.Close.iloc[i])
         if side == 0 or not np.isfinite(a) or a <= 0 or not np.isfinite(entry):
+            continue
+
+        # Avoid late/chasing entries after unusually large displacement candles.
+        # Kept configurable so this remains a research hypothesis, not a forced rule.
+        body_atr = abs(float(x.Close.iloc[i]) - float(x.Open.iloc[i])) / a
+        if cfg.max_entry_body_atr > 0 and np.isfinite(body_atr) and body_atr > cfg.max_entry_body_atr:
+            x.iat[i, x.columns.get_loc("signal")] = 0
             continue
 
         if side == 1:
