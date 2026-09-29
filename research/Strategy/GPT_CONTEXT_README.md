@@ -27,22 +27,23 @@ The current focus is **data-driven strategy research and optimization**, especia
 
 The Strategy Lab has export functionality intended specifically for AI/GitHub analysis.
 
-### AI/GitHub JSON export — V2
+### AI/GitHub master JSON export — V3
 
 Current schema:
 
-`strategy-lab-v2-readable-2`
+`strategy-lab-v3-master-research-1`
 
-The JSON should contain:
+The master JSON should contain:
 
 ### Strategy results
 - Full metrics returned by every completed Strategy Lab run.
 - Strategy parameters/configuration where available.
 - Individual closed/backtest trades.
 - Symbol, timeframe, data source and run information.
+- Multi-timeframe Alpaca OHLCV market data selected in the export panel.
 
 ### Actual Alpaca data
-The export now also includes an `alpaca` section containing:
+The master export also includes an `alpaca` section containing:
 - `provider`
 - `synced_days`
 - `sync_error`
@@ -108,6 +109,19 @@ It contains:
 - actual Alpaca order history,
 - actual Alpaca closed trades,
 - Alpaca aggregate metrics.
+
+### Master JSON export endpoint
+
+`/api/strategy-lab/export-json`
+
+The Strategy Lab's **Download Master AI JSON** button sends the completed strategy results plus the selected export timeframes and bars to this endpoint. The resulting single JSON package contains:
+- every completed strategy result and all returned trades,
+- metrics, diagnostics, signals and P&L curve data,
+- actual Alpaca order/closed-position history,
+- selected 5m / 15m / 1h / 1d / 1w OHLCV data,
+- explicit separation between backtest trades, broker trades and market data.
+
+This is now the preferred file to provide for strategy optimization.
 
 ### Excel export
 The Strategy Lab Excel export supports:
@@ -236,4 +250,5 @@ First establish whether a rule addresses a repeatable failure mode.
 ---
 
 **Last updated:** 2026-09-29
+**Latest master export:** `strategy-lab-v3-master-research-1`
 **Context owner:** GPT-assisted strategy research workflow
