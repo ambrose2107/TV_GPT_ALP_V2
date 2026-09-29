@@ -34,6 +34,8 @@ class TrendTargetRibbonConfig:
     initial_equity: float = 10000.0
     max_hold_bars: int = 0  # 0 = source-style: hold until flip/stop
     cooldown_bars: int = 0
+    # Candidate filter based on recent GLD trade evidence: avoid oversized signal candles.
+    max_entry_body_atr: float = 1.0
 
 
 def _atr(df, n):
@@ -109,6 +111,10 @@ def build_signals(df, cfg=TrendTargetRibbonConfig()):
         a = float(x.atr.iloc[i])
         entry = float(x.Close.iloc[i])
         if side == 0 or not np.isfinite(a) or a <= 0 or not np.isfinite(entry):
+            continue
+
+        body_atr = abs(float(x.Close.iloc[i]) - float(x.Open.iloc[i])) / a
+        if np.isfinite(body_atr) and body_atr > cfg.max_entry_body_atr:
             continue
 
         if side == 1:
