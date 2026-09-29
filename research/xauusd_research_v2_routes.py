@@ -253,30 +253,68 @@ def export_strategy_lab_json():
     timeframes = list(dict.fromkeys(aliases[str(x).strip()] for x in selected if str(x).strip() in aliases))
     if not timeframes:
         return jsonify({"error":"Select at least one timeframe."}), 400
-    bars = max(100, min(100000, int(body.get("bars", 5000))))
+    # Export history is controlled by calendar days, not a fixed bar count.
+    # For a 1-year validation export this gives enough 5m bars (~19.6k regular
+    # US-session bars) while keeping a safety margin for holidays/time changes.
+    days = max(1, min(770, int(body.get("days", 365))))
     strategies = body.get("strategies", []) or []
     run_ids = [str(x.get("run_id","")).strip() for x in strategies if isinstance(x, dict) and x.get("run_id")]
     run_cache = {rid: _RUN_DATA.get(rid) for rid in run_ids}
     exported = datetime.now(timezone.utc).isoformat()
 
+    intraday_base = None
+    daily_base = None
+
+    def _bars_for_days(tf):
+        # Use one paginated 5m request as the intraday source, then resample
+        # upward. This guarantees that 15m/1h cover the same full 5m period.
+        if tf == "5m":
+            target = min(30000, max(500, int(days * 80)))
+            return _intraday(symbol, target)[0].tail(target)
+        if tf in ("15m", "1h"):
+            nonlocal intraday_base
+            if intraday_base is None:
+                target = min(30000, max(500, int(days * 80)))
+                intraday_base = _intraday(symbol, target)[0]
+            rule = "15min" if tf == "15m" else "1h"
+            return intraday_base.resample(rule, label="left", closed="left").agg(
+                {"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"}
+            ).dropna()
+        if tf in ("1d", "1w"):
+            nonlocal daily_base
+            if daily_base is None:
+                target = min(5000, max(250, int(days * 1.5)))
+                daily_base = _daily(symbol, target)[0]
+            if tf == "1d":
+                return daily_base
+            return daily_base.resample("W-MON", label="left", closed="left").agg(
+                {"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"}
+            ).dropna()
+        raise ValueError(f"Unsupported timeframe: {tf}")
+
     def market_frame(tf):
-        z = None
+        # Prefer an exact native cached run only when it already covers the
+        # requested period; otherwise use the day-based history loader above.
         for rid, saved in run_cache.items():
             if saved and str(saved.get("native_tf","")).lower() == tf:
-                z = saved["df"].tail(bars)
-                break
-        if z is None:
-            mp = {"5m":"5Min","15m":"15Min","1h":"1Hour","1d":"1Day","1w":"1Week"}
-            raw = alpaca_get_bars(symbol, mp[tf], limit=bars)
-            z = _bars_to_df(raw, symbol, tf)
+                z = saved["df"]
+                if len(z) >= 500 and (z.index.max() - z.index.min()).days >= min(days, 30):
+                    return [{
+                        "timestamp": ts.isoformat(),
+                        "open": float(row["Open"]), "high": float(row["High"]),
+                        "low": float(row["Low"]), "close": float(row["Close"]),
+                        "volume": float(row["Volume"]),
+                    } for ts, row in z.tail(len(z)).iterrows()]
+
+        z = _bars_for_days(tf)
+        cutoff = z.index.max() - pd.Timedelta(days=days)
+        z = z.loc[z.index >= cutoff]
         return [{
             "timestamp": ts.isoformat(),
-            "open": float(row["Open"]),
-            "high": float(row["High"]),
-            "low": float(row["Low"]),
-            "close": float(row["Close"]),
+            "open": float(row["Open"]), "high": float(row["High"]),
+            "low": float(row["Low"]), "close": float(row["Close"]),
             "volume": float(row["Volume"]),
-        } for ts, row in z.tail(bars).iterrows()]
+        } for ts, row in z.iterrows()]
 
     try:
         sync_error = None
@@ -291,7 +329,7 @@ def export_strategy_lab_json():
             "exported_at_utc": exported,
             "symbol": symbol,
             "timeframes": timeframes,
-            "bars_per_timeframe": bars,
+            "days_per_timeframe": days,
             "strategies": strategies,
             "alpaca": {
                 "provider": "Alpaca",
@@ -305,7 +343,7 @@ def export_strategy_lab_json():
             "contents": {
                 "strategies": "Complete Strategy Lab run payloads including metrics, every returned trade, signals/diagnostics and P&L curve.",
                 "alpaca": "Actual broker execution/order history and locally reconstructed closed-position P&L.",
-                "market_data": "OHLCV market data for every selected timeframe, kept separate from strategy/backtest trades."
+                "market_data": "OHLCV market data for every selected timeframe covering the requested calendar-day window; intraday higher timeframes are derived from the same 5m history."
             },
             "analysis_ready": {
                 "trade_to_market_mapping": "Use strategy trade timestamps against the native and context timeframe OHLCV.",
