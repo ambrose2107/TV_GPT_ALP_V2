@@ -170,7 +170,32 @@ _STRATEGY_META = {
     "trend_ribbon": {"name":"Trend Target Ribbon V2","subtitle":"ALMA trend + deviation confirmation + ATR targets","description":"BOSWaves-derived ALMA trend-flip strategy with ATR-normalized slope, deviation confirmation, structure/ATR stop and 1R–4R target diagnostics.","default_symbol":"SPY","chart_tf":"5m","kind":"intraday"},
 }
 
+# Controls exposed on each strategy's personal research page. Keep these tied
+# to actual dataclass fields so the UI cannot silently send unsupported params.
+_STRATEGY_PARAMS = {
+    "pullback": [
+        ("ema_fast","EMA fast",50,"int",5,200),("ema_slow","EMA slow",200,"int",50,400),
+        ("pullback_bars","Pullback bars",3,"int",1,10),("breakout_lookback","Breakout lookback",5,"int",2,20),
+        ("atr_stop","ATR stop",1.2,"float",0.25,4.0),("rr","Reward / risk",2.0,"float",0.5,5.0),
+        ("cooldown_bars","Cooldown bars",8,"int",0,50),("session_start_utc","Session start UTC",13,"int",0,23),
+        ("session_end_utc","Session end UTC",21,"int",1,24),("min_ema_gap_atr","Min EMA gap ATR",0.10,"float",0,2),
+        ("breakout_buffer_atr","Breakout buffer ATR",0.05,"float",0,1),("min_body_atr","Min candle body ATR",0.20,"float",0,2),
+        ("min_atr_pct","Min ATR %",0.0005,"float",0,0.02),("max_atr_pct","Max ATR %",0.02,"float",0.001,0.10),
+    ],
+    "ema": [("ema_fast","EMA fast",20,"int",5,100),("ema_slow","EMA slow",50,"int",20,200),("min_gap_atr","Min gap ATR",0.10,"float",0,2),("min_rejection_body_atr","Min rejection body ATR",0.10,"float",0,2),("rr","Reward / risk",2.5,"float",0.5,5),("separation_bars","Separation bars",2,"int",1,10)],
+    "trend_ribbon": [("alma_len","ALMA length",34,"int",5,100),("alma_offset","ALMA offset",0.85,"float",0.1,0.99),("alma_sigma","ALMA sigma",6.0,"float",1,15),("dev_len","Deviation length",34,"int",5,100),("dev_mult","Deviation multiplier",0.65,"float",0,3),("slope_len","Slope length",3,"int",1,20),("slope_min","Minimum slope",0.08,"float",0,1),("stop_lookback","Stop lookback",12,"int",2,50),("min_stop_atr","Min stop ATR",0.75,"float",0.1,5),("max_stop_atr","Max stop ATR",3.0,"float",0.5,8),("max_entry_body_atr","Max entry body ATR",1.0,"float",0.25,4),("target_count","Target count",4,"int",2,4),("max_hold_bars","Max hold bars (0=off)",0,"int",0,500),("cooldown_bars","Cooldown bars",0,"int",0,50)],
+    "triple": [("rsi_fast","RSI fast",5,"int",2,20),("rsi_mid","RSI mid",14,"int",5,50),("rsi_slow","RSI slow",50,"int",20,100),("entry_fast_max","Fast RSI max",45,"float",1,99),("entry_mid_max","Mid RSI max",65,"float",1,99),("entry_slow_max","Slow RSI max",55,"float",1,99),("exit_fast","Fast RSI exit",90,"float",1,99),("exit_mid","Mid RSI exit",65,"float",1,99)],
+    "williams": [("length","Williams length",2,"int",2,20),("entry_level","Entry level",-98,"float",-100,-50),("ma_len","MA length",175,"int",20,500),("exit_level","Exit level",-50,"float",-99,0)],
+    "cci": [("length","CCI length",16,"int",5,50),("entry_level","Entry level",-180,"float",-400,0),("exit_level","Exit level",150,"float",0,400)],
+};
+
 @bp.route("/xauusd-research-v2/<strategy>", methods=["GET"])
+@bp.route("/xauusd-pullback-v2", defaults={"strategy":"pullback"}, methods=["GET"])
+@bp.route("/xauusd-ema-retest-v2", defaults={"strategy":"ema"}, methods=["GET"])
+@bp.route("/xauusd-trend-ribbon-v2", defaults={"strategy":"trend_ribbon"}, methods=["GET"])
+@bp.route("/xauusd-triple-rsi-v2", defaults={"strategy":"triple"}, methods=["GET"])
+@bp.route("/xauusd-williams-v2", defaults={"strategy":"williams"}, methods=["GET"])
+@bp.route("/xauusd-cci-v2", defaults={"strategy":"cci"}, methods=["GET"])
 def strategy_detail(strategy):
     if not session.get("logged_in"):
         return redirect(url_for("dashboard.login"))
@@ -178,7 +203,7 @@ def strategy_detail(strategy):
     meta = _STRATEGY_META.get(key)
     if not meta:
         return jsonify({"error": f"Unknown V2 strategy: {key}"}), 404
-    return render_template("xauusd_strategy_detail.html", strategy_key=key, strategy_meta=meta, chart_symbol=meta["default_symbol"], chart_default_tf=meta["chart_tf"], chart_strategy=key)
+    return render_template("xauusd_strategy_detail.html", strategy_key=key, strategy_meta=meta, strategy_params=_STRATEGY_PARAMS.get(key, []), chart_symbol=meta["default_symbol"], chart_default_tf=meta["chart_tf"], chart_strategy=key)
 
 
 @bp.route("/api/xauusd-research-v2/status", methods=["GET"])
