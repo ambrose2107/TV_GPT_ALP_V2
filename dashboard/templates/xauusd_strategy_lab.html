@@ -41,7 +41,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
     <label>5m bars <input id="bars" type="number" min="100" max="60000" value="15600"></label>
     <label>Risk % <input id="risk" type="number" min=".01" step=".05" value=".50"></label>
     <button id="runAll" class="primary">▶ Run All 6</button>
-    <button id="downloadCsv" disabled>📥 Download Results CSV</button>\n    <button id="downloadJson" disabled>🧠 Download AI/ GitHub JSON</button>
+    <button id="downloadCsv" disabled>📥 Download Results CSV</button>\n    <button id="downloadJson" disabled>🧠 Download Master AI JSON</button>
     <button id="clear">Clear Results</button>
     <span id="globalStatus" class="muted">Ready</span>
   </div>
@@ -178,49 +178,55 @@ function csvCell(v){if(v==null)return '';let s=typeof v==='object'?JSON.stringif
 async function downloadResultsJson(){
  const completed={};
  for(const k of Object.keys(defs)){
-  const d=lastResults[k]; if(!d) continue;
-  completed[k]=d;
+  const d=lastResults[k];
+  if(d&&!d.error) completed[k]=d;
  }
- if(!Object.keys(completed).length){$('globalStatus').textContent='Run a strategy before exporting results.';return;}
+ if(!Object.keys(completed).length){
+  $('globalStatus').textContent='Run a strategy before exporting the master JSON.';
+  return;
+ }
+ const timeframes=Array.from($('exportTfs').selectedOptions).map(o=>o.value);
+ if(!timeframes.length){
+  $('exportStatus').textContent='Select at least one timeframe for the master JSON.';
+  return;
+ }
+ const barsCount=Math.min(100000,Math.max(100,Number($('exportBars').value)||5000));
  $('downloadJson').disabled=true;
- $('globalStatus').textContent='Collecting strategy + Alpaca trade history…';
+ $('globalStatus').textContent='Building master AI JSON: strategies + trades + Alpaca + multi-TF data…';
  try{
-  let alpaca={provider:'Alpaca',order_log:[],closed_positions:[],closed_metrics:{},sync_error:'unavailable'};
-  try{
-   const ar=await fetch('/api/strategy-lab/alpaca-trades',{credentials:'same-origin',cache:'no-store'});
-   const ad=await ar.json();
-   if(ar.ok) alpaca=ad;
-   else alpaca={...alpaca,error:ad.error||('HTTP '+ar.status)};
-  }catch(e){alpaca={...alpaca,error:String(e.message||e)};}
-  const payload={
-   schema_version:'strategy-lab-v2-readable-2',
-   export_version:'V2',
-   exported_at_utc:new Date().toISOString(),
-   symbol:selectedSymbol(),
-   strategies:completed,
-   alpaca:{
-    provider:alpaca.provider||'Alpaca',
-    synced_days:alpaca.synced_days??null,
-    sync_error:alpaca.sync_error||alpaca.error||null,
-    closed_metrics:alpaca.closed_metrics||{},
-    order_log:alpaca.order_log||[],
-    closed_positions:alpaca.closed_positions||[]
-   },
-   contents:{
-    strategy_metrics:'Full metrics returned by each completed Strategy Lab run.',
-    strategy_closed_trades:'Individual closed trades from each completed Strategy Lab run.',
-    alpaca_execution_log:'All locally stored Alpaca order/execution records available to the app.',
-    alpaca_closed_trades:'All locally stored closed Alpaca positions with P&L fields.',
-    alpaca_closed_metrics:'Aggregate metrics calculated from the stored closed-position history.'
-   },
-   note:'UTF-8 JSON intended for GitHub/AI analysis. Includes Strategy Lab results plus actual Alpaca execution/closed-position history; strategy backtest trades and broker trades are kept in separate sections.'
-  };
-  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json;charset=utf-8;'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=selectedSymbol()+'_strategy_lab_v2_readable_'+new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)+'.json';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(a.href);
-  $('globalStatus').innerHTML='<span class="ok">AI/GitHub-readable JSON exported with Alpaca trades + full metrics.</span>';
+  const strategies=Object.entries(completed).map(([key,d])=>({...d,strategy_key:key,strategy_name:defs[key].name}));
+  const r=await fetch('/api/strategy-lab/export-json',{
+   method:'POST',
+   credentials:'same-origin',
+   cache:'no-store',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({
+    symbol:selectedSymbol(),
+    timeframes,
+    bars:barsCount,
+    strategies
+   })
+  });
+  if(!r.ok){
+   let d={};try{d=await r.json()}catch(_){}
+   throw new Error(d.error||('HTTP '+r.status));
+  }
+  const blob=await r.blob();
+  const stamp=new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=selectedSymbol()+'_strategy_lab_MASTER_AI_'+stamp+'.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(a.href);
+  $('globalStatus').innerHTML='<span class="ok">Master AI JSON exported: all strategies/trades + Alpaca history + '+esc(timeframes.join(', '))+' market data.</span>';
+  $('exportStatus').innerHTML='<span class="ok">Master JSON includes '+esc(barsCount)+' bars per selected timeframe.</span>';
  }catch(e){
-  $('globalStatus').innerHTML='<span class="bad">JSON export error: '+esc(e.message)+'</span>';
- }finally{$('downloadJson').disabled=false;}
+  $('globalStatus').innerHTML='<span class="bad">Master JSON export error: '+esc(e.message)+'</span>';
+ }finally{
+  $('downloadJson').disabled=false;
+ }
 }
 function downloadResultsCsv(){
  const rows=[['exported_at_utc','record_type','strategy','status','symbol','data_source','metric','value']];
