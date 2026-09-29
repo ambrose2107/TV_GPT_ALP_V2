@@ -20,13 +20,21 @@ button,a.btn{padding:9px 13px;font-weight:bold;border:1px solid var(--line);bord
 <a class="btn" href="/xauusd-strategy-lab-v2">← Strategy Lab V2</a><a class="btn" href="/">Dashboard</a>
 </div>
 <h1>{{ strategy_meta.name }}</h1><div class="muted">{{ strategy_meta.subtitle }}</div><p>{{ strategy_meta.description }}</p>
-<div class="toolbar"><div class="controls">
+<div class="toolbar">
+<div class="controls">
 <label>Ticker <input id="detail-symbol" value="{{ chart_symbol }}"></label>
-{% if strategy_meta.kind == 'daily' %}<label>Daily bars <input id="detail-bars" type="number" min="250" max="5000" value="1500"></label>
-{% else %}<label>5m bars <input id="detail-bars" type="number" min="1000" max="30000" value="15600"></label>{% endif %}
+<label>Lookback days <input id="detail-days" type="number" min="1" max="770" value="{{ 365 if strategy_meta.kind == 'intraday' else 770 }}"></label>
+<label>{% if strategy_meta.kind == 'daily' %}Daily bars{% else %}5m bars{% endif %} <input id="detail-bars" type="number" min="{{ 250 if strategy_meta.kind == 'daily' else 1000 }}" max="{{ 5000 if strategy_meta.kind == 'daily' else 60000 }}" value="{{ 5000 if strategy_meta.kind == 'daily' else 30000 }}"></label>
 <label>Risk % <input id="detail-risk" type="number" min=".01" step=".05" value=".50"></label>
-<button id="run-detail" class="primary">▶ Run Strategy</button><button id="export-detail" disabled>📥 Export Run CSV</button><span id="detail-status" class="muted">Ready</span>
-</div></div>
+<button id="run-detail" class="primary">▶ Run Strategy</button><button id="reset-detail">Reset Parameters</button><button id="export-detail" disabled>📥 Export Run CSV</button><span id="detail-status" class="muted">Ready</span>
+</div>
+<div class="muted" style="margin-top:10px">Change the lookback window and strategy parameters, then rerun. This page is independent from the Strategy Lab.</div>
+<div id="param-grid" class="controls" style="margin-top:10px;align-items:flex-end">
+{% for p in strategy_params %}
+<label style="display:flex;flex-direction:column;gap:3px"><span style="font-size:12px;color:var(--muted)">{{ p[1] }}</span><input class="param" data-key="{{ p[0] }}" data-type="{{ p[3] }}" data-default="{{ p[2] }}" type="number" min="{{ p[4] }}" max="{{ p[5] }}" step="{{ 1 if p[3] == 'int' else 'any' }}" value="{{ p[2] }}" title="{{ p[0] }}"></label>
+{% endfor %}
+</div>
+</div>
 <div class="grid">
 <div class="panel"><h2>Results</h2><div id="detail-metrics" class="muted">Run the strategy to see metrics.</div><div id="detail-info" class="muted" style="margin-top:10px"></div></div>
 <div>{% include "partials/interactive_strategy_chart.html" %}</div>
@@ -34,6 +42,8 @@ button,a.btn{padding:9px 13px;font-weight:bold;border:1px solid var(--line);bord
 <div class="panel"><h2>Trades</h2><div id="detail-trades" class="muted">No run yet.</div></div>
 <script>
 (function(){
+const PARAMS={{ strategy_params|tojson }};
+
 const key={{ strategy_key|tojson }},api='/api/xauusd-research-v2/'+key;let last=null;
 const $=id=>document.getElementById(id);
 const esc=v=>String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -47,8 +57,13 @@ function render(d){
  $('detail-trades').innerHTML='<div class="scroll"><table><tr>'+cols.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr>'+t.slice().reverse().map(r=>'<tr>'+cols.map(c=>'<td>'+esc(typeof r[c]==='number'?num(r[c]):r[c])+'</td>').join('')+'</tr>').join('')+'</table></div>';
 }
 async function run(){
- const symbol=($('detail-symbol').value||'SPY').trim().toUpperCase(),n=Number($('detail-bars').value)||1500,risk=Number($('detail-risk').value)||.5;
- const body=key==='pullback'||key==='ema'?{symbol,n_bars:n,config:{risk_pct:risk}}:{symbol,daily_bars:n,config:{risk_pct:risk}};
+ const symbol=($('detail-symbol').value||'SPY').trim().toUpperCase();
+ const days=Math.min(770,Math.max(1,Number($('detail-days').value)||365));
+ const n=Math.min({{ 5000 if strategy_meta.kind == 'daily' else 60000 }},Math.max({{ 250 if strategy_meta.kind == 'daily' else 1000 }},Number($('detail-bars').value)||{{ 5000 if strategy_meta.kind == 'daily' else 30000 }}));
+ const risk=Number($('detail-risk').value)||.5;
+ const config={risk_pct:risk};
+ document.querySelectorAll('.param').forEach(el=>{let v=Number(el.value);if(!Number.isFinite(v))return;config[el.dataset.key]=el.dataset.type==='int'?Math.round(v):v;});
+ const body=key==='pullback'||key==='ema'||key==='trend_ribbon'?{symbol,n_bars:n,config}:{symbol,daily_bars:n,config};
  $('run-detail').disabled=true;$('detail-status').textContent='Running…';
  try{
   const r=await fetch(api,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}),d=await r.json();
@@ -67,6 +82,19 @@ async function exportRun(){
  }catch(e){$('detail-status').innerHTML='<span class="bad">'+esc(e.message)+'</span>'}
 }
 $('run-detail').onclick=run;$('export-detail').onclick=exportRun;
+$('detail-days').oninput=()=>{
+ const days=Math.min(770,Math.max(1,Number($('detail-days').value)||1));
+ const barsPerDay={{ 1 if strategy_meta.kind == 'daily' else 78 }};
+ const maxBars={{ 5000 if strategy_meta.kind == 'daily' else 60000 }};
+ $('detail-bars').value=Math.min(maxBars,Math.max({{ 250 if strategy_meta.kind == 'daily' else 1000 }},Math.round(days*barsPerDay)));
+};
+$('reset-detail').onclick=()=>{
+ document.querySelectorAll('.param').forEach(el=>el.value=el.dataset.default);
+ $('detail-days').value={{ 365 if strategy_meta.kind == 'intraday' else 770 }};
+ $('detail-days').dispatchEvent(new Event('input'));
+ $('detail-risk').value='.50';
+};
+
 })();
 </script>
 </body></html>
