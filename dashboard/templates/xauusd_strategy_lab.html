@@ -60,11 +60,11 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
   <div class="export-panel">
     <div style="font-weight:bold;margin-bottom:8px">🧠 SPY / QQQ Parameter Optimizer</div>
     <div class="controls">
-      <label>Strategy <select id="optStrategy"><option value="pullback">Pullback V2</option><option value="ema">EMA 20/50 V2</option></select></label>
+      <label>Strategy <select id="optStrategy"><option value="pullback">Pullback V2</option><option value="ema">EMA 20/50 V2</option><option value="trend_ribbon">Trend Ribbon V2</option></select></label>
       <label>Train % <input id="optTrain" type="number" min="50" max="80" value="70" style="width:70px"></label>
       <label>Min train trades <input id="optMinTrain" type="number" min="5" value="10" style="width:85px"></label>
       <label>Min test trades <input id="optMinTest" type="number" min="3" value="5" style="width:85px"></label>
-      <button id="runOptimizer" class="primary">🧠 Optimize</button>
+      <button id="runOptimizer" class="primary">🧠 Optimize</button><a href="/xauusd-pullback-v2" class="detail-link">Pullback page</a><a href="/xauusd-trend-ribbon-v2" class="detail-link">Ribbon page</a>
       <span id="optimizerStatus" class="muted">Chronological train/test.</span>
     </div>
     <div id="optimizerResults" class="scroll" style="margin-top:10px;max-height:420px"><div class="empty">No optimization run yet.</div></div>
