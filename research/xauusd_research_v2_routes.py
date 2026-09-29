@@ -245,7 +245,10 @@ def export_strategy_lab_json():
     timeframes = list(dict.fromkeys(aliases[str(x).strip()] for x in selected if str(x).strip() in aliases))
     if not timeframes:
         return jsonify({"error":"Select at least one timeframe."}), 400
-    bars = max(100, min(100000, int(body.get("bars", 5000))))
+    # Export window is calendar-day based. 5m history is the primary
+    # validation series; higher timeframes are derived from it when practical.
+    days = max(1, min(770, int(body.get("days", 365))))
+    bars = max(100, min(60000, int(body.get("bars", min(30000, days * 78)))))
     strategies = body.get("strategies", []) or []
     run_ids = [str(x.get("run_id","")).strip() for x in strategies if isinstance(x, dict) and x.get("run_id")]
     run_cache = {rid: _RUN_DATA.get(rid) for rid in run_ids}
@@ -258,9 +261,18 @@ def export_strategy_lab_json():
                 z = saved["df"].tail(bars)
                 break
         if z is None:
-            mp = {"5m":"5Min","15m":"15Min","1h":"1Hour","1d":"1Day","1w":"1Week"}
-            raw = alpaca_get_bars(symbol, mp[tf], limit=bars)
-            z = _bars_to_df(raw, symbol, tf)
+            # Fetch enough 5m history for the requested calendar window, then
+            # derive 15m/1h/1d/1w context from the same continuous series.
+            if tf == "5m":
+                raw = alpaca_get_bars(symbol, "5Min", limit=bars)
+                z = _bars_to_df(raw, symbol, tf)
+            else:
+                raw = alpaca_get_bars(symbol, "5Min", limit=bars)
+                base = _bars_to_df(raw, symbol, "5m")
+                rule = {"15m":"15min","1h":"1h","1d":"1D","1w":"W-MON"}[tf]
+                z = base.resample(rule, label="left", closed="left").agg({
+                    "Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"
+                }).dropna()
         return [{
             "timestamp": ts.isoformat(),
             "open": float(row["Open"]),
@@ -283,6 +295,7 @@ def export_strategy_lab_json():
             "exported_at_utc": exported,
             "symbol": symbol,
             "timeframes": timeframes,
+            "days": days,
             "bars_per_timeframe": bars,
             "strategies": strategies,
             "alpaca": {
