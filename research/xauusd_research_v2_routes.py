@@ -208,13 +208,13 @@ def optimize():
         test = df.iloc[split:].copy()
         rows = []
         if strategy == "pullback":
-            grid = list(itertools.product([0.05, 0.10], [0.15, 0.25, 0.35], [1.5, 2.0, 2.5], [6, 8, 12], [18, 19, 20, 21]))
-            for buf, body_min, rr, cooldown, end_hour in grid:
-                cfg = PullbackV2Config(breakout_buffer_atr=buf, min_body_atr=body_min, rr=rr, cooldown_bars=cooldown, session_end_utc=end_hour)
+            grid = list(itertools.product([0.05, 0.10], [0.15, 0.25, 0.35], [1.5, 2.0, 2.5], [6, 8, 12], [18, 19, 20, 21], [0.0005, 0.00075, 0.0010]))
+            for buf, body_min, rr, cooldown, end_hour, min_atr_pct in grid:
+                cfg = PullbackV2Config(breakout_buffer_atr=buf, min_body_atr=body_min, rr=rr, cooldown_bars=cooldown, session_end_utc=end_hour, min_atr_pct=min_atr_pct)
                 a = pullback_v2_backtest(train, cfg)["metrics"]; b = pullback_v2_backtest(test, cfg)["metrics"]
                 if a["num_trades"] < min_train or b["num_trades"] < min_test: continue
                 ap, bp = float(a["profit_factor"] or 0), float(b["profit_factor"] or 0)
-                rows.append({"breakout_buffer_atr":buf,"min_body_atr":body_min,"rr":rr,"cooldown_bars":cooldown,"session_end_utc":end_hour,"train_trades":a["num_trades"],"train_pf":ap,"train_expectancy_R":a["expectancy_R"],"test_trades":b["num_trades"],"test_pf":bp,"test_expectancy_R":b["expectancy_R"],"test_total_R":b["total_R"],"test_return_pct":b["total_return_pct"],"test_max_dd_pct":b["max_drawdown_pct"],"robust_score":min(ap,bp)+0.25*float(b["expectancy_R"])})
+                rows.append({"breakout_buffer_atr":buf,"min_body_atr":body_min,"rr":rr,"cooldown_bars":cooldown,"session_end_utc":end_hour,"min_atr_pct":min_atr_pct,"train_trades":a["num_trades"],"train_pf":ap,"train_expectancy_R":a["expectancy_R"],"test_trades":b["num_trades"],"test_pf":bp,"test_expectancy_R":b["expectancy_R"],"test_total_R":b["total_R"],"test_return_pct":b["total_return_pct"],"test_max_dd_pct":b["max_drawdown_pct"],"robust_score":min(ap,bp)+0.25*float(b["expectancy_R"])})
         elif strategy == "ema":
             grid = list(itertools.product([0.05,0.10,0.20], [0.05,0.10,0.20], [2.0,2.5,3.0], [1,2]))
             for gap, rej, rr, sep in grid:
@@ -223,8 +223,16 @@ def optimize():
                 if a["num_trades"] < min_train or b["num_trades"] < min_test: continue
                 ap,bp=float(a["profit_factor"] or 0),float(b["profit_factor"] or 0)
                 rows.append({"min_gap_atr":gap,"min_rejection_body_atr":rej,"rr":rr,"separation_bars":sep,"train_trades":a["num_trades"],"train_pf":ap,"train_expectancy_R":a["expectancy_R"],"test_trades":b["num_trades"],"test_pf":bp,"test_expectancy_R":b["expectancy_R"],"test_total_R":b["total_R"],"test_return_pct":b["total_return_pct"],"test_max_dd_pct":b["max_drawdown_pct"],"robust_score":min(ap,bp)+0.25*float(b["expectancy_R"])})
+        elif strategy == "trend_ribbon":
+            grid = list(itertools.product([0.75, 1.0, 1.25, 2.0, 999.0], [0.05, 0.08, 0.10, 0.12]))
+            for max_body, slope_min in grid:
+                cfg = TrendTargetRibbonConfig(max_entry_body_atr=max_body, slope_min=slope_min)
+                a = trend_ribbon_backtest(train, cfg)["metrics"]; b = trend_ribbon_backtest(test, cfg)["metrics"]
+                if a["num_trades"] < min_train or b["num_trades"] < min_test: continue
+                ap,bp=float(a["profit_factor"] or 0),float(b["profit_factor"] or 0)
+                rows.append({"max_entry_body_atr":max_body,"slope_min":slope_min,"train_trades":a["num_trades"],"train_pf":ap,"train_expectancy_R":a["expectancy_R"],"test_trades":b["num_trades"],"test_pf":bp,"test_expectancy_R":b["expectancy_R"],"test_total_R":b["total_R"],"test_return_pct":b["total_return_pct"],"test_max_dd_pct":b["max_drawdown_pct"],"robust_score":min(ap,bp)+0.25*float(b["expectancy_R"])})
         else:
-            return jsonify({"error":"Optimizer supports Pullback V2 and EMA 20/50 V2."}),400
+            return jsonify({"error":"Optimizer supports Pullback V2, EMA 20/50 V2, and Trend Ribbon V2."}),400
         rows.sort(key=lambda x:(x["robust_score"],x["test_pf"],x["test_total_R"]),reverse=True)
         return jsonify(_safe({"strategy":strategy,"symbol":symbol,"data_source":source,"bars":len(df),"train_bars":len(train),"test_bars":len(test),"train_pct":train_pct,"tested":len(grid),"passed":len(rows),"results":rows[:25],"note":"Chronological train/test research only; not a future-performance guarantee."}))
     except Exception as exc:
