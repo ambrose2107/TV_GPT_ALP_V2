@@ -24,6 +24,8 @@ from research.xauusd_daily_research_v2 import (
     backtest_williams_r, backtest_cci, backtest_multi_rsi,
 )
 from research.xauusd_confluence_v4 import load_data as v4_load_data
+from core.order_sync import sync_alpaca_orders
+from core.database import get_all_trades, get_all_closed_positions, get_closed_summary
 
 bp = Blueprint("xauusd_research_v2", __name__)
 _DATA_CACHE = {}
@@ -227,6 +229,87 @@ def optimize():
         return jsonify(_safe({"strategy":strategy,"symbol":symbol,"data_source":source,"bars":len(df),"train_bars":len(train),"test_bars":len(test),"train_pct":train_pct,"tested":len(grid),"passed":len(rows),"results":rows[:25],"note":"Chronological train/test research only; not a future-performance guarantee."}))
     except Exception as exc:
         return jsonify({"error":f"{type(exc).__name__}: {exc}"}),500
+
+
+@bp.route("/api/strategy-lab/export-json", methods=["POST"])
+def export_strategy_lab_json():
+    """Export one complete AI research package: strategies, trades, Alpaca history and multi-timeframe OHLCV."""
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    symbol = str(body.get("symbol", "SPY")).strip().upper()
+    selected = body.get("timeframes") or ["5m", "15m", "1h", "1d"]
+    if isinstance(selected, str):
+        selected = [selected]
+    aliases = {"5m":"5m","15m":"15m","1h":"1h","1d":"1d","1D":"1d","1w":"1w","1W":"1w"}
+    timeframes = list(dict.fromkeys(aliases[str(x).strip()] for x in selected if str(x).strip() in aliases))
+    if not timeframes:
+        return jsonify({"error":"Select at least one timeframe."}), 400
+    bars = max(100, min(100000, int(body.get("bars", 5000))))
+    strategies = body.get("strategies", []) or []
+    run_ids = [str(x.get("run_id","")).strip() for x in strategies if isinstance(x, dict) and x.get("run_id")]
+    run_cache = {rid: _RUN_DATA.get(rid) for rid in run_ids}
+    exported = datetime.now(timezone.utc).isoformat()
+
+    def market_frame(tf):
+        z = None
+        for rid, saved in run_cache.items():
+            if saved and str(saved.get("native_tf","")).lower() == tf:
+                z = saved["df"].tail(bars)
+                break
+        if z is None:
+            mp = {"5m":"5Min","15m":"15Min","1h":"1Hour","1d":"1Day","1w":"1Week"}
+            raw = alpaca_get_bars(symbol, mp[tf], limit=bars)
+            z = _bars_to_df(raw, symbol, tf)
+        return [{
+            "timestamp": ts.isoformat(),
+            "open": float(row["Open"]),
+            "high": float(row["High"]),
+            "low": float(row["Low"]),
+            "close": float(row["Close"]),
+            "volume": float(row["Volume"]),
+        } for ts, row in z.tail(bars).iterrows()]
+
+    try:
+        sync_error = None
+        try:
+            sync_alpaca_orders(days=30)
+        except Exception as exc:
+            sync_error = f"{type(exc).__name__}: {exc}"
+
+        package = {
+            "schema_version": "strategy-lab-v3-master-research-1",
+            "export_version": "V3",
+            "exported_at_utc": exported,
+            "symbol": symbol,
+            "timeframes": timeframes,
+            "bars_per_timeframe": bars,
+            "strategies": strategies,
+            "alpaca": {
+                "provider": "Alpaca",
+                "synced_days": 30,
+                "sync_error": sync_error,
+                "closed_metrics": get_closed_summary(),
+                "order_log": get_all_trades(),
+                "closed_positions": get_all_closed_positions(),
+            },
+            "market_data": {tf: market_frame(tf) for tf in timeframes},
+            "contents": {
+                "strategies": "Complete Strategy Lab run payloads including metrics, every returned trade, signals/diagnostics and P&L curve.",
+                "alpaca": "Actual broker execution/order history and locally reconstructed closed-position P&L.",
+                "market_data": "OHLCV market data for every selected timeframe, kept separate from strategy/backtest trades."
+            },
+            "analysis_ready": {
+                "trade_to_market_mapping": "Use strategy trade timestamps against the native and context timeframe OHLCV.",
+                "profit_factor": "Analyze gross profit versus gross loss from individual strategy trades.",
+                "return": "Use strategy metrics and P&L curves, then validate changes chronologically.",
+                "robustness": "Compare patterns across timeframes, regimes and independent train/test periods."
+            },
+            "note": "Master AI research export. Strategy/backtest trades and actual Alpaca trades are intentionally kept in separate sections."
+        }
+        return jsonify(_safe(package))
+    except Exception as exc:
+        return jsonify({"error":f"{type(exc).__name__}: {exc}"}), 500
 
 
 @bp.route("/api/strategy-lab/export-excel", methods=["POST"])
