@@ -247,8 +247,8 @@ def optimize():
     try:
         df, source = _intraday(symbol, bars)
         split = max(500, min(len(df)-100, int(len(df) * train_pct)))
-        train = df.iloc[:split].copy()
-        test = df.iloc[split:].copy()
+        train = df.iloc[:split]
+        test = df.iloc[split:]
 
         def score_row(a, b, extra):
             ap, bp = float(a["profit_factor"] or 0), float(b["profit_factor"] or 0)
@@ -275,8 +275,8 @@ def optimize():
                     cfg = PullbackV2Config(min_atr_pct=min_atr, min_ema_gap_atr=gap,
                                            breakout_buffer_atr=buf, min_body_atr=0.40,
                                            rr=2.0, cooldown_bars=8, atr_stop=1.2)
-                    a = pullback_v2_backtest(train, cfg)["metrics"]
-                    b = pullback_v2_backtest(test, cfg)["metrics"]
+                    a = pullback_v2_backtest(train, cfg, details=False)["metrics"]
+                    b = pullback_v2_backtest(test, cfg, details=False)["metrics"]
                     if a["num_trades"] < min_train or b["num_trades"] < min_test:
                         continue
                     seeds.append(score_row(a, b, {
