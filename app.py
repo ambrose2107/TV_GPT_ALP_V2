@@ -14,7 +14,7 @@ from core.logger import get_logger
 from core.scheduler import init_scheduler
 from dashboard.routes import dashboard_bp
 from mirrorfish.routes import mirrorfish_bp
-from research.backtest_routes import backtest_bp
+from research.backtest_routes import backtest_bp\nfrom research.ai_crash_routes import ai_crash_bp
 from research.xauusd_confluence_v4_routes import xauusd_confluence_v4_bp
 from research.xauusd_fib_mtf_routes import xauusd_fib_mtf_bp
 from research.xauusd_pullback_v1_routes import xauusd_pullback_v1_bp
@@ -48,7 +48,7 @@ def create_app():
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(mirrorfish_bp)
     app.register_blueprint(analytics_bp)
-    app.register_blueprint(backtest_bp)
+    app.register_blueprint(backtest_bp)\n    app.register_blueprint(ai_crash_bp)
     app.register_blueprint(xauusd_v3_bp)
     app.register_blueprint(xauusd_fib_mtf_bp)
     app.register_blueprint(xauusd_confluence_v4_bp)
