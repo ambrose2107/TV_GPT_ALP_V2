@@ -250,7 +250,19 @@ async function runOptimizer(){
  const btn=$('runOptimizer');btn.disabled=true;$('optimizerStatus').textContent='Optimizing '+selectedSymbol()+'…';
  try{
   const r=await fetch('/api/xauusd-research-v2/optimize',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({strategy:$('optStrategy').value,symbol:selectedSymbol(),n_bars:bars(),train_pct:(Number($('optTrain').value)||70)/100,min_train_trades:Number($('optMinTrain').value)||10,min_test_trades:Number($('optMinTest').value)||5})});
-  const d=await r.json();if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
+  const contentType=(r.headers.get('content-type')||'').toLowerCase();
+  const raw=await r.text();
+  let d=null;
+  if(contentType.includes('application/json')){
+   try{d=JSON.parse(raw);}catch(_){d=null;}
+  }
+  if(r.redirected || !contentType.includes('application/json')){
+   if(r.status===401 || /login/i.test(r.url||'') || /<html/i.test(raw)){
+    throw new Error('Optimizer session/API unavailable. Refresh the page and log in again; if it persists, deploy the latest GPTver_confluence_v4 backend.');
+   }
+   throw new Error('Optimizer API returned non-JSON (HTTP '+r.status+'). Check that the latest V2 backend is deployed.');
+  }
+  if(!r.ok)throw new Error((d&&d.error)||('HTTP '+r.status));
   const rows=d.results||[];
   if(!rows.length){$('optimizerResults').innerHTML='<div class="empty">No configurations passed the trade-count filters.</div>';}
   else{const cols=Object.keys(rows[0]);$('optimizerResults').innerHTML='<table><tr>'+cols.map(x=>'<th>'+esc(x)+'</th>').join('')+'</tr>'+rows.map(row=>'<tr>'+cols.map(x=>'<td>'+esc(typeof row[x]==='number'?num(row[x]):row[x])+'</td>').join('')+'</tr>').join('')+'</table>';}
