@@ -237,6 +237,7 @@ def optimize():
         train = df.iloc[:split].copy()
         test = df.iloc[split:].copy()
         rows = []
+        tested_count = 0
         if strategy == "pullback":
             # Focused SPY research grid. The previous 6,480-combination grid was
             # too expensive for a synchronous Render request and could time out,
@@ -279,6 +280,7 @@ def optimize():
 
             stage1_rows.sort(key=lambda x:(x["robust_score"],x["test_pf"],x["test_total_R"]), reverse=True)
             seeds = stage1_rows[:8]
+            tested_count = len(stage1) + (len(seeds) * 3 * 3 * 3 * 3)
 
             # Refine only around the strongest entry-quality regimes.
             stage2 = []
@@ -341,8 +343,10 @@ def optimize():
                              "robust_score":min(ap,bp)+0.25*float(b["expectancy_R"])})
         else:
             return jsonify({"error":"Optimizer supports Pullback V2, EMA 20/50 V2 and Trend Ribbon V2."}),400
+        if strategy in ("ema", "trend_ribbon"):
+            tested_count = len(grid)
         rows.sort(key=lambda x:(x["robust_score"],x["test_pf"],x["test_total_R"]),reverse=True)
-        return jsonify(_safe({"strategy":strategy,"symbol":symbol,"data_source":source,"bars":len(df),"train_bars":len(train),"test_bars":len(test),"train_pct":train_pct,"tested":len(grid),"passed":len(rows),"results":rows[:25],"note":"Chronological train/test research only; not a future-performance guarantee."}))
+        return jsonify(_safe({"strategy":strategy,"symbol":symbol,"data_source":source,"bars":len(df),"train_bars":len(train),"test_bars":len(test),"train_pct":train_pct,"tested":tested_count,"passed":len(rows),"results":rows[:25],"note":"Chronological train/test research only; not a future-performance guarantee."}))
     except Exception as exc:
         return jsonify({"error":f"{type(exc).__name__}: {exc}"}),500
 
