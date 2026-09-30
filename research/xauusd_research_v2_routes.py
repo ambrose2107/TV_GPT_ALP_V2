@@ -231,7 +231,13 @@ def optimize():
     train_pct = min(0.8, max(0.5, float(body.get("train_pct", 0.7))))
     min_train = max(5, int(body.get("min_train_trades", 10)))
     min_test = max(3, int(body.get("min_test_trades", 5)))
-    # Pullback optimization can be memory-heavy on small Render workers.\n    # Split the eight Stage-1 seeds across independent requests when requested.\n    batch_index = max(0, int(body.get("batch_index", 0)))\n    batch_total = max(1, min(8, int(body.get("batch_total", 1))))\n    if batch_index >= batch_total:\n        return jsonify({"error": "Invalid optimizer batch index"}), 400\n    try:
+    # Pullback optimization can be memory-heavy on small Render workers.
+    # Split the eight Stage-1 seeds across independent requests when requested.
+    batch_index = max(0, int(body.get("batch_index", 0)))
+    batch_total = max(1, min(8, int(body.get("batch_total", 1))))
+    if batch_index >= batch_total:
+        return jsonify({"error": "Invalid optimizer batch index"}), 400
+    try:
         df, source = _intraday(symbol, bars)
         split = max(500, min(len(df)-100, int(len(df) * train_pct)))
         train = df.iloc[:split].copy()
@@ -281,7 +287,13 @@ def optimize():
             stage1_rows.sort(key=lambda x:(x["robust_score"],x["test_pf"],x["test_total_R"]), reverse=True)
             seeds = stage1_rows[:8]
             # Refine only around the strongest entry-quality regimes.
-            # In batched mode each request owns a disjoint subset of the eight\n            # Stage-1 seeds. This keeps each worker well below the memory peak.\n            seeds_for_batch = seeds if batch_total == 1 else [\n                seed for idx, seed in enumerate(seeds) if idx % batch_total == batch_index\n            ]\n            stage2 = []\n            for seed in seeds_for_batch:
+            # In batched mode each request owns a disjoint subset of the eight
+            # Stage-1 seeds. This keeps each worker well below the memory peak.
+            seeds_for_batch = seeds if batch_total == 1 else [
+                seed for idx, seed in enumerate(seeds) if idx % batch_total == batch_index
+            ]
+            stage2 = []
+            for seed in seeds_for_batch:
                 for body, rr, cooldown, atr_stop in itertools.product(
                     [0.30, 0.40, 0.50],
                     [1.8, 2.0, 2.2],
@@ -323,7 +335,13 @@ def optimize():
             # of a full Cartesian grid to keep Render runtime bounded.
             # These are important SPY-specific levers exposed by Pullback V2:
             # EMA structure, pullback depth, breakout lookback and session.
-            stage3_seeds = sorted(\n                rows,\n                key=lambda x: (x["robust_score"], x["test_pf"], x["test_total_R"]),\n                reverse=True,\n            )[:2 if batch_total > 1 else 8]\n            stage3 = []\n            tested_count += len(stage3_seeds) * 13
+            stage3_seeds = sorted(
+                rows,
+                key=lambda x: (x["robust_score"], x["test_pf"], x["test_total_R"]),
+                reverse=True,
+            )[:2 if batch_total > 1 else 8]
+            stage3 = []
+            tested_count += len(stage3_seeds) * 13
             for seed in stage3_seeds:
                 base = {
                     "ema_fast": 50,
