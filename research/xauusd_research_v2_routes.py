@@ -465,6 +465,7 @@ def export_strategy_lab_json():
     days = max(1, min(770, int(body.get("days", 365))))
     bars = max(100, min(60000, int(body.get("bars", min(30000, days * 78)))))
     strategies = body.get("strategies", []) or []
+    optimizer = body.get("optimizer") or {}
     run_ids = [str(x.get("run_id","")).strip() for x in strategies if isinstance(x, dict) and x.get("run_id")]
     run_cache = {rid: _RUN_DATA.get(rid) for rid in run_ids}
     exported = datetime.now(timezone.utc).isoformat()
@@ -513,6 +514,7 @@ def export_strategy_lab_json():
             "days": days,
             "bars_per_timeframe": bars,
             "strategies": strategies,
+            "optimization": optimizer,
             "alpaca": {
                 "provider": "Alpaca",
                 "synced_days": 30,
@@ -524,6 +526,7 @@ def export_strategy_lab_json():
             "market_data": {tf: market_frame(tf) for tf in timeframes},
             "contents": {
                 "strategies": "Complete Strategy Lab run payloads including metrics, every returned trade, signals/diagnostics and P&L curve.",
+                "optimization": "Every optimizer configuration returned by all memory-safe batches, including train/test metrics and robustness score.",
                 "alpaca": "Actual broker execution/order history and locally reconstructed closed-position P&L.",
                 "market_data": "OHLCV market data for every selected timeframe, kept separate from strategy/backtest trades."
             },
@@ -553,6 +556,7 @@ def export_strategy_lab_excel():
     if not timeframes: return jsonify({"error":"Select at least one timeframe."}), 400
     bars = max(100, min(100000, int(body.get("bars", 5000))))
     strategies = body.get("strategies", []) or []
+    optimizer = body.get("optimizer") or {}
     # Each strategy run gets its own run_id. Prefer an exact cached run only
     # when its native timeframe matches the requested sheet; otherwise pull
     # the requested timeframe directly so a 5m run cannot silently masquerade
@@ -594,6 +598,8 @@ def export_strategy_lab_excel():
             }]).to_excel(writer, sheet_name="README", index=False)
             for tf in timeframes:
                 frame(tf).to_excel(writer, sheet_name=tf.upper(), index=False)
+            if optimizer and optimizer.get("results"):
+                pd.DataFrame(optimizer.get("results") or []).to_excel(writer, sheet_name="Optimizer_All", index=False)
             trades=[]
             for item in strategies:
                 if isinstance(item,dict):
