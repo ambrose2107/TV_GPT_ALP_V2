@@ -179,8 +179,8 @@ _STRATEGY_PARAMS = {
         ("atr_stop","ATR stop",1.2,"float",0.25,4.0),("rr","Reward / risk",2.0,"float",0.5,5.0),
         ("cooldown_bars","Cooldown bars",8,"int",0,50),("session_start_utc","Session start UTC",13,"int",0,23),
         ("session_end_utc","Session end UTC",21,"int",1,24),("min_ema_gap_atr","Min EMA gap ATR",0.10,"float",0,2),
-        ("breakout_buffer_atr","Breakout buffer ATR",0.05,"float",0,1),("min_body_atr","Min candle body ATR",0.20,"float",0,2),
-        ("min_atr_pct","Min ATR %",0.0005,"float",0,0.02),("max_atr_pct","Max ATR %",0.02,"float",0.001,0.10),
+        ("breakout_buffer_atr","Breakout buffer ATR",0.15,"float",0,1),("min_body_atr","Min candle body ATR",0.40,"float",0,2),
+        ("min_atr_pct","Min ATR %",0.00125,"float",0,0.02),("max_atr_pct","Max ATR %",0.02,"float",0.001,0.10),
     ],
     "ema": [("ema_fast","EMA fast",20,"int",5,100),("ema_slow","EMA slow",50,"int",20,200),("min_gap_atr","Min gap ATR",0.10,"float",0,2),("min_rejection_body_atr","Min rejection body ATR",0.10,"float",0,2),("rr","Reward / risk",2.5,"float",0.5,5),("separation_bars","Separation bars",2,"int",1,10)],
     "trend_ribbon": [("alma_len","ALMA length",34,"int",5,100),("alma_offset","ALMA offset",0.85,"float",0.1,0.99),("alma_sigma","ALMA sigma",6.0,"float",1,15),("dev_len","Deviation length",34,"int",5,100),("dev_mult","Deviation multiplier",0.65,"float",0,3),("slope_len","Slope length",3,"int",1,20),("slope_min","Minimum slope",0.08,"float",0,1),("stop_lookback","Stop lookback",12,"int",2,50),("min_stop_atr","Min stop ATR",0.75,"float",0.1,5),("max_stop_atr","Max stop ATR",3.0,"float",0.5,8),("max_entry_body_atr","Max entry body ATR",1.0,"float",0.25,4),("target_count","Target count",4,"int",2,4),("max_hold_bars","Max hold bars (0=off)",0,"int",0,500),("cooldown_bars","Cooldown bars",0,"int",0,50)],
@@ -233,13 +233,11 @@ def optimize():
         test = df.iloc[split:].copy()
         rows = []
         if strategy == "pullback":
-            grid = list(itertools.product([0.05, 0.10], [0.15, 0.25, 0.35], [1.5, 2.0, 2.5], [6, 8, 12], [18, 19, 20, 21]))
-            for buf, body_min, rr, cooldown, end_hour in grid:
-                cfg = PullbackV2Config(breakout_buffer_atr=buf, min_body_atr=body_min, rr=rr, cooldown_bars=cooldown, session_end_utc=end_hour)
+            grid = list(itertools.product(\n                [0.0005, 0.00075, 0.0010, 0.00125, 0.0015],\n                [0.05, 0.10, 0.15, 0.20],\n                [0.05, 0.10, 0.15],\n                [0.20, 0.30, 0.40],\n                [1.8, 2.0, 2.2],\n                [8, 12, 16],\n                [1.0, 1.2, 1.5]))\n            for min_atr, gap, buf, body_min, rr, cooldown, atr_stop in grid:\n                cfg = PullbackV2Config(min_atr_pct=min_atr, min_ema_gap_atr=gap, breakout_buffer_atr=buf, min_body_atr=body_min, rr=rr, cooldown_bars=cooldown, atr_stop=atr_stop)
                 a = pullback_v2_backtest(train, cfg)["metrics"]; b = pullback_v2_backtest(test, cfg)["metrics"]
                 if a["num_trades"] < min_train or b["num_trades"] < min_test: continue
                 ap, bp = float(a["profit_factor"] or 0), float(b["profit_factor"] or 0)
-                rows.append({"breakout_buffer_atr":buf,"min_body_atr":body_min,"rr":rr,"cooldown_bars":cooldown,"session_end_utc":end_hour,"train_trades":a["num_trades"],"train_pf":ap,"train_expectancy_R":a["expectancy_R"],"test_trades":b["num_trades"],"test_pf":bp,"test_expectancy_R":b["expectancy_R"],"test_total_R":b["total_R"],"test_return_pct":b["total_return_pct"],"test_max_dd_pct":b["max_drawdown_pct"],"robust_score":min(ap,bp)+0.25*float(b["expectancy_R"])})
+                rows.append({"min_atr_pct":min_atr,"min_ema_gap_atr":gap,"breakout_buffer_atr":buf,"min_body_atr":body_min,"rr":rr,"cooldown_bars":cooldown,"atr_stop":atr_stop,"train_trades":a["num_trades"],"train_pf":ap,"train_expectancy_R":a["expectancy_R"],"test_trades":b["num_trades"],"test_pf":bp,"test_expectancy_R":b["expectancy_R"],"test_total_R":b["total_R"],"test_return_pct":b["total_return_pct"],"test_max_dd_pct":b["max_drawdown_pct"],"robust_score":min(ap,bp)+0.25*float(b["expectancy_R"])})
         elif strategy == "ema":
             grid = list(itertools.product([0.05,0.10,0.20], [0.05,0.10,0.20], [2.0,2.5,3.0], [1,2]))
             for gap, rej, rr, sep in grid:
