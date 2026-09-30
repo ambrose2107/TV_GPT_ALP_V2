@@ -62,7 +62,7 @@ def _signal_arrays(df, cfg):
     es=_ema_np(c,cfg.ema_slow)
 
     prev_c=np.empty_like(c)
-    prev_c[0]=np.nan
+    prev_c[0]=c[0]
     prev_c[1:]=c[:-1]
     tr=np.maximum.reduce((h-l,np.abs(h-prev_c),np.abs(l-prev_c)))
     a=_rolling_mean_np(tr,cfg.atr_len)
