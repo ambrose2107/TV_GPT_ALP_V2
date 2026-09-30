@@ -238,20 +238,86 @@ def optimize():
         test = df.iloc[split:].copy()
         rows = []
         if strategy == "pullback":
-            grid = list(itertools.product(
-                [0.0005, 0.00075, 0.0010, 0.00125, 0.0015],
+            # Focused SPY research grid. The previous 6,480-combination grid was
+            # too expensive for a synchronous Render request and could time out,
+            # returning an HTML 502 page to the browser instead of JSON.
+            # Stage 1 identifies the useful entry-quality regime; Stage 2 refines
+            # RR/stop/cooldown around the best Stage-1 candidates.
+            stage1 = list(itertools.product(
+                [0.00075, 0.0010, 0.00125, 0.0015],
                 [0.05, 0.10, 0.15, 0.20],
-                [0.05, 0.10, 0.15],
                 [0.20, 0.30, 0.40],
-                [1.8, 2.0, 2.2],
-                [8, 12, 16],
-                [1.0, 1.2, 1.5]))
-            for min_atr, gap, buf, body_min, rr, cooldown, atr_stop in grid:
-                cfg = PullbackV2Config(min_atr_pct=min_atr, min_ema_gap_atr=gap, breakout_buffer_atr=buf, min_body_atr=body_min, rr=rr, cooldown_bars=cooldown, atr_stop=atr_stop)
-                a = pullback_v2_backtest(train, cfg)["metrics"]; b = pullback_v2_backtest(test, cfg)["metrics"]
-                if a["num_trades"] < min_train or b["num_trades"] < min_test: continue
+            ))
+            stage1_rows = []
+            for min_atr, gap, buf in stage1:
+                cfg = PullbackV2Config(
+                    min_atr_pct=min_atr,
+                    min_ema_gap_atr=gap,
+                    breakout_buffer_atr=buf,
+                    min_body_atr=0.40,
+                    rr=2.0,
+                    cooldown_bars=8,
+                    atr_stop=1.2,
+                )
+                a = pullback_v2_backtest(train, cfg)["metrics"]
+                b = pullback_v2_backtest(test, cfg)["metrics"]
+                if a["num_trades"] < min_train or b["num_trades"] < min_test:
+                    continue
                 ap, bp = float(a["profit_factor"] or 0), float(b["profit_factor"] or 0)
-                rows.append({"min_atr_pct":min_atr,"min_ema_gap_atr":gap,"breakout_buffer_atr":buf,"min_body_atr":body_min,"rr":rr,"cooldown_bars":cooldown,"atr_stop":atr_stop,"train_trades":a["num_trades"],"train_pf":ap,"train_expectancy_R":a["expectancy_R"],"test_trades":b["num_trades"],"test_pf":bp,"test_expectancy_R":b["expectancy_R"],"test_total_R":b["total_R"],"test_return_pct":b["total_return_pct"],"test_max_dd_pct":b["max_drawdown_pct"],"robust_score":min(ap,bp)+0.25*float(b["expectancy_R"])})
+                stage1_rows.append({
+                    "min_atr_pct":min_atr, "min_ema_gap_atr":gap,
+                    "breakout_buffer_atr":buf, "min_body_atr":0.40,
+                    "rr":2.0, "cooldown_bars":8, "atr_stop":1.2,
+                    "train_trades":a["num_trades"], "train_pf":ap,
+                    "train_expectancy_R":a["expectancy_R"],
+                    "test_trades":b["num_trades"], "test_pf":bp,
+                    "test_expectancy_R":b["expectancy_R"],
+                    "test_total_R":b["total_R"], "test_return_pct":b["total_return_pct"],
+                    "test_max_dd_pct":b["max_drawdown_pct"],
+                    "robust_score":min(ap,bp)+0.25*float(b["expectancy_R"])
+                })
+
+            stage1_rows.sort(key=lambda x:(x["robust_score"],x["test_pf"],x["test_total_R"]), reverse=True)
+            seeds = stage1_rows[:8]
+
+            # Refine only around the strongest entry-quality regimes.
+            stage2 = []
+            for seed in seeds:
+                for body, rr, cooldown, atr_stop in itertools.product(
+                    [0.30, 0.40, 0.50],
+                    [1.8, 2.0, 2.2],
+                    [6, 8, 12],
+                    [1.0, 1.2, 1.5],
+                ):
+                    stage2.append((seed, body, rr, cooldown, atr_stop))
+
+            for seed, body, rr, cooldown, atr_stop in stage2:
+                cfg = PullbackV2Config(
+                    min_atr_pct=seed["min_atr_pct"],
+                    min_ema_gap_atr=seed["min_ema_gap_atr"],
+                    breakout_buffer_atr=seed["breakout_buffer_atr"],
+                    min_body_atr=body, rr=rr,
+                    cooldown_bars=cooldown, atr_stop=atr_stop,
+                )
+                a = pullback_v2_backtest(train, cfg)["metrics"]
+                b = pullback_v2_backtest(test, cfg)["metrics"]
+                if a["num_trades"] < min_train or b["num_trades"] < min_test:
+                    continue
+                ap, bp = float(a["profit_factor"] or 0), float(b["profit_factor"] or 0)
+                rows.append({
+                    "min_atr_pct":seed["min_atr_pct"],
+                    "min_ema_gap_atr":seed["min_ema_gap_atr"],
+                    "breakout_buffer_atr":seed["breakout_buffer_atr"],
+                    "min_body_atr":body, "rr":rr,
+                    "cooldown_bars":cooldown, "atr_stop":atr_stop,
+                    "train_trades":a["num_trades"], "train_pf":ap,
+                    "train_expectancy_R":a["expectancy_R"],
+                    "test_trades":b["num_trades"], "test_pf":bp,
+                    "test_expectancy_R":b["expectancy_R"],
+                    "test_total_R":b["total_R"], "test_return_pct":b["total_return_pct"],
+                    "test_max_dd_pct":b["max_drawdown_pct"],
+                    "robust_score":min(ap,bp)+0.25*float(b["expectancy_R"])
+                })
         elif strategy == "ema":
             grid = list(itertools.product([0.05,0.10,0.20], [0.05,0.10,0.20], [2.0,2.5,3.0], [1,2]))
             for gap, rej, rr, sep in grid:
