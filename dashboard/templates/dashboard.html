@@ -4037,7 +4037,7 @@ function fmtMetric(v, suffix) {
   return v + (suffix || '');
 }
 
-function aiCrashScoreClass(v){return v>=50?'y':'g';}
+function aiCrashScoreClass(v){return v>=70?'r':v>=50?'y':'g';}
 function drawAICrashHistory(rows){
   const el=$('ai-crash-chart'); if(!el||rows.length<2){if(el)el.innerHTML='<div style="color:#8b949e;padding:30px;text-align:center">History unavailable</div>';return;}
   const w=720,h=170,p=26,vals=rows.map(x=>+x.v||0),pts=rows.map((x,i)=>[p+i*(w-2*p)/(rows.length-1),h-p-vals[i]*(h-2*p)/100]);
