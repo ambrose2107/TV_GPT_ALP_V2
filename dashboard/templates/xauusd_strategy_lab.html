@@ -247,9 +247,9 @@ function downloadResultsCsv(){
  $('globalStatus').innerHTML='<span class="ok">V2 results CSV exported.</span>';
 }
 async function runOptimizer(){
- const btn=$('runOptimizer');btn.disabled=true;$('optimizerStatus').textContent='Optimizing '+selectedSymbol()+'…';
+ const btn=$('runOptimizer');btn.disabled=true;$('optimizerStatus').textContent='Optimizing '+($('optStrategy').value==='pullback'?'SPY':selectedSymbol())+'…';
  try{
-  const r=await fetch('/api/xauusd-research-v2/optimize',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({strategy:$('optStrategy').value,symbol:selectedSymbol(),n_bars:bars(),train_pct:(Number($('optTrain').value)||70)/100,min_train_trades:Number($('optMinTrain').value)||10,min_test_trades:Number($('optMinTest').value)||5})});
+  const r=await fetch('/api/xauusd-research-v2/optimize',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({strategy:$('optStrategy').value,symbol:$('optStrategy').value==='pullback'?'SPY':selectedSymbol(),n_bars:bars(),train_pct:(Number($('optTrain').value)||70)/100,min_train_trades:Number($('optMinTrain').value)||10,min_test_trades:Number($('optMinTest').value)||5})});
   const contentType=(r.headers.get('content-type')||'').toLowerCase();
   const raw=await r.text();
   let d=null;
