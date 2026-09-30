@@ -215,6 +215,11 @@ def status():
 
 
 
+@bp.route("/api/strategy-lab/optimize", methods=["POST"])
+def optimize_strategy_lab_alias():
+    """Compatibility alias for the V2 optimizer used by older deployed pages."""
+    return optimize()
+
 @bp.route("/api/xauusd-research-v2/optimize", methods=["POST"])
 def optimize():
     if not session.get("logged_in"):
