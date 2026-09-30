@@ -282,12 +282,12 @@ def optimize():
                     seeds.append(score_row(a, b, {
                         "min_atr_pct": min_atr, "min_ema_gap_atr": gap,
                         "breakout_buffer_atr": buf, "min_body_atr": 0.40,
-                        "rr": 2.0, "cooldown_bars": 8, "atr_stop": 1.2,
+                        "rr": 2.0, "cooldown_bars": 8, "atr_stop": 1.2, "optimizer_phase": "stage1",
                     }))
                 seeds.sort(key=lambda x:(x["robust_score"], x["test_pf"], x["test_total_R"]), reverse=True)
                 return jsonify(_safe({"phase":"stage1","strategy":strategy,"symbol":"SPY",
                                       "bars":len(df),"train_bars":len(train),"test_bars":len(test),
-                                      "tested":48,"passed":len(seeds),"seeds":seeds[:8]}))
+                                      "tested":48,"passed":len(seeds),"results":seeds,"seeds":seeds[:8]}))
 
             seed = body.get("seed") or {}
             required = ["min_atr_pct","min_ema_gap_atr","breakout_buffer_atr"]
@@ -316,7 +316,7 @@ def optimize():
                         "min_ema_gap_atr":float(seed["min_ema_gap_atr"]),
                         "breakout_buffer_atr":float(seed["breakout_buffer_atr"]),
                         "min_body_atr":body_size, "rr":rr,
-                        "cooldown_bars":8, "atr_stop":atr_stop}))
+                        "cooldown_bars":8, "atr_stop":atr_stop, "optimizer_phase":"stage2"}))
                 rows.sort(key=lambda x:(x["robust_score"],x["test_pf"],x["test_total_R"]),reverse=True)
                 return jsonify(_safe({"phase":"stage2","strategy":strategy,"symbol":"SPY",
                                       "bars":len(df),"tested":27,"passed":len(rows),"results":rows}))
@@ -354,7 +354,7 @@ def optimize():
                         "min_atr_pct":float(base["min_atr_pct"]),"min_ema_gap_atr":float(base["min_ema_gap_atr"]),
                         "breakout_buffer_atr":float(base["breakout_buffer_atr"]),"min_body_atr":float(base["min_body_atr"]),
                         "rr":float(base["rr"]),"cooldown_bars":int(structural.get("cooldown_bars",base.get("cooldown_bars",8))),
-                        "atr_stop":float(base["atr_stop"]),"structural_stage":structural["stage3_axis"]}))
+                        "atr_stop":float(base["atr_stop"]),"structural_stage":structural["stage3_axis"],"optimizer_phase":"stage3"}))
                 rows.sort(key=lambda x:(x["robust_score"],x["test_pf"],x["test_total_R"]),reverse=True)
                 return jsonify(_safe({"phase":"stage3","strategy":strategy,"symbol":"SPY",
                                       "bars":len(df),"tested":16,"passed":len(rows),"results":rows}))
