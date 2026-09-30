@@ -320,6 +320,99 @@ def optimize():
                     "test_max_dd_pct":b["max_drawdown_pct"],
                     "robust_score":min(ap,bp)+0.25*float(b["expectancy_R"])
                 })
+
+            # Stage 3: structural sensitivity around the strongest Stage-2
+            # candidates. We deliberately use coordinate-style tests instead
+            # of a full Cartesian grid to keep Render runtime bounded.
+            # These are important SPY-specific levers exposed by Pullback V2:
+            # EMA structure, pullback depth, breakout lookback and session.
+            stage3_seeds = sorted(
+                rows,
+                key=lambda x: (x["robust_score"], x["test_pf"], x["test_total_R"]),
+                reverse=True,
+            )[:8]
+            stage3 = []
+            for seed in stage3_seeds:
+                base = {
+                    "ema_fast": 50,
+                    "ema_slow": 200,
+                    "pullback_bars": 3,
+                    "breakout_lookback": 5,
+                    "session_start_utc": 13,
+                    "session_end_utc": 21,
+                }
+                # One structural dimension at a time, holding the seed's
+                # already-optimized entry/exit quality parameters constant.
+                candidates = []
+                for ef, es in [(50, 200), (30, 100), (20, 50)]:
+                    candidates.append({**base, "ema_fast": ef, "ema_slow": es, "stage3_axis": "ema"})
+                for pb in [2, 3, 4]:
+                    candidates.append({**base, "pullback_bars": pb, "stage3_axis": "pullback_bars"})
+                for lookback in [4, 5, 6]:
+                    candidates.append({**base, "breakout_lookback": lookback, "stage3_axis": "breakout_lookback"})
+                for start_utc, end_utc in [(13, 20), (13, 21), (14, 20), (14, 21)]:
+                    candidates.append({
+                        **base,
+                        "session_start_utc": start_utc,
+                        "session_end_utc": end_utc,
+                        "stage3_axis": "session",
+                    })
+
+                for structural in candidates:
+                    cfg = PullbackV2Config(
+                        ema_fast=structural["ema_fast"],
+                        ema_slow=structural["ema_slow"],
+                        pullback_bars=structural["pullback_bars"],
+                        breakout_lookback=structural["breakout_lookback"],
+                        session_start_utc=structural["session_start_utc"],
+                        session_end_utc=structural["session_end_utc"],
+                        min_atr_pct=seed["min_atr_pct"],
+                        min_ema_gap_atr=seed["min_ema_gap_atr"],
+                        breakout_buffer_atr=seed["breakout_buffer_atr"],
+                        min_body_atr=seed["min_body_atr"],
+                        rr=seed["rr"],
+                        cooldown_bars=seed["cooldown_bars"],
+                        atr_stop=seed["atr_stop"],
+                    )
+                    a = pullback_v2_backtest(train, cfg)["metrics"]
+                    b = pullback_v2_backtest(test, cfg)["metrics"]
+                    if a["num_trades"] < min_train or b["num_trades"] < min_test:
+                        continue
+                    ap, bp = float(a["profit_factor"] or 0), float(b["profit_factor"] or 0)
+                    rows.append({
+                        "ema_fast": structural["ema_fast"],
+                        "ema_slow": structural["ema_slow"],
+                        "pullback_bars": structural["pullback_bars"],
+                        "breakout_lookback": structural["breakout_lookback"],
+                        "session_start_utc": structural["session_start_utc"],
+                        "session_end_utc": structural["session_end_utc"],
+                        "min_atr_pct": seed["min_atr_pct"],
+                        "min_ema_gap_atr": seed["min_ema_gap_atr"],
+                        "breakout_buffer_atr": seed["breakout_buffer_atr"],
+                        "min_body_atr": seed["min_body_atr"],
+                        "rr": seed["rr"],
+                        "cooldown_bars": seed["cooldown_bars"],
+                        "atr_stop": seed["atr_stop"],
+                        "train_trades": a["num_trades"],
+                        "train_pf": ap,
+                        "train_expectancy_R": a["expectancy_R"],
+                        "train_total_R": a["total_R"],
+                        "test_trades": b["num_trades"],
+                        "test_pf": bp,
+                        "test_expectancy_R": b["expectancy_R"],
+                        "test_total_R": b["total_R"],
+                        "test_return_pct": b["total_return_pct"],
+                        "test_max_dd_pct": b["max_drawdown_pct"],
+                        "structural_stage": structural["stage3_axis"],
+                        # Return-aware but still robustness-first. PF must
+                        # survive train/test; total R gets a modest weight.
+                        "robust_score": (
+                            min(ap, bp)
+                            + 0.35 * float(b["expectancy_R"])
+                            + 0.005 * max(float(b["total_R"]), 0.0)
+                        ),
+                    })
+
         elif strategy == "ema":
             grid = list(itertools.product([0.05,0.10,0.20], [0.05,0.10,0.20], [2.0,2.5,3.0], [1,2]))
             for gap, rej, rr, sep in grid:
