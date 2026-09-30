@@ -207,7 +207,8 @@ async function downloadResultsJson(){
     timeframes,
     days:exportDays,
     bars:barsCount,
-    strategies
+    strategies,
+    optimizer: window.lastOptimizerResults || {}
    })
   });
   if(!r.ok){
@@ -305,7 +306,7 @@ async function exportExcel(){
  try{
   const completed=Object.entries(lastResults||{}).map(([key,v])=>({strategy:v.strategy||key,run_id:v.run_id||'',trades:v.trades||[]}));
   const first=lastResults&&lastResults[Object.keys(lastResults)[0]];
-  const r=await fetch('/api/strategy-lab/export-excel',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:selectedSymbol(),timeframes:selected,bars:Math.min(100000,Math.max(100,Number($('exportBars').value)||5000)),run_id:first?.run_id||'',strategies:completed})});
+  const r=await fetch('/api/strategy-lab/export-excel',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:selectedSymbol(),timeframes:selected,bars:Math.min(100000,Math.max(100,Number($('exportBars').value)||5000)),run_id:first?.run_id||'',strategies:completed,optimizer:window.lastOptimizerResults||{}})});
   if(!r.ok){const d=await r.json();throw new Error(d.error||'Excel export failed')}
   const blob=await r.blob(),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=selectedSymbol()+'_strategy_research.xlsx';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(a.href);
   $('exportStatus').innerHTML='<span class="ok">Excel workbook exported: '+selected.join(', ')+'</span>';
