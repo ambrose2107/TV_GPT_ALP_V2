@@ -9,27 +9,110 @@ class PullbackV2Config:
     session_start_utc:int=13; session_end_utc:int=21; min_ema_gap_atr:float=.10
     breakout_buffer_atr:float=.15; min_body_atr:float=.40; min_atr_pct:float=.00125; max_atr_pct:float=.02
 def build_signals(df,cfg=PullbackV2Config()):
-    x=df.copy();x["ema_fast"]=x.Close.ewm(span=cfg.ema_fast,adjust=False).mean();x["ema_slow"]=x.Close.ewm(span=cfg.ema_slow,adjust=False).mean();x["atr"]=atr(x,cfg.atr_len)
-    x["signal"]=0;x["sl"]=np.nan;x["tp"]=np.nan;x["reason"]=""
-    hours=x.index.hour.to_numpy();session=(hours>=cfg.session_start_utc)&(hours<cfg.session_end_utc)
-    for i in range(max(cfg.ema_slow,cfg.breakout_lookback+cfg.pullback_bars+2,cfg.atr_len+2),len(x)):
-        if not session[i]:continue
-        a=float(x.atr.iloc[i]);close=float(x.Close.iloc[i]);ef=float(x.ema_fast.iloc[i]);es=float(x.ema_slow.iloc[i])
-        if not np.isfinite(a) or a<=0:continue
-        ap=a/max(abs(close),1e-9)
-        if not(cfg.min_atr_pct<=ap<=cfg.max_atr_pct) or abs(ef-es)/a<cfg.min_ema_gap_atr:continue
-        prev=x.iloc[i-cfg.pullback_bars:i];down=int((prev.Close<prev.Open).sum());up=int((prev.Close>prev.Open).sum())
-        ph=float(x.High.iloc[i-cfg.breakout_lookback:i].max());pl=float(x.Low.iloc[i-cfg.breakout_lookback:i].min())
-        if abs(float(x.Close.iloc[i])-float(x.Open.iloc[i]))/a<cfg.min_body_atr:continue
-        if close>es and ef>es and down>=1 and close>ph+cfg.breakout_buffer_atr*a:
-            x.iat[i,x.columns.get_loc("signal")]=1;x.iat[i,x.columns.get_loc("sl")]=close-cfg.atr_stop*a;x.iat[i,x.columns.get_loc("tp")]=close+cfg.rr*cfg.atr_stop*a;x.iat[i,x.columns.get_loc("reason")]="trend-separated | pullback | displacement breakout"
-        elif close<es and ef<es and up>=1 and close<pl-cfg.breakout_buffer_atr*a:
-            x.iat[i,x.columns.get_loc("signal")]=-1;x.iat[i,x.columns.get_loc("sl")]=close+cfg.atr_stop*a;x.iat[i,x.columns.get_loc("tp")]=close-cfg.rr*cfg.atr_stop*a;x.iat[i,x.columns.get_loc("reason")]="trend-separated | pullback | displacement breakout"
-    last=-10**9
-    for i in np.flatnonzero(x.signal.to_numpy()!=0):
-        if i-last<cfg.cooldown_bars:x.iat[i,x.columns.get_loc("signal")]=0;x.iat[i,x.columns.get_loc("sl")]=np.nan;x.iat[i,x.columns.get_loc("tp")]=np.nan
-        else:last=i
+    """Build Pullback V2 signals with vectorized indicator/condition work.
+
+    The old implementation evaluated every candle in Python for every optimizer
+    candidate. On the small Render instance that became the dominant CPU cost.
+    Rolling/EMA calculations below preserve the same signal rules while leaving
+    only the cooldown pass as a small loop over actual signal candidates.
+    """
+    x=df.copy()
+    close=x["Close"]
+    open_=x["Open"]
+
+    x["ema_fast"]=close.ewm(span=cfg.ema_fast,adjust=False).mean()
+    x["ema_slow"]=close.ewm(span=cfg.ema_slow,adjust=False).mean()
+    x["atr"]=atr(x,cfg.atr_len)
+
+    n_pull=int(cfg.pullback_bars)
+    n_break=int(cfg.breakout_lookback)
+
+    # Only completed candles immediately before the signal candle are used.
+    down=(close<open_).rolling(n_pull,min_periods=n_pull).sum().shift(1)
+    up=(close>open_).rolling(n_pull,min_periods=n_pull).sum().shift(1)
+    prior_high=x["High"].rolling(n_break,min_periods=n_break).max().shift(1)
+    prior_low=x["Low"].rolling(n_break,min_periods=n_break).min().shift(1)
+
+    a=x["atr"]
+    ef=x["ema_fast"]
+    es=x["ema_slow"]
+    ap=a/close.abs().clip(lower=1e-9)
+    body=(close-open_).abs()/a.replace(0,np.nan)
+    hours=x.index.hour.to_numpy()
+    session=(hours>=cfg.session_start_utc)&(hours<cfg.session_end_utc)
+
+    valid=(
+        session
+        & a.notna().to_numpy()
+        & (a.to_numpy()>0)
+        & (ap.to_numpy()>=cfg.min_atr_pct)
+        & (ap.to_numpy()<=cfg.max_atr_pct)
+        & ((ef-es).abs()/a>=cfg.min_ema_gap_atr)
+        & (body>=cfg.min_body_atr)
+    )
+
+    long_mask=(
+        valid
+        & (close.to_numpy()>es.to_numpy())
+        & (ef.to_numpy()>es.to_numpy())
+        & (down.to_numpy()>=1)
+        & (close.to_numpy()>prior_high.to_numpy()+cfg.breakout_buffer_atr*a.to_numpy())
+    )
+    short_mask=(
+        valid
+        & (close.to_numpy()<es.to_numpy())
+        & (ef.to_numpy()<es.to_numpy())
+        & (up.to_numpy()>=1)
+        & (close.to_numpy()<prior_low.to_numpy()-cfg.breakout_buffer_atr*a.to_numpy())
+    )
+
+    signal=np.zeros(len(x),dtype=np.int8)
+    signal[long_mask]=1
+    signal[short_mask]=-1
+
+    # Cooldown is stateful by design. Iterate only over candidate signals,
+    # not over every candle.
+    candidates=np.flatnonzero(signal)
+    if cfg.cooldown_bars>0 and len(candidates):
+        keep=[]
+        last=-10**9
+        cooldown=int(cfg.cooldown_bars)
+        for i in candidates:
+            if i-last>=cooldown:
+                keep.append(i)
+                last=i
+        filtered=np.zeros_like(signal)
+        filtered[np.asarray(keep,dtype=int)]=signal[np.asarray(keep,dtype=int)]
+        signal=filtered
+
+    x["signal"]=signal
+    x["sl"]=np.nan
+    x["tp"]=np.nan
+    x["reason"]=""
+
+    idx=np.flatnonzero(signal)
+    if len(idx):
+        av=a.to_numpy()
+        cv=close.to_numpy()
+        sl=np.full(len(x),np.nan,dtype=float)
+        tp=np.full(len(x),np.nan,dtype=float)
+        sl[idx]=cv[idx]-signal[idx]*0.0  # initialize without branching
+        long_idx=idx[signal[idx]==1]
+        short_idx=idx[signal[idx]==-1]
+        sl[long_idx]=cv[long_idx]-cfg.atr_stop*av[long_idx]
+        tp[long_idx]=cv[long_idx]+cfg.rr*cfg.atr_stop*av[long_idx]
+        sl[short_idx]=cv[short_idx]+cfg.atr_stop*av[short_idx]
+        tp[short_idx]=cv[short_idx]-cfg.rr*cfg.atr_stop*av[short_idx]
+        x["sl"]=sl
+        x["tp"]=tp
+        reasons=np.empty(len(x),dtype=object)
+        reasons[:]=""
+        reasons[long_idx]="trend-separated | pullback | displacement breakout"
+        reasons[short_idx]="trend-separated | pullback | displacement breakout"
+        x["reason"]=reasons
+
     return x
+
 def backtest(df,cfg=PullbackV2Config(),initial_equity=10000.):
     s=build_signals(df,cfg);eq=float(initial_equity);pos=None;trades=[];curve=[]
     for i in range(len(s)):
