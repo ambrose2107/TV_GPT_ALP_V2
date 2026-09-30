@@ -160,6 +160,18 @@ Important endpoints/functions include:
 
 ## 7. Current commits / milestones
 
+Latest optimizer update:
+
+- Pullback V2 remains SPY-only for the focused optimizer.
+- Stage 1 searches entry-quality regime parameters.
+- Stage 2 refines body threshold, RR, cooldown and ATR stop around the strongest Stage-1 seeds.
+- Stage 3 now tests structural sensitivity for EMA pair, pullback bars, breakout lookback and UTC session windows.
+- The staged Pullback search is bounded at approximately 800 configuration evaluations rather than returning to the old 6,480-combination synchronous grid.
+- Pullback ranking now uses a common robustness-first score based on train/test PF, test expectancy and a modest positive test-total-R component.
+
+The objective remains robustness and sustainable return, not the single highest historical backtest result.
+
+
 Recent branch history includes:
 
 - `da628132` — Show PnL trend with time for all V2 strategies
