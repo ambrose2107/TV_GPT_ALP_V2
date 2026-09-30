@@ -332,6 +332,7 @@ def optimize():
                 reverse=True,
             )[:8]
             stage3 = []
+            tested_count += len(stage3_seeds) * 13
             for seed in stage3_seeds:
                 base = {
                     "ema_fast": 50,
@@ -438,6 +439,14 @@ def optimize():
             return jsonify({"error":"Optimizer supports Pullback V2, EMA 20/50 V2 and Trend Ribbon V2."}),400
         if strategy in ("ema", "trend_ribbon"):
             tested_count = len(grid)
+        if strategy == "pullback":
+            # Rank all Pullback results with the same robustness + return score.
+            for row in rows:
+                row["robust_score"] = (
+                    min(float(row.get("train_pf") or 0), float(row.get("test_pf") or 0))
+                    + 0.35 * float(row.get("test_expectancy_R") or 0)
+                    + 0.005 * max(float(row.get("test_total_R") or 0), 0.0)
+                )
         rows.sort(key=lambda x:(x["robust_score"],x["test_pf"],x["test_total_R"]),reverse=True)
         return jsonify(_safe({"strategy":strategy,"symbol":symbol,"data_source":source,"bars":len(df),"train_bars":len(train),"test_bars":len(test),"train_pct":train_pct,"tested":tested_count,"passed":len(rows),"results":rows[:25],"note":"Chronological train/test research only; not a future-performance guarantee."}))
     except Exception as exc:
