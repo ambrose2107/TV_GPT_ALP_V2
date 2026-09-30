@@ -7,7 +7,7 @@ class PullbackV2Config:
     ema_fast:int=50; ema_slow:int=200; atr_len:int=14; pullback_bars:int=3; breakout_lookback:int=5
     atr_stop:float=1.2; rr:float=2.0; risk_pct:float=.5; cooldown_bars:int=8
     session_start_utc:int=13; session_end_utc:int=21; min_ema_gap_atr:float=.10
-    breakout_buffer_atr:float=.05; min_body_atr:float=.20; min_atr_pct:float=.0005; max_atr_pct:float=.02
+    breakout_buffer_atr:float=.15; min_body_atr:float=.40; min_atr_pct:float=.00125; max_atr_pct:float=.02
 def build_signals(df,cfg=PullbackV2Config()):
     x=df.copy();x["ema_fast"]=x.Close.ewm(span=cfg.ema_fast,adjust=False).mean();x["ema_slow"]=x.Close.ewm(span=cfg.ema_slow,adjust=False).mean();x["atr"]=atr(x,cfg.atr_len)
     x["signal"]=0;x["sl"]=np.nan;x["tp"]=np.nan;x["reason"]=""
