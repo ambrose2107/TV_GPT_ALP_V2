@@ -280,8 +280,6 @@ def optimize():
 
             stage1_rows.sort(key=lambda x:(x["robust_score"],x["test_pf"],x["test_total_R"]), reverse=True)
             seeds = stage1_rows[:8]
-            tested_count = len(stage1) + (len(seeds) * 3 * 3 * 3 * 3)
-
             # Refine only around the strongest entry-quality regimes.
             # In batched mode each request owns a disjoint subset of the eight\n            # Stage-1 seeds. This keeps each worker well below the memory peak.\n            seeds_for_batch = seeds if batch_total == 1 else [\n                seed for idx, seed in enumerate(seeds) if idx % batch_total == batch_index\n            ]\n            stage2 = []\n            for seed in seeds_for_batch:
                 for body, rr, cooldown, atr_stop in itertools.product(
