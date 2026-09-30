@@ -272,7 +272,7 @@ async function runOptimizer(){
   }else{
    const base={strategy:'pullback',symbol:'SPY',n_bars:Math.min(bars(),10000),train_pct:(Number($('optTrain').value)||70)/100,min_train_trades:Number($('optMinTrain').value)||10,min_test_trades:Number($('optMinTest').value)||5};
    $('optimizerStatus').textContent='SPY Stage 1/3: scanning 48 entry regimes…';
-   const s1=await post({...base,phase:'stage1'});totalTested+=Number(s1.tested||0);totalPassed+=Number(s1.passed||0);
+   const s1=await post({...base,phase:'stage1'});totalTested+=Number(s1.tested||0);totalPassed+=Number(s1.passed||0);allRows.push(...(s1.results||[]));
    const seeds=s1.seeds||[];
    if(!seeds.length)throw new Error('No Stage-1 configurations passed the trade-count filters.');
    const stage2=[];
