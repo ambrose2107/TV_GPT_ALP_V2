@@ -240,7 +240,8 @@ def optimize():
                 [0.20, 0.30, 0.40],
                 [1.8, 2.0, 2.2],
                 [8, 12, 16],
-                [1.0, 1.2, 1.5]))\n            for min_atr, gap, buf, body_min, rr, cooldown, atr_stop in grid:\n                cfg = PullbackV2Config(min_atr_pct=min_atr, min_ema_gap_atr=gap, breakout_buffer_atr=buf, min_body_atr=body_min, rr=rr, cooldown_bars=cooldown, atr_stop=atr_stop)
+                [1.0, 1.2, 1.5]))
+            for min_atr, gap, buf, body_min, rr, cooldown, atr_stop in grid:\n                cfg = PullbackV2Config(min_atr_pct=min_atr, min_ema_gap_atr=gap, breakout_buffer_atr=buf, min_body_atr=body_min, rr=rr, cooldown_bars=cooldown, atr_stop=atr_stop)
                 a = pullback_v2_backtest(train, cfg)["metrics"]; b = pullback_v2_backtest(test, cfg)["metrics"]
                 if a["num_trades"] < min_train or b["num_trades"] < min_test: continue
                 ap, bp = float(a["profit_factor"] or 0), float(b["profit_factor"] or 0)
