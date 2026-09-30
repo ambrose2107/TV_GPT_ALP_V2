@@ -1067,6 +1067,27 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
 
 <!-- ── BACKTEST TAB ───────────────────────────────────────────────────────── -->
 <div class="pane" id="pane-bt">
+<!-- AI CRASH EARLY-WARNING TERMINAL -->
+<div class="sec" id="ai-crash-terminal" style="margin-bottom:14px">
+  <div class="sec-hdr">
+    <div><h2>🧠 AI Crash Early-Warning Terminal</h2><span class="sub">Fundamentals → financing → credit → liquidity → breadth → macro</span></div>
+    <div style="display:flex;gap:7px;align-items:center"><span id="ai-crash-updated" class="sub"></span><button class="btn btn-n btn-s" onclick="loadAICrashDashboard(true)">↻ Refresh</button></div>
+  </div>
+  <div id="ai-crash-loading" style="padding:18px;color:#8b949e">Loading risk monitor…</div>
+  <div id="ai-crash-body" style="display:none;padding:10px 0">
+    <div style="display:grid;grid-template-columns:180px 1fr 1fr;gap:12px;margin-bottom:12px">
+      <div class="card" style="text-align:center"><div class="lbl">AI CRASH RISK</div><div id="ai-crash-score" class="val" style="font-size:38px">—</div><div id="ai-crash-regime" style="font-weight:700;margin-top:3px">—</div><div style="font-size:10px;color:#8b949e;margin-top:6px">0–100 composite</div></div>
+      <div class="sec" style="margin:0"><div class="sec-hdr"><h3 style="font-size:13px">Primary Drivers</h3></div><div id="ai-crash-drivers" style="padding:12px;font-size:12px"></div></div>
+      <div class="sec" style="margin:0"><div class="sec-hdr"><h3 style="font-size:13px">Confirmation Matrix</h3></div><div id="ai-crash-confirm" style="padding:8px 12px;font-size:11px"></div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1.15fr .85fr;gap:12px">
+      <div class="sec" style="margin:0"><div class="sec-hdr"><h3 style="font-size:13px">Risk History — 12M</h3><span class="sub">Native SVG</span></div><div id="ai-crash-chart" style="height:190px;padding:8px 10px"></div></div>
+      <div class="sec" style="margin:0"><div class="sec-hdr"><h3 style="font-size:13px">Factor Attribution</h3></div><div id="ai-crash-factors" style="padding:8px 12px"></div></div>
+    </div>
+    <div class="sec" style="margin:12px 0 0"><div class="sec-hdr"><h3 style="font-size:13px">Institutional Risk Sheet</h3><span class="sub">Transparent proxies — not a crash-date predictor</span></div><div id="ai-crash-sheet" style="overflow-x:auto"></div></div>
+  </div>
+</div>
+
   <div class="sec">
     <div class="sec-hdr">
       <h2>🧪 Strategy Backtest</h2>
@@ -1219,7 +1240,7 @@ function switchTab(idx, name) {
   }
   if(name==='mf')   loadMirrorFish();
   if(name==='calc') calcOnOpen();
-  if(name==='bt')   loadBacktestStrategies();
+  if(name==='bt')   { loadBacktestStrategies(); loadAICrashDashboard(false); }
 }
 function anaSub(name, idx) {
   ['signals','charts','ema','bb','compare'].forEach(n=>{
@@ -4016,6 +4037,32 @@ function fmtMetric(v, suffix) {
   return v + (suffix || '');
 }
 
+function aiCrashScoreClass(v){return v>=50?'y':'g';}
+function drawAICrashHistory(rows){
+  const el=$('ai-crash-chart'); if(!el||rows.length<2){if(el)el.innerHTML='<div style="color:#8b949e;padding:30px;text-align:center">History unavailable</div>';return;}
+  const w=720,h=170,p=26,vals=rows.map(x=>+x.v||0),pts=rows.map((x,i)=>[p+i*(w-2*p)/(rows.length-1),h-p-vals[i]*(h-2*p)/100]);
+  const path=pts.map((q,i)=>(i?'L':'M')+q[0].toFixed(1)+' '+q[1].toFixed(1)).join(' ');
+  el.innerHTML='<svg viewBox="0 0 '+w+' '+h+'" width="100%" height="100%" preserveAspectRatio="none">'+
+   [25,50,70,85].map(v=>'<line x1="'+p+'" x2="'+(w-p)+'" y1="'+(h-p-v*(h-2*p)/100)+'" y2="'+(h-p-v*(h-2*p)/100)+'" stroke="#8b949e" stroke-dasharray="4 4" opacity=".3"/>').join('')+
+   '<path d="'+path+'" fill="none" stroke="#58a6ff" stroke-width="2"/><text x="3" y="'+(h-p+4)+'" fill="#8b949e" font-size="10">0</text><text x="3" y="'+(p+4)+'" fill="#8b949e" font-size="10">100</text><text x="'+p+'" y="'+(h-3)+'" fill="#8b949e" font-size="9">'+rows[0].t+'</text><text x="'+(w-p-72)+'" y="'+(h-3)+'" fill="#8b949e" font-size="9">'+rows[rows.length-1].t+'</text></svg>';
+}
+async function loadAICrashDashboard(force){
+  const load=$('ai-crash-loading'),body=$('ai-crash-body'); if(!load||!body)return;
+  load.style.display='block';load.textContent=force?'Refreshing risk monitor…':'Loading risk monitor…';
+  try{
+    const d=await aiApiFetch('/api/ai-crash/dashboard'+(force?'?refresh=1':'')); if(d.error)throw new Error(d.error);
+    load.style.display='none';body.style.display='';
+    const score=+d.score||0; $('ai-crash-score').textContent=score.toFixed(1);$('ai-crash-score').className='val '+aiCrashScoreClass(score);
+    const rg=$('ai-crash-regime');rg.textContent=d.regime||'—';rg.style.color=score>=70?'#f85149':score>=50?'#d29922':'#3fb950';
+    $('ai-crash-updated').textContent=d.as_of?new Date(d.as_of).toLocaleString():'';
+    $('ai-crash-drivers').innerHTML=(d.drivers||[]).map(x=>'<span class="tag ty" style="margin:3px;display:inline-block">'+x+'</span>').join('')||'<span style="color:#8b949e">No dominant driver above threshold.</span>';
+    const cm=d.confirmations||{};$('ai-crash-confirm').innerHTML=Object.keys(cm).map(k=>'<div style="display:flex;justify-content:space-between;border-bottom:1px solid #21262d;padding:5px 0"><span>'+k.replace(/_/g,' ')+'</span><strong style="color:'+(cm[k]?'#f85149':'#3fb950')+'">'+(cm[k]?'CONFIRMED':'not confirmed')+'</strong></div>').join('');
+    drawAICrashHistory(d.history||[]);
+    $('ai-crash-factors').innerHTML=(d.components||[]).map(f=>'<div style="margin:7px 0"><div style="display:flex;justify-content:space-between;font-size:11px"><span>'+f.name+'<small style="color:#8b949e"> · '+f.label+'</small></span><strong>'+Number(f.value).toFixed(1)+'</strong></div><div style="height:6px;background:#21262d;border-radius:4px"><div style="width:'+Math.max(0,Math.min(100,Number(f.value)))+'%;height:100%;background:'+(Number(f.value)>=70?'#f85149':Number(f.value)>=50?'#d29922':'#3fb950')+'"></div></div></div>').join('');
+    const x=d.details||{},fund=d.fundamentals||{},rows=[['HY OAS',x.hy_oas,'%',x.hy_oas_20d_change,'20d Δ'],['NFCI',x.nfci,'',null,''],['10Y real yield',x.real10y,'%',x.real10y_60d_change,'60d Δ'],['VIX',x.vix,'',null,''],['Sahm',x.sahm,'pp',null,''],['Capex / revenue proxy',x.capex_revenue_pct,'%',x.capex_growth_gap_pct,'capex growth − revenue growth'],['Debt growth gap',x.debt_growth_gap_pct,'pp',null,'debt growth − revenue growth']];
+    $('ai-crash-sheet').innerHTML='<table><thead><tr><th>Metric</th><th>Latest</th><th>Unit</th><th>Change / Gap</th><th>Interpretation</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+r[0]+'</td><td>'+(r[1]==null?'—':Number(r[1]).toFixed(2))+'</td><td>'+r[2]+'</td><td>'+(r[3]==null?'—':Number(r[3]).toFixed(2))+'</td><td style="color:#8b949e">'+r[4]+'</td></tr>').join('')+'</tbody></table><div style="padding:9px 0;color:#8b949e;font-size:10px">Coverage: '+((fund.rows||[]).length)+' hyperscaler financial statements. Capex is a company-level proxy, not pure AI capex.</div>';
+  }catch(e){body.style.display='none';load.style.display='block';load.innerHTML='⚠️ AI risk monitor unavailable: '+e.message+'<br><span style="font-size:10px">Market/FRED data may be temporarily unavailable. Backtest engine remains independent.</span>';}
+}
 async function runBacktestCompare() {
   const symbol = $('bt-sym').value.trim();
   const interval = $('bt-interval').value;
