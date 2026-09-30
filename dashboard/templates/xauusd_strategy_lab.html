@@ -247,28 +247,56 @@ function downloadResultsCsv(){
  $('globalStatus').innerHTML='<span class="ok">V2 results CSV exported.</span>';
 }
 async function runOptimizer(){
- const btn=$('runOptimizer');btn.disabled=true;$('optimizerStatus').textContent='Optimizing '+($('optStrategy').value==='pullback'?'SPY':selectedSymbol())+'…';
+ const btn=$('runOptimizer');btn.disabled=true;
+ const strategy=$('optStrategy').value;
+ const totalBatches=strategy==='pullback'?4:1;
+ const allRows=[];
+ let totalTested=0,totalPassed=0,lastMeta=null;
+ $('optimizerStatus').textContent='Optimizing '+(strategy==='pullback'?'SPY':'selected symbol')+' in '+totalBatches+' memory-safe batches…';
  try{
-  const r=await fetch('/api/xauusd-research-v2/optimize',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({strategy:$('optStrategy').value,symbol:$('optStrategy').value==='pullback'?'SPY':selectedSymbol(),n_bars:bars(),train_pct:(Number($('optTrain').value)||70)/100,min_train_trades:Number($('optMinTrain').value)||10,min_test_trades:Number($('optMinTest').value)||5})});
-  const contentType=(r.headers.get('content-type')||'').toLowerCase();
-  const raw=await r.text();
-  let d=null;
-  if(contentType.includes('application/json')){
-   try{d=JSON.parse(raw);}catch(_){d=null;}
-  }
-  if(r.redirected || !contentType.includes('application/json')){
-   if(r.status===401 || /login/i.test(r.url||'') || /<html/i.test(raw)){
-    throw new Error('Optimizer session/API unavailable. Refresh the page and log in again; if it persists, deploy the latest GPTver_confluence_v4 backend.');
+  for(let batch=0;batch<totalBatches;batch++){
+   $('optimizerStatus').textContent='Optimizer batch '+(batch+1)+'/'+totalBatches+'…';
+   const r=await fetch('/api/xauusd-research-v2/optimize',{
+    method:'POST',credentials:'same-origin',cache:'no-store',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+     strategy,
+     symbol:strategy==='pullback'?'SPY':selectedSymbol(),
+     n_bars:bars(),
+     train_pct:(Number($('optTrain').value)||70)/100,
+     min_train_trades:Number($('optMinTrain').value)||10,
+     min_test_trades:Number($('optMinTest').value)||5,
+     batch_index:batch,
+     batch_total:totalBatches
+    })
+   });
+   const contentType=(r.headers.get('content-type')||'').toLowerCase();
+   const raw=await r.text();
+   let d=null;
+   if(contentType.includes('application/json')){try{d=JSON.parse(raw);}catch(_){}}
+   if(r.redirected || !contentType.includes('application/json')){
+    if(r.status===401 || /login/i.test(r.url||'') || /<html/i.test(raw))
+     throw new Error('Optimizer session/API unavailable. Refresh the page and log in again; if it persists, deploy the latest GPTver_confluence_v4 backend.');
+    throw new Error('Optimizer API returned non-JSON (HTTP '+r.status+'). Check that the latest V2 backend is deployed.');
    }
-   throw new Error('Optimizer API returned non-JSON (HTTP '+r.status+'). Check that the latest V2 backend is deployed.');
+   if(!r.ok)throw new Error((d&&d.error)||('HTTP '+r.status));
+   allRows.push(...(d.results||[]));
+   totalTested+=Number(d.tested||0);
+   totalPassed+=Number(d.passed||0);
+   lastMeta=d;
   }
-  if(!r.ok)throw new Error((d&&d.error)||('HTTP '+r.status));
-  const rows=d.results||[];
-  if(!rows.length){$('optimizerResults').innerHTML='<div class="empty">No configurations passed the trade-count filters.</div>';}
-  else{const cols=Object.keys(rows[0]);$('optimizerResults').innerHTML='<table><tr>'+cols.map(x=>'<th>'+esc(x)+'</th>').join('')+'</tr>'+rows.map(row=>'<tr>'+cols.map(x=>'<td>'+esc(typeof row[x]==='number'?num(row[x]):row[x])+'</td>').join('')+'</tr>').join('')+'</table>';}
-  $('optimizerStatus').innerHTML='<span class="ok">Tested '+esc(d.tested)+' combinations; '+esc(d.passed)+' passed. '+esc(d.train_bars)+' train / '+esc(d.test_bars)+' test bars.</span>';
- }catch(e){$('optimizerStatus').innerHTML='<span class="bad">Optimizer error: '+esc(e.message)+'</span>';}
- finally{btn.disabled=false;}
+  allRows.sort((a,b)=>Number(b.robust_score||0)-Number(a.robust_score||0));
+  const rows=allRows;
+  if(!rows.length)$('optimizerResults').innerHTML='<div class="empty">No configurations passed the trade-count filters.</div>';
+  else{
+   const cols=Object.keys(rows[0]);
+   $('optimizerResults').innerHTML='<table><tr>'+cols.map(x=>'<th>'+esc(x)+'</th>').join('')+'</tr>'+rows.map(row=>'<tr>'+cols.map(x=>'<td>'+esc(typeof row[x]==='number'?num(row[x]):row[x])+'</td>').join('')+'</tr>').join('')+'</table>';
+  }
+  window.lastOptimizerResults={strategy,symbol:strategy==='pullback'?'SPY':selectedSymbol(),tested:totalTested,passed:totalPassed,results:rows};
+  $('optimizerStatus').innerHTML='<span class="ok">Completed '+totalBatches+' batches: '+totalTested+' evaluations; '+totalPassed+' passed. All batch results retained.</span>';
+ }catch(e){
+  $('optimizerStatus').innerHTML='<span class="bad">Optimizer error: '+esc(e.message)+'</span>';
+ }finally{btn.disabled=false;}
 }
 async function exportExcel(){
  const selected=Array.from($('exportTfs').selectedOptions).map(o=>o.value);
