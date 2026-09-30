@@ -30,8 +30,17 @@ from core.database import get_all_trades, get_all_closed_positions, get_closed_s
 bp = Blueprint("xauusd_research_v2", __name__)
 _DATA_CACHE = {}
 _CACHE_TTL = 300
+_CACHE_MAX_ENTRIES = 3
 _LAST_RUN = {"status": "never", "updated": None, "summary": {}}
 _RUN_DATA = {}
+
+
+def _cache_store(key, value, source):
+    """Keep the Render Free process from accumulating many large DataFrames."""
+    _DATA_CACHE[key] = (time.time(), value, source)
+    while len(_DATA_CACHE) > _CACHE_MAX_ENTRIES:
+        oldest = min(_DATA_CACHE, key=lambda k: _DATA_CACHE[k][0])
+        _DATA_CACHE.pop(oldest, None)
 
 
 def _excel_safe_value(v):
@@ -122,7 +131,7 @@ def _intraday(symbol, n):
             df = _bars_to_df(raw, symbol, "5m")
             if len(df) >= 500:
                 out = df.tail(n)
-                _DATA_CACHE[key] = (time.time(), out.copy(), "Alpaca")
+                _cache_store(key, out.copy(), "Alpaca")
                 return out, "Alpaca"
     except Exception:
         pass
@@ -132,7 +141,7 @@ def _intraday(symbol, n):
                           data_source="alpaca")["m5"]
         if df is not None and len(df) >= 500:
             out = df.tail(n)
-            _DATA_CACHE[key] = (time.time(), out.copy(), "Alpaca/V4 paginated fallback")
+            _cache_store(key, out.copy(), "Alpaca/V4 paginated fallback")
             return out, "Alpaca/V4 paginated fallback"
         fallback_error = "fallback returned insufficient bars"
     except Exception as exc:
@@ -156,7 +165,7 @@ def _daily(symbol, n):
         raw = get_bars(symbol, "1y")
         source = "Analyzer Pro fallback"
     out = _bars_to_df(raw, symbol, "1Day").tail(n)
-    _DATA_CACHE[key] = (time.time(), out.copy(), source)
+    _cache_store(key, out.copy(), source)
     return out, source
 
 
