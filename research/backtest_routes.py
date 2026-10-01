@@ -16,7 +16,6 @@ from flask import Blueprint, request, jsonify, session
 
 from core.logger import get_logger
 from research.strategies import list_strategies
-from research.backtest_engine import fetch_yf_data, run_backtest
 
 logger = get_logger(__name__)
 backtest_bp = Blueprint("backtest", __name__)
@@ -54,6 +53,7 @@ def api_backtest_run():
         return jsonify({"error": "symbol and strategy_id are required"}), 400
 
     try:
+        from research.backtest_engine import fetch_yf_data, run_backtest
         df = fetch_yf_data(symbol, interval=interval, period=period)
         result = run_backtest(
             df, strategy_id, params=params,
@@ -87,6 +87,7 @@ def api_backtest_compare():
         return jsonify({"error": "Max 8 strategies per comparison run"}), 400
 
     try:
+        from research.backtest_engine import fetch_yf_data, run_backtest
         df = fetch_yf_data(symbol, interval=interval, period=period)
     except Exception as ex:
         return jsonify({"error": str(ex)}), 400
