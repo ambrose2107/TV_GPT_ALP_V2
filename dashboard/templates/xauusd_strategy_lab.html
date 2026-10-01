@@ -64,7 +64,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
       <label>Train % <input id="optTrain" type="number" min="50" max="80" value="70" style="width:70px"></label>
       <label>Min train trades <input id="optMinTrain" type="number" min="5" value="10" style="width:85px"></label>
       <label>Min test trades <input id="optMinTest" type="number" min="3" value="5" style="width:85px"></label>
-      <button id="runOptimizer" class="primary">🧠 Optimize</button><a href="/xauusd-pullback-v2" class="detail-link">Pullback page</a><a href="/xauusd-trend-ribbon-v2" class="detail-link">Ribbon page</a>
+      <button id="runOptimizer" class="primary">🧠 Optimize</button><button id="restoreOptimizer">↩ Restore last run</button><a href="/xauusd-pullback-v2" class="detail-link">Pullback page</a><a href="/xauusd-trend-ribbon-v2" class="detail-link">Ribbon page</a>
       <span id="optimizerStatus" class="muted">Chronological train/test.</span>
     </div>
     <div id="optimizerResults" class="scroll" style="margin-top:10px;max-height:420px"><div class="empty">No optimization run yet.</div></div>
@@ -247,6 +247,45 @@ function downloadResultsCsv(){
  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=selectedSymbol()+'_strategy_lab_v2_results_'+new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)+'.csv';a.click();URL.revokeObjectURL(a.href);
  $('globalStatus').innerHTML='<span class="ok">V2 results CSV exported.</span>';
 }
+async function saveOptimizerSnapshot(snapshot){
+ try{
+  await fetch('/api/xauusd-research-v2/optimizer-snapshot',{
+   method:'POST',credentials:'same-origin',cache:'no-store',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({snapshot})
+  });
+ }catch(_){/* optimizer results remain usable even if persistence is temporarily unavailable */}
+}
+function showOptimizerSnapshot(s, restored=false){
+ if(!s||typeof s!=='object')return;
+ const rows=Array.isArray(s.results)?s.results:[];
+ if(rows.length){
+  const cols=Object.keys(rows[0]);
+  $('optimizerResults').innerHTML='<table><tr>'+cols.map(x=>'<th>'+esc(x)+'</th>').join('')+'</tr>'+
+   rows.slice(0,50).map(row=>'<tr>'+cols.map(x=>'<td>'+esc(typeof row[x]==='number'?num(row[x]):row[x])+'</td>').join('')+'</tr>').join('')+'</table>';
+ }else if(s.diagnostics||s.near_misses){
+  const d=s.diagnostics||{}, near=s.near_misses||[], best=near[0];
+  $('optimizerResults').innerHTML='<div class="empty"><b>Saved optimizer run</b><br>'+
+   esc(d.message||'No configurations met the requested filters.')+
+   '<br>Tested '+esc(s.tested||0)+'; accepted '+esc(s.passed||0)+
+   (best?'; closest candidate: '+esc(best.ema_fast||'')+'/'+esc(best.ema_slow||'')+' EMA, train/test '+esc(best.train_trades||0)+'/'+esc(best.test_trades||0)+' trades.':'.')+
+   '</div>';
+ }else{
+  $('optimizerResults').innerHTML='<div class="empty">Saved run has no result rows yet.</div>';
+ }
+ window.lastOptimizerResults=s;
+ const stamp=s.saved_at?(' · saved '+s.saved_at):'';
+ $('optimizerStatus').textContent=(restored?'Restored saved optimizer run':'Optimizer snapshot saved')+
+  (s.status?' · '+s.status:'')+' · '+(s.tested||0)+' evaluations'+stamp;
+}
+async function restoreOptimizerSnapshot(){
+ try{
+  const r=await fetch('/api/xauusd-research-v2/optimizer-snapshot',{credentials:'same-origin',cache:'no-store'});
+  if(!r.ok)return;
+  const d=await r.json();
+  if(d.available&&d.snapshot)showOptimizerSnapshot(d.snapshot,true);
+ }catch(_){/* restore is optional; page remains usable */}
+}
 async function runOptimizer(){
  const btn=$('runOptimizer');btn.disabled=true;
  const strategy=$('optStrategy').value;
@@ -273,6 +312,7 @@ async function runOptimizer(){
    const base={strategy:'pullback',symbol:'SPY',n_bars:Math.min(bars(),10000),train_pct:(Number($('optTrain').value)||70)/100,min_train_trades:Number($('optMinTrain').value)||10,min_test_trades:Number($('optMinTest').value)||5};
    $('optimizerStatus').textContent='SPY Stage 1/3: scanning broad entry regimes…';
    const s1=await post({...base,phase:'stage1'});totalTested+=Number(s1.tested||0);totalPassed+=Number(s1.passed||0);allRows.push(...(s1.results||[]));
+   await saveOptimizerSnapshot({status:'Stage 1 complete',strategy,symbol:'SPY',tested:totalTested,passed:totalPassed,results:s1.results||[],diagnostics:s1.diagnostics||{},near_misses:s1.near_misses||[]});
    const seeds=s1.seeds||[];
    if(!seeds.length){
      const d=s1.diagnostics||{};
@@ -282,6 +322,7 @@ async function runOptimizer(){
      $('optimizerResults').innerHTML='<div class="empty"><b>Stage 1 found no configuration meeting the '+base.min_train_trades+'/'+base.min_test_trades+' trade filters.</b><br>'+esc(d.message||'No qualifying configurations.')+'<br>Tested '+(s1.tested||0)+' configurations; best observed train/test: '+(d.best_train_trades||0)+' / '+(d.best_test_trades||0)+'.'+esc(detail)+'</div>';
      $('optimizerStatus').textContent='Stage 1 complete: 0 accepted; '+(s1.tested||0)+' tested. Review the frequency diagnostics above.';
      window.lastOptimizerResults={strategy,symbol:'SPY',tested:totalTested,passed:0,results:[],diagnostics:d,near_misses:near};
+     await saveOptimizerSnapshot({status:'Stage 1 complete · no accepted seeds',strategy,symbol:'SPY',tested:totalTested,passed:0,results:[],diagnostics:d,near_misses:near});
      return;
    }
    const stage2=[];
@@ -289,6 +330,7 @@ async function runOptimizer(){
     $('optimizerStatus').textContent='SPY Stage 2/3: refining seed '+(i+1)+'/'+seeds.length+' (27 tests)…';
     const d=await post({...base,phase:'stage2',seed:seeds[i]});
     stage2.push(...(d.results||[]));totalTested+=Number(d.tested||0);totalPassed+=Number(d.passed||0);
+    await saveOptimizerSnapshot({status:'Stage 2 refining seeds',strategy,symbol:'SPY',tested:totalTested,passed:totalPassed,results:[...allRows,...stage2].slice(-250)});
    }
    stage2.sort((a,b)=>Number(b.robust_score||0)-Number(a.robust_score||0));
    const finalists=stage2.slice(0,2);
@@ -296,6 +338,7 @@ async function runOptimizer(){
     $('optimizerStatus').textContent='SPY Stage 3/3: structural sensitivity '+(i+1)+'/'+finalists.length+' (16 tests)…';
     const d=await post({...base,phase:'stage3',seed:finalists[i]});
     allRows.push(...(d.results||[]));totalTested+=Number(d.tested||0);totalPassed+=Number(d.passed||0);
+    await saveOptimizerSnapshot({status:'Stage 3 structural sensitivity',strategy,symbol:'SPY',tested:totalTested,passed:totalPassed,results:allRows.slice(-250)});
    }
    allRows.push(...stage2);
   }
@@ -307,6 +350,7 @@ async function runOptimizer(){
    $('optimizerResults').innerHTML='<table><tr>'+cols.map(x=>'<th>'+esc(x)+'</th>').join('')+'</tr>'+rows.slice(0,50).map(row=>'<tr>'+cols.map(x=>'<td>'+esc(typeof row[x]==='number'?num(row[x]):row[x])+'</td>').join('')+'</tr>').join('')+'</table>';
   }
   window.lastOptimizerResults={strategy,symbol:'SPY',tested:totalTested,passed:totalPassed,results:rows};
+  await saveOptimizerSnapshot({status:'Completed',strategy,symbol:'SPY',tested:totalTested,passed:totalPassed,results:rows.slice(0,250)});
   $('optimizerStatus').innerHTML='<span class="ok">Completed low-memory optimizer: '+totalTested+' evaluations; '+totalPassed+' passed. Results retained for export.</span>';
  }catch(e){
   $('optimizerStatus').innerHTML='<span class="bad">Optimizer error: '+esc(e.message)+'</span>';
@@ -340,7 +384,8 @@ async function exportMarketDataWithTrades(){
  }catch(e){$('exportStatus').innerHTML='<span class="bad">Export error: '+esc(e.message)+'</span>';}
  finally{btn.disabled=false;}
 }
-$('runAll').onclick=runAll;$('runOptimizer').onclick=runOptimizer;$('downloadCsv').onclick=downloadResultsCsv;$('downloadJson').onclick=downloadResultsJson;$('exportExcel').onclick=exportExcel;$('exportMarketTrades').onclick=exportMarketDataWithTrades;
+$('runAll').onclick=runAll;$('runOptimizer').onclick=runOptimizer;$('restoreOptimizer').onclick=()=>restoreOptimizerSnapshot();
+restoreOptimizerSnapshot();$('downloadCsv').onclick=downloadResultsCsv;$('downloadJson').onclick=downloadResultsJson;$('exportExcel').onclick=exportExcel;$('exportMarketTrades').onclick=exportMarketDataWithTrades;
 $('clear').onclick=()=>{
  lastResults={};document.querySelectorAll('#comparison tr[data-k]').forEach(x=>x.remove());
  for(const k of Object.keys(defs)){setStatus(k,'Ready');$('metrics-'+k).innerHTML='<div class="empty">No result yet.</div>';if($('pnl-'+k))$('pnl-'+k).innerHTML='<div class="empty">P&amp;L trend will appear after the run.</div>';$('trades-'+k).innerHTML='';}
