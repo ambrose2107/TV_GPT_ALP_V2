@@ -325,7 +325,7 @@ def optimize():
                     [(20,50),(50,200)],
                     [0.00050, 0.00090, 0.00125],
                     [0.00, 0.10],
-                    [0.10, 0.25],
+                    [0.10],
                 )
                 tested = 0
                 for (ema_fast, ema_slow), min_atr, gap, body in grid:
