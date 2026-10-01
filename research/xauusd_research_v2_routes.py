@@ -314,26 +314,25 @@ def optimize():
 
         if strategy == "pullback":
             if phase == "stage1":
-                # Stage 1 is deliberately a broad frequency/quality screen.
-                # The previous grid fixed EMA=50/200, body=0.40 and cooldown=8,
-                # which could eliminate every configuration before Stage 2.
-                # Keep the user's 10/5 trade filters for acceptance, but explore
-                # the structural knobs that control signal frequency here.
-                seeds = []
-                near_misses = []
-                grid = itertools.product(
+                # Incremental Stage 1: one candidate per HTTP request (two
+                # backtests: chronological train + test). The browser checkpoints
+                # accumulated rows after every request, so a refresh can resume.
+                grid = list(itertools.product(
                     [(20,50),(50,200)],
                     [0.00050, 0.00090, 0.00125],
                     [0.00, 0.10],
                     [0.10],
-                )
-                tested = 0
-                for (ema_fast, ema_slow), min_atr, gap, body in grid:
-                    tested += 1
+                ))
+                total_candidates = len(grid)
+                batch_size = max(1, min(2, int(body.get("batch_size", 1))))
+                batch_index = max(0, min(total_candidates, int(body.get("batch_index", 0))))
+                batch = grid[batch_index:batch_index + batch_size]
+                batch_rows = []
+                for offset, ((ema_fast, ema_slow), min_atr, gap, body_size) in enumerate(batch):
                     cfg = PullbackV2Config(
                         ema_fast=ema_fast, ema_slow=ema_slow,
                         min_atr_pct=min_atr, min_ema_gap_atr=gap,
-                        breakout_buffer_atr=0.15, min_body_atr=body,
+                        breakout_buffer_atr=0.15, min_body_atr=body_size,
                         rr=2.0, cooldown_bars=4, atr_stop=1.2,
                     )
                     a = pullback_v2_backtest(train, cfg, details=False)["metrics"]
@@ -341,41 +340,22 @@ def optimize():
                     row = score_row(a, b, {
                         "ema_fast": ema_fast, "ema_slow": ema_slow,
                         "min_atr_pct": min_atr, "min_ema_gap_atr": gap,
-                        "breakout_buffer_atr": 0.15, "min_body_atr": body,
+                        "breakout_buffer_atr": 0.15, "min_body_atr": body_size,
                         "rr": 2.0, "cooldown_bars": 4, "atr_stop": 1.2,
                         "optimizer_phase": "stage1",
                     })
                     row["filter_pass"] = bool(a["num_trades"] >= min_train and b["num_trades"] >= min_test)
                     row["trade_shortfall"] = max(0, min_train-a["num_trades"]) + max(0, min_test-b["num_trades"])
-                    if row["filter_pass"]:
-                        seeds.append(row)
-                    else:
-                        near_misses.append(row)
-                seeds.sort(key=lambda x:(x["robust_score"], x["test_pf"], x["test_total_R"]), reverse=True)
-                near_misses.sort(key=lambda x:(x["trade_shortfall"], -x["test_trades"], -x["train_trades"]))
-                # Preserve the strict acceptance rule. If no configuration
-                # qualifies, return the closest candidates so the UI can explain
-                # whether the bottleneck is signal frequency or the requested filters.
-                diagnostics = {
-                    "min_train_required": min_train,
-                    "min_test_required": min_test,
-                    "best_train_trades": max([x["train_trades"] for x in near_misses+seeds] or [0]),
-                    "best_test_trades": max([x["test_trades"] for x in near_misses+seeds] or [0]),
-                    "near_miss_count": len(near_misses),
-                    "message": (
-                        "No configuration met both trade-count filters. "
-                        "The strategy/data generated signals, but the requested "
-                        "minimum trade counts were not met."
-                        if not seeds else
-                        "Stage 1 accepted configurations."
-                    ),
-                }
+                    batch_rows.append(row)
+                next_batch = batch_index + len(batch)
                 return jsonify(_safe({
-                    "phase":"stage1","strategy":strategy,"symbol":symbol,
-                    "data_source":source,"bars":len(df),"train_bars":len(train),
-                    "test_bars":len(test),"tested":tested,"passed":len(seeds),
-                    "results":seeds,"seeds":seeds[:8],
-                    "near_misses":near_misses[:8],"diagnostics":diagnostics
+                    "phase": "stage1", "strategy": strategy, "symbol": symbol,
+                    "data_source": source, "bars": len(df), "train_bars": len(train),
+                    "test_bars": len(test), "tested": len(batch), "passed": sum(1 for x in batch_rows if x["filter_pass"]),
+                    "results": batch_rows, "batch_index": batch_index,
+                    "next_batch": next_batch, "batch_size": batch_size,
+                    "total_candidates": total_candidates, "done": next_batch >= total_candidates,
+                    "message": "Stage 1 batch complete."
                 }))
 
             seed = body.get("seed") or {}
