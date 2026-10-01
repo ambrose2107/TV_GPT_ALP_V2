@@ -304,7 +304,7 @@ def optimize():
                     else:
                         near_misses.append(row)
                 seeds.sort(key=lambda x:(x["robust_score"], x["test_pf"], x["test_total_R"]), reverse=True)
-                near_misses.sort(key=lambda x:(-x["trade_shortfall"], x["train_trades"], x["test_trades"]), reverse=False)
+                near_misses.sort(key=lambda x:(x["trade_shortfall"], -x["test_trades"], -x["train_trades"]))
                 # Preserve the strict acceptance rule. If no configuration
                 # qualifies, return the closest candidates so the UI can explain
                 # whether the bottleneck is signal frequency or the requested filters.
@@ -344,6 +344,7 @@ def optimize():
                     [0.30, 0.40, 0.50], [1.8, 2.0, 2.2], [1.0, 1.2, 1.5]
                 ):
                     cfg = PullbackV2Config(
+                        ema_fast=int(seed.get("ema_fast", 50)), ema_slow=int(seed.get("ema_slow", 200)),
                         min_atr_pct=float(seed["min_atr_pct"]),
                         min_ema_gap_atr=float(seed["min_ema_gap_atr"]),
                         breakout_buffer_atr=float(seed["breakout_buffer_atr"]),
@@ -353,6 +354,7 @@ def optimize():
                     if a["num_trades"] < min_train or b["num_trades"] < min_test:
                         continue
                     rows.append(score_row(a,b,{
+                        "ema_fast":int(seed.get("ema_fast", 50)), "ema_slow":int(seed.get("ema_slow", 200)),
                         "min_atr_pct":float(seed["min_atr_pct"]),
                         "min_ema_gap_atr":float(seed["min_ema_gap_atr"]),
                         "breakout_buffer_atr":float(seed["breakout_buffer_atr"]),
