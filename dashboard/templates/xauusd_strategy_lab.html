@@ -328,7 +328,7 @@ async function runOptimizer(){
     window.lastOptimizerResults=partial;
     await saveOptimizerSnapshot(partial);
    }
-   const seeds=stage1Rows.filter(x=>x.filter_pass).sort((a,b)=>Number(b.robust_score||0)-Number(a.robust_score||0)).slice(0,8);
+   const seeds=stage1Rows.filter(x=>x.filter_pass).sort((a,b)=>Number(b.robust_score||0)-Number(a.robust_score||0)).slice(0,8);\n   totalTested=stage1Rows.length;totalPassed=seeds.length;
    const near=stage1Rows.filter(x=>!x.filter_pass).sort((a,b)=>Number(a.trade_shortfall||0)-Number(b.trade_shortfall||0)||Number(b.test_trades||0)-Number(a.test_trades||0)||Number(b.train_trades||0)-Number(a.train_trades||0)).slice(0,8);
    const bestTrain=Math.max(0,...stage1Rows.map(x=>Number(x.train_trades)||0));
    const bestTest=Math.max(0,...stage1Rows.map(x=>Number(x.test_trades)||0));
@@ -346,7 +346,7 @@ async function runOptimizer(){
    }
    const stage2=[];
    for(let i=0;i<seeds.length;i++){
-    $('optimizerStatus').textContent='SPY Stage 2/3: refining seed '+(i+1)+'/'+seeds.length+' (27 tests)…';
+    $('optimizerStatus').textContent='SPY Stage 2/3: refining seed '+(i+1)+'/'+seeds.length+' (8 tests)…';
     const d=await post({...base,phase:'stage2',seed:seeds[i]});
     stage2.push(...(d.results||[]));totalTested+=Number(d.tested||0);totalPassed+=Number(d.passed||0);
     await saveOptimizerSnapshot({status:'Stage 2 refining seeds',strategy,symbol:'SPY',tested:totalTested,passed:totalPassed,results:[...allRows,...stage2].slice(-250)});
@@ -354,7 +354,7 @@ async function runOptimizer(){
    stage2.sort((a,b)=>Number(b.robust_score||0)-Number(a.robust_score||0));
    const finalists=stage2.slice(0,2);
    for(let i=0;i<finalists.length;i++){
-    $('optimizerStatus').textContent='SPY Stage 3/3: structural sensitivity '+(i+1)+'/'+finalists.length+' (16 tests)…';
+    $('optimizerStatus').textContent='SPY Stage 3/3: structural sensitivity '+(i+1)+'/'+finalists.length+' (10 tests)…';
     const d=await post({...base,phase:'stage3',seed:finalists[i]});
     allRows.push(...(d.results||[]));totalTested+=Number(d.tested||0);totalPassed+=Number(d.passed||0);
     await saveOptimizerSnapshot({status:'Stage 3 structural sensitivity',strategy,symbol:'SPY',tested:totalTested,passed:totalPassed,results:allRows.slice(-250)});
