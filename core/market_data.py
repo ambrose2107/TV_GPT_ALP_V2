@@ -180,22 +180,26 @@ def alpaca_get_multi_snapshots(symbols):
 # ── YAHOO FINANCE FALLBACK ────────────────────────────────────────────────────
 def yahoo_get_chart(symbol: str, interval: str = "1d",
                     period: str = "6mo"):
-    """Yahoo Finance v8 chart data."""
-    try:
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol.upper()}"
-        r   = requests.get(url, params={"interval":interval,"range":period},
-                           headers=_yahoo_headers(), timeout=12)
-        r.raise_for_status()
-        res = r.json()["chart"]["result"][0]
-        ts  = res["timestamp"]
-        q   = res["indicators"]["quote"][0]
-        return {"timestamps":ts, "open":q.get("open",[]),
-                "high":q.get("high",[]), "low":q.get("low",[]),
-                "close":q.get("close",[]), "volume":q.get("volume",[])}
-    except Exception as e:
-        logger.warning(f"Yahoo chart {symbol}: {e}")
-        return None
-
+    """Yahoo Finance chart API with query1/query2 endpoint fallback."""
+    last_err = None
+    for host in ("query1.finance.yahoo.com", "query2.finance.yahoo.com"):
+        try:
+            url = f"https://{host}/v8/finance/chart/{symbol.upper()}"
+            r = requests.get(url, params={"interval":interval,"range":period},
+                             headers=_yahoo_headers(), timeout=10)
+            r.raise_for_status()
+            result = (r.json().get("chart",{}).get("result") or [None])[0]
+            if not result: continue
+            ts = result.get("timestamp") or []
+            q = (result.get("indicators",{}).get("quote") or [{}])[0]
+            if not ts or not q.get("close"): continue
+            return {"timestamps":ts, "open":q.get("open",[]),
+                    "high":q.get("high",[]), "low":q.get("low",[]),
+                    "close":q.get("close",[]), "volume":q.get("volume",[])}
+        except Exception as e:
+            last_err = e
+    logger.warning(f"Yahoo chart {symbol}: {last_err}")
+    return None
 
 def yahoo_get_options(symbol: str):
     """Yahoo Finance options chain."""
