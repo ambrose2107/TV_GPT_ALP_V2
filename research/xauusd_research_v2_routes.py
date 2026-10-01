@@ -25,7 +25,8 @@ from research.xauusd_daily_research_v2 import (
 )
 from research.xauusd_confluence_v4 import load_data as v4_load_data
 from core.order_sync import sync_alpaca_orders
-from core.database import get_all_trades, get_all_closed_positions, get_closed_summary, get_setting, set_setting
+from core.database import get_all_trades, get_all_closed_positions, get_closed_summary
+from core.optimizer_storage import load_optimizer_snapshot, save_optimizer_snapshot
 
 bp = Blueprint("xauusd_research_v2", __name__)
 
@@ -40,7 +41,7 @@ def _persist_completed_optimizer_response(response):
                 payload["saved_at"] = datetime.now(timezone.utc).isoformat()
                 encoded = json.dumps(_safe(payload), separators=(",", ":"), ensure_ascii=False)
                 if len(encoded) <= 1_500_000:
-                    set_setting("optimizer_last_snapshot_v1", encoded)
+                    save_optimizer_snapshot(encoded)
     except Exception:
         # Persistence must never turn a successful optimization into a failed response.
         pass
@@ -237,14 +238,14 @@ def strategy_detail(strategy):
 def optimizer_snapshot():
     """Persist and restore the latest optimizer snapshot across refreshes/logouts.
 
-    Uses the app's existing SQLite settings table to avoid a new dependency.
+    Uses PostgreSQL when DATABASE_URL is configured, with SQLite as a local fallback.
     Keep only the latest compact result snapshot to limit storage on Render Free.
     """
     if not session.get("logged_in"):
         return jsonify({"error": "Unauthorized"}), 401
     key = "optimizer_last_snapshot_v1"
     if request.method == "GET":
-        raw = get_setting(key)
+        raw = load_optimizer_snapshot()
         if not raw:
             return jsonify({"available": False})
         try:
@@ -260,7 +261,7 @@ def optimizer_snapshot():
     encoded = json.dumps(_safe(snapshot), separators=(",", ":"), ensure_ascii=False)
     if len(encoded) > 1_500_000:
         return jsonify({"error": "Snapshot is too large to store. Reduce the saved result rows."}), 413
-    set_setting(key, encoded)
+    save_optimizer_snapshot(encoded)
     return jsonify({"saved": True, "saved_at": snapshot["saved_at"]})
 
 @bp.route("/api/xauusd-research-v2/status", methods=["GET"])
