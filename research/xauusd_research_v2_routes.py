@@ -289,10 +289,9 @@ def optimize():
     min_train = max(5, int(body.get("min_train_trades", 10)))
     min_test = max(3, int(body.get("min_test_trades", 5)))
     phase = str(body.get("phase", "legacy")).strip().lower()
-    # The free Render instance has only 512 MB RAM / 0.1 CPU. Pullback
-    # optimization therefore uses small stateless phases instead of repeating
-    # Stage 1 inside every batch. Optimizer history is capped at 10k bars.
-    bars = max(1000, min(10000, int(body.get("n_bars", 10000))))
+    # Render Free: 512 MB RAM / 0.1 CPU. Keep each request deliberately short.
+    # Smaller history reduces indicator arrays and backtest work per evaluation.
+    bars = max(1000, min(5000, int(body.get("n_bars", 4000))))
     try:
         df, source = _intraday(symbol, bars)
         split = max(500, min(len(df)-100, int(len(df) * train_pct)))
@@ -323,9 +322,9 @@ def optimize():
                 seeds = []
                 near_misses = []
                 grid = itertools.product(
-                    [(20,50),(30,100),(50,200)],
-                    [0.00050, 0.00075, 0.0010, 0.00125],
-                    [0.00, 0.05, 0.10],
+                    [(20,50),(50,200)],
+                    [0.00050, 0.00090, 0.00125],
+                    [0.00, 0.10],
                     [0.10, 0.25],
                 )
                 tested = 0
@@ -386,11 +385,10 @@ def optimize():
 
             if phase == "stage2":
                 rows = []
-                # 27 evaluations per request: body x RR x ATR stop. Cooldown is
-                # deliberately held at 8 here and tested as a separate structural
-                # sensitivity in Stage 3.
+                # 8 evaluations per request to avoid Render Free worker timeouts.
+                # Cooldown is tested separately in Stage 3.
                 for body_size, rr, atr_stop in itertools.product(
-                    [0.30, 0.40, 0.50], [1.8, 2.0, 2.2], [1.0, 1.2, 1.5]
+                    [0.30, 0.50], [1.8, 2.2], [1.0, 1.5]
                 ):
                     cfg = PullbackV2Config(
                         ema_fast=int(seed.get("ema_fast", 50)), ema_slow=int(seed.get("ema_slow", 200)),
@@ -411,7 +409,7 @@ def optimize():
                         "cooldown_bars":8, "atr_stop":atr_stop, "optimizer_phase":"stage2"}))
                 rows.sort(key=lambda x:(x["robust_score"],x["test_pf"],x["test_total_R"]),reverse=True)
                 return jsonify(_safe({"phase":"stage2","strategy":strategy,"symbol":"SPY",
-                                      "bars":len(df),"tested":27,"passed":len(rows),"results":rows}))
+                                      "bars":len(df),"tested":8,"passed":len(rows),"results":rows}))
 
             if phase == "stage3":
                 rows = []
@@ -420,15 +418,15 @@ def optimize():
                 base.setdefault("pullback_bars",3); base.setdefault("breakout_lookback",5)
                 base.setdefault("session_start_utc",13); base.setdefault("session_end_utc",21)
                 candidates = []
-                for ef, es in [(50,200),(30,100),(20,50)]:
+                for ef, es in [(50,200),(20,50)]:
                     candidates.append({**base,"ema_fast":ef,"ema_slow":es,"stage3_axis":"ema"})
-                for pb in [2,3,4]:
+                for pb in [2,4]:
                     candidates.append({**base,"pullback_bars":pb,"stage3_axis":"pullback_bars"})
-                for lb in [4,5,6]:
+                for lb in [4,6]:
                     candidates.append({**base,"breakout_lookback":lb,"stage3_axis":"breakout_lookback"})
-                for st,en in [(13,20),(13,21),(14,20),(14,21)]:
+                for st,en in [(13,21),(14,20)]:
                     candidates.append({**base,"session_start_utc":st,"session_end_utc":en,"stage3_axis":"session"})
-                for cd in [6,8,12]:
+                for cd in [6,10]:
                     candidates.append({**base,"cooldown_bars":cd,"stage3_axis":"cooldown"})
                 for structural in candidates:
                     cfg=PullbackV2Config(
@@ -449,21 +447,21 @@ def optimize():
                         "atr_stop":float(base["atr_stop"]),"structural_stage":structural["stage3_axis"],"optimizer_phase":"stage3"}))
                 rows.sort(key=lambda x:(x["robust_score"],x["test_pf"],x["test_total_R"]),reverse=True)
                 return jsonify(_safe({"phase":"stage3","strategy":strategy,"symbol":"SPY",
-                                      "bars":len(df),"tested":16,"passed":len(rows),"results":rows}))
+                                      "bars":len(df),"tested":len(candidates),"passed":len(rows),"results":rows}))
 
             return jsonify({"error":"Unknown Pullback optimizer phase."}),400
 
         # Keep the other optimizers compatible with the existing single-request API.
         rows=[]; grid=[]
         if strategy == "ema":
-            grid=list(itertools.product([0.05,0.10,0.20],[0.05,0.10,0.20],[2.0,2.5,3.0],[1,2]))
+            grid=list(itertools.product([0.05,0.15],[0.05,0.15],[2.0,2.5],[1,2]))
             for gap,rej,rr,sep in grid:
                 cfg=EMARetestV2Config(min_gap_atr=gap,min_rejection_body_atr=rej,rr=rr,separation_bars=sep)
                 a=ema_v2_backtest(train,cfg)["metrics"]; b=ema_v2_backtest(test,cfg)["metrics"]
                 if a["num_trades"]<min_train or b["num_trades"]<min_test: continue
                 rows.append(score_row(a,b,{"min_gap_atr":gap,"min_rejection_body_atr":rej,"rr":rr,"separation_bars":sep}))
         elif strategy == "trend_ribbon":
-            grid=list(itertools.product([0.0,0.75,1.0,1.25,2.0],[0.05,0.08,0.10,0.12],[0.75,1.0,1.5,2.0,3.0]))
+            grid=list(itertools.product([0.0,1.0,2.0],[0.05,0.10],[0.75,1.5,3.0]))
             for max_body,slope,max_stop in grid:
                 cfg=TrendTargetRibbonConfig(max_entry_body_atr=max_body,slope_min=slope,max_stop_atr=max_stop)
                 a=trend_ribbon_backtest(train,cfg)["metrics"]; b=trend_ribbon_backtest(test,cfg)["metrics"]
