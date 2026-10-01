@@ -310,19 +310,38 @@ async function runOptimizer(){
    allRows.push(...(d.results||[]));totalTested=Number(d.tested||0);totalPassed=Number(d.passed||0);
   }else{
    const base={strategy:'pullback',symbol:'SPY',n_bars:Math.min(bars(),10000),train_pct:(Number($('optTrain').value)||70)/100,min_train_trades:Number($('optMinTrain').value)||10,min_test_trades:Number($('optMinTest').value)||5};
-   $('optimizerStatus').textContent='SPY Stage 1/3: scanning broad entry regimes…';
-   const s1=await post({...base,phase:'stage1'});totalTested+=Number(s1.tested||0);totalPassed+=Number(s1.passed||0);allRows.push(...(s1.results||[]));
-   await saveOptimizerSnapshot({status:'Stage 1 complete',strategy,symbol:'SPY',tested:totalTested,passed:totalPassed,results:s1.results||[],diagnostics:s1.diagnostics||{},near_misses:s1.near_misses||[]});
-   const seeds=s1.seeds||[];
+   const signature=JSON.stringify({strategy:'pullback',symbol:'SPY',n_bars:Math.min(bars(),10000),train_pct:(Number($('optTrain').value)||70)/100,min_train_trades:Number($('optMinTrain').value)||10,min_test_trades:Number($('optMinTest').value)||5});
+   let stage1Rows=[], nextBatch=0;
+   const previous=window.lastOptimizerResults||{};
+   if(previous.status==='Stage 1 batch in progress'&&previous.optimizer_signature===signature&&Array.isArray(previous.results)){
+    stage1Rows=previous.results.slice();nextBatch=Math.max(0,Number(previous.next_batch)||0);
+    $('optimizerStatus').textContent='Resuming Stage 1 from candidate '+(nextBatch+1)+'/12…';
+   }
+   const totalBatches=12;
+   while(nextBatch<totalBatches){
+    $('optimizerStatus').textContent='SPY Stage 1/3: candidate '+(nextBatch+1)+'/'+totalBatches+' (one candidate / request)…';
+    const batch=await post({...base,phase:'stage1',batch_index:nextBatch,batch_size:1});
+    stage1Rows.push(...(batch.results||[]));
+    totalTested+=Number(batch.tested||0);totalPassed+=Number(batch.passed||0);
+    nextBatch=Number(batch.next_batch||nextBatch+1);
+    const partial={status:'Stage 1 batch in progress',phase:'stage1',optimizer_signature:signature,next_batch:nextBatch,strategy,symbol:'SPY',tested:stage1Rows.length,passed:stage1Rows.filter(x=>x.filter_pass).length,results:stage1Rows};
+    window.lastOptimizerResults=partial;
+    await saveOptimizerSnapshot(partial);
+   }
+   const seeds=stage1Rows.filter(x=>x.filter_pass).sort((a,b)=>Number(b.robust_score||0)-Number(a.robust_score||0)).slice(0,8);
+   const near=stage1Rows.filter(x=>!x.filter_pass).sort((a,b)=>Number(a.trade_shortfall||0)-Number(b.trade_shortfall||0)||Number(b.test_trades||0)-Number(a.test_trades||0)||Number(b.train_trades||0)-Number(a.train_trades||0)).slice(0,8);
+   const bestTrain=Math.max(0,...stage1Rows.map(x=>Number(x.train_trades)||0));
+   const bestTest=Math.max(0,...stage1Rows.map(x=>Number(x.test_trades)||0));
+   const diagnostics={min_train_required:base.min_train_trades,min_test_required:base.min_test_trades,best_train_trades:bestTrain,best_test_trades:bestTest,near_miss_count:stage1Rows.filter(x=>!x.filter_pass).length,message:seeds.length?'Stage 1 accepted configurations.':'No configuration met both trade-count filters. Review the closest candidates.'};
+   allRows.push(...stage1Rows);
+   await saveOptimizerSnapshot({status:'Stage 1 complete',phase:'stage1_complete',optimizer_signature:signature,strategy,symbol:'SPY',tested:totalTested,passed:seeds.length,results:stage1Rows,diagnostics,near_misses:near});
    if(!seeds.length){
-     const d=s1.diagnostics||{};
-     const near=s1.near_misses||[];
      const best=near[0];
-     const detail=best?(' Best near-miss: train '+best.train_trades+', test '+best.test_trades+' trades; '+best.ema_fast+'/'+best.ema_slow+' EMA.'):'';
-     $('optimizerResults').innerHTML='<div class="empty"><b>Stage 1 found no configuration meeting the '+base.min_train_trades+'/'+base.min_test_trades+' trade filters.</b><br>'+esc(d.message||'No qualifying configurations.')+'<br>Tested '+(s1.tested||0)+' configurations; best observed train/test: '+(d.best_train_trades||0)+' / '+(d.best_test_trades||0)+'.'+esc(detail)+'</div>';
-     $('optimizerStatus').textContent='Stage 1 complete: 0 accepted; '+(s1.tested||0)+' tested. Review the frequency diagnostics above.';
-     window.lastOptimizerResults={strategy,symbol:'SPY',tested:totalTested,passed:0,results:[],diagnostics:d,near_misses:near};
-     await saveOptimizerSnapshot({status:'Stage 1 complete · no accepted seeds',strategy,symbol:'SPY',tested:totalTested,passed:0,results:[],diagnostics:d,near_misses:near});
+     const detail=best?(' Best near-miss: train '+best.train_trades+', test '+best.test_trades+' trades; '+best.ema_fast+'/'+best.ema_slow+' EMA.'): '';
+     $('optimizerResults').innerHTML='<div class="empty"><b>Stage 1 found no configuration meeting the '+base.min_train_trades+'/'+base.min_test_trades+' trade filters.</b><br>'+esc(diagnostics.message)+'<br>Tested '+stage1Rows.length+' configurations; best observed train/test: '+bestTrain+' / '+bestTest+'.'+esc(detail)+'</div>';
+     $('optimizerStatus').textContent='Stage 1 complete: 0 accepted; '+stage1Rows.length+' tested. Results checkpointed.';
+     window.lastOptimizerResults={status:'Stage 1 complete · no accepted seeds',phase:'stage1_complete',strategy,symbol:'SPY',tested:totalTested,passed:0,results:stage1Rows,diagnostics,near_misses:near};
+     await saveOptimizerSnapshot(window.lastOptimizerResults);
      return;
    }
    const stage2=[];
