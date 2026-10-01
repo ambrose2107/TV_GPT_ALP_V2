@@ -63,7 +63,8 @@ def _market():
         except Exception: pass
     if not frames or "SPY" not in frames:
         raise RuntimeError("Live equity market data unavailable from Alpaca and Yahoo.")
-    # Align the independently fetched series on their common date index.\n    return pd.concat(frames, axis=1).dropna(how="all")
+    # Align the independently fetched series on their common date index.
+    return pd.concat(frames, axis=1).dropna(how="all")
 
 def _fundamental_proxy_uncached():
     rows=[]
