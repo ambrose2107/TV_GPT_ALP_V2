@@ -17,6 +17,8 @@ Generic bar-by-bar backtest engine used by the dashboard's Backtest tab.
 import numpy as np
 import pandas as pd
 
+from core.market_data import alpaca_get_bars
+
 from research.strategies import get_strategy
 
 DEFAULT_PERIOD_BY_INTERVAL = {
@@ -25,13 +27,59 @@ DEFAULT_PERIOD_BY_INTERVAL = {
 }
 
 
-def fetch_yf_data(symbol: str, interval: str = "5m", period: str = None) -> pd.DataFrame:
-    import yfinance as yf
+def _alpaca_timeframe(interval: str):
+    return {
+        "1m": "1Min", "2m": "2Min", "5m": "5Min", "15m": "15Min",
+        "30m": "30Min", "1h": "1Hour", "4h": "4Hour", "1d": "1Day",
+    }.get(interval)
 
+
+def _period_limit(interval: str, period: str) -> int:
+    p = (period or DEFAULT_PERIOD_BY_INTERVAL.get(interval, "60d")).lower()
+    if p.endswith("d"):
+        days = max(1, int(p[:-1]))
+    elif p.endswith("mo"):
+        days = int(float(p[:-2]) * 30.5)
+    elif p.endswith("y"):
+        days = int(float(p[:-1]) * 365.25)
+    else:
+        days = 60
+    bars_per_day = {"1m":390, "2m":195, "5m":78, "15m":26,
+                    "30m":13, "1h":7, "4h":2, "1d":1}.get(interval, 1)
+    return min(50000, max(100, int(days * bars_per_day * 0.72)))
+
+
+def _alpaca_df(symbol: str, interval: str, period: str):
+    tf = _alpaca_timeframe(interval)
+    if not tf or any(ch in symbol for ch in ("=", "^", "-")):
+        return None
+    bars = alpaca_get_bars(symbol, timeframe=tf, limit=_period_limit(interval, period))
+    if not bars:
+        return None
+    df = pd.DataFrame(bars)
+    if df.empty or not {"t", "o", "h", "l", "c"}.issubset(df.columns):
+        return None
+    df.index = pd.to_datetime(df["t"], utc=True, errors="coerce")
+    df = df.rename(columns={"o":"Open", "h":"High", "l":"Low", "c":"Close", "v":"Volume"})
+    return df[["Open", "High", "Low", "Close", "Volume"]].dropna()
+
+
+def fetch_yf_data(symbol: str, interval: str = "5m", period: str = None) -> pd.DataFrame:
     period = period or DEFAULT_PERIOD_BY_INTERVAL.get(interval, "60d")
+    try:
+        df = _alpaca_df(symbol, interval, period)
+        if df is not None and not df.empty:
+            return df
+    except Exception:
+        pass
+
+    import yfinance as yf
     df = yf.download(symbol, period=period, interval=interval, progress=False)
     if df is None or df.empty:
-        raise ValueError(f"No data returned for {symbol} @ {interval} (period={period}).")
+        raise ValueError(
+            f"No market data for {symbol} @ {interval} (period={period}). "
+            "Alpaca and Yahoo both returned no data."
+        )
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     df = df[["Open", "High", "Low", "Close", "Volume"]].dropna()
