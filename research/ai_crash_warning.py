@@ -8,8 +8,10 @@ import requests
 import yfinance as yf
 
 _CACHE={"payload":None,"ts":0.0}
+_FUND_CACHE={"payload":None,"ts":0.0}
 _LOCK=threading.Lock()
 CACHE_TTL=6*60*60
+FUND_CACHE_TTL=24*60*60
 FRED={"hy_oas":"BAMLH0A0HYM2","nfci":"NFCI","dfii10":"DFII10","unrate":"UNRATE"}
 MARKET=["SPY","QQQ","RSP","IWM","SOXX","^VIX"]
 HYPERSCALERS=["MSFT","GOOGL","AMZN","META","ORCL"]
@@ -33,7 +35,7 @@ def _market():
     else:p=d[["Close"]]
     return p.dropna(how="all")
 
-def _fundamental_proxy():
+def _fundamental_proxy_uncached():
     rows=[]
     for ticker in HYPERSCALERS:
         try:
@@ -61,6 +63,17 @@ def _fundamental_proxy():
     cg=(d.capex_growth-d.revenue_growth).dropna(); dg=(d.debt_growth-d.revenue_growth).dropna()
     return {"available":True,"rows":rows,"capex_revenue":float(cr.mean()) if len(cr) else None,
             "capex_growth_gap":float(cg.mean()) if len(cg) else None,"debt_growth_gap":float(dg.mean()) if len(dg) else None}
+
+def _fundamental_proxy():
+    """Cache slow quarterly financial statements separately from market data."""
+    now=time.time()
+    if _FUND_CACHE["payload"] is not None and now-_FUND_CACHE["ts"] < FUND_CACHE_TTL:
+        return _FUND_CACHE["payload"]
+    payload=_fundamental_proxy_uncached()
+    _FUND_CACHE["payload"]=payload
+    _FUND_CACHE["ts"]=now
+    return payload
+
 
 def _latest_change(s,n):
     s=s.dropna()
@@ -100,6 +113,42 @@ def _score(px,f,fund):
       "real10y":rn,"real10y_60d_change":rc,"vix":vn,"sahm":sahm,"breadth":bd,
       "capex_revenue_pct":ratio,"capex_growth_gap_pct":cgap,"debt_growth_gap_pct":dgap}}
 
+def _v2_overlay(score, components, history):
+    """V2 regime confirmation: persistence + acceleration + independent blocks.
+    This is a confirmation layer, not a separately trained probability model.
+    """
+    vals=[float(x.get("v",0)) for x in (history or []) if x.get("v") is not None]
+    tail=vals[-20:]
+    persistence=(sum(v>=50 for v in tail)/len(tail)*100) if tail else 0.0
+    acceleration=(tail[-1]-tail[0]) if len(tail)>=2 else 0.0
+    confirmed=sum(bool(components.get(k,0)>=70) for k in
+                  ("Credit","Liquidity","Market Breadth","Recession"))
+    confirmation_score=min(100.0, confirmed/4.0*100.0)
+    accel_score=_clip(50.0+acceleration*5.0)
+    v2_score=_clip(0.70*float(score)+0.12*persistence+0.10*confirmation_score+0.08*accel_score)
+    if v2_score>=85 or (v2_score>=75 and confirmed>=3):
+        regime="CRISIS"
+    elif v2_score>=70 or (v2_score>=62 and confirmed>=2):
+        regime="DEFENSIVE"
+    elif v2_score>=50 or (v2_score>=45 and persistence>=60):
+        regime="PRE-CRISIS"
+    elif v2_score>=25 or (v2_score>=20 and persistence>=50):
+        regime="WATCH"
+    else:
+        regime="NORMAL"
+    return {
+        "score":round(v2_score,1),
+        "regime":regime,
+        "persistence_20d":round(persistence,1),
+        "acceleration_20d":round(acceleration,1),
+        "confirmed_blocks":confirmed,
+        "confirmation_score":round(confirmation_score,1),
+        "signal_strength":"HIGH" if confirmed>=3 and persistence>=60 else
+                         "ELEVATED" if confirmed>=2 or persistence>=60 else "LOW",
+        "note":"V2 adds persistence, acceleration and multi-block confirmation; it is not a calibrated crash probability."
+    }
+
+
 def _regime(s):
     return "CRISIS" if s>=85 else "DEFENSIVE" if s>=70 else "PRE-CRISIS" if s>=50 else "WATCH" if s>=25 else "NORMAL"
 
@@ -129,10 +178,12 @@ def build_dashboard(force=False):
           "Liquidity":"Financial conditions","Market Breadth":"RSP/IWM/SOXX vs SPY","Real Rates":"10Y real-rate pressure",
           "Volatility":"VIX pressure","Recession":"Sahm/unemployment pressure"}
         factors=[{"name":k,"value":v,"label":labels[k],"status":"HIGH" if v>=70 else "ELEVATED" if v>=50 else "LOW"} for k,v in comps.items()]
+        hist=_history(px,core)
         payload={"as_of":datetime.now(timezone.utc).isoformat(),"score":s,"regime":_regime(s),"drivers":drivers,
           "components":factors,"confirmations":{"credit":comps["Credit"]>=70,"recession":comps["Recession"]>=70,
           "breadth":comps["Market Breadth"]>=70,"liquidity":comps["Liquidity"]>=70},
-          "details":core["details"],"fundamentals":fund,"history":_history(px,core),
+          "details":core["details"],"fundamentals":fund,"history":hist,
+          "v2":_v2_overlay(s,comps,hist),
           "methodology":{"weights":{"AI Fundamental":18,"AI Financing":14,"Credit":20,"Liquidity":10,"Market Breadth":14,"Real Rates":10,"Volatility":5,"Recession":9},
           "note":"Early-warning monitor, not a crash-date predictor. Hyperscaler capex is a proxy, not AI-only capex."}}
         _CACHE["payload"]=payload; _CACHE["ts"]=now; return payload
