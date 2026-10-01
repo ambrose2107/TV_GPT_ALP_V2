@@ -25,7 +25,7 @@ from research.xauusd_daily_research_v2 import (
 )
 from research.xauusd_confluence_v4 import load_data as v4_load_data
 from core.order_sync import sync_alpaca_orders
-from core.database import get_all_trades, get_all_closed_positions, get_closed_summary
+from core.database import get_all_trades, get_all_closed_positions, get_closed_summary, get_setting, set_setting
 
 bp = Blueprint("xauusd_research_v2", __name__)
 _DATA_CACHE = {}
@@ -214,6 +214,37 @@ def strategy_detail(strategy):
         return jsonify({"error": f"Unknown V2 strategy: {key}"}), 404
     return render_template("xauusd_strategy_detail.html", strategy_key=key, strategy_meta=meta, strategy_params=_STRATEGY_PARAMS.get(key, []), chart_symbol=meta["default_symbol"], chart_default_tf=meta["chart_tf"], chart_strategy=key)
 
+
+
+@bp.route("/api/xauusd-research-v2/optimizer-snapshot", methods=["GET", "POST"])
+def optimizer_snapshot():
+    """Persist and restore the latest optimizer snapshot across refreshes/logouts.
+
+    Uses the app's existing SQLite settings table to avoid a new dependency.
+    Keep only the latest compact result snapshot to limit storage on Render Free.
+    """
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+    key = "optimizer_last_snapshot_v1"
+    if request.method == "GET":
+        raw = get_setting(key)
+        if not raw:
+            return jsonify({"available": False})
+        try:
+            saved = json.loads(raw)
+            return jsonify({"available": True, "snapshot": saved})
+        except Exception:
+            return jsonify({"available": False, "error": "Saved optimizer snapshot could not be decoded."})
+    body = request.get_json(silent=True) or {}
+    snapshot = body.get("snapshot")
+    if not isinstance(snapshot, dict):
+        return jsonify({"error": "A snapshot object is required."}), 400
+    snapshot["saved_at"] = datetime.now(timezone.utc).isoformat()
+    encoded = json.dumps(_safe(snapshot), separators=(",", ":"), ensure_ascii=False)
+    if len(encoded) > 1_500_000:
+        return jsonify({"error": "Snapshot is too large to store. Reduce the saved result rows."}), 413
+    set_setting(key, encoded)
+    return jsonify({"saved": True, "saved_at": snapshot["saved_at"]})
 
 @bp.route("/api/xauusd-research-v2/status", methods=["GET"])
 def status():
