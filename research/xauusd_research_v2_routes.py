@@ -28,6 +28,23 @@ from core.order_sync import sync_alpaca_orders
 from core.database import get_all_trades, get_all_closed_positions, get_closed_summary, get_setting, set_setting
 
 bp = Blueprint("xauusd_research_v2", __name__)
+
+
+@bp.after_request
+def _persist_completed_optimizer_response(response):
+    """Save each completed optimizer phase server-side, even if the browser refreshes."""
+    try:
+        if request.path.endswith("/optimize") and response.status_code == 200:
+            payload = response.get_json(silent=True)
+            if isinstance(payload, dict) and payload.get("phase"):
+                payload["saved_at"] = datetime.now(timezone.utc).isoformat()
+                encoded = json.dumps(_safe(payload), separators=(",", ":"), ensure_ascii=False)
+                if len(encoded) <= 1_500_000:
+                    set_setting("optimizer_last_snapshot_v1", encoded)
+    except Exception:
+        # Persistence must never turn a successful optimization into a failed response.
+        pass
+    return response
 _DATA_CACHE = {}
 _CACHE_TTL = 300
 _CACHE_MAX_ENTRIES = 3
