@@ -5,8 +5,7 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 import requests
-import yfinance as yf
-from core.market_data import alpaca_get_multi_bars
+from core.market_data import alpaca_get_multi_bars, alpaca_get_bars, yahoo_get_chart
 
 _CACHE={"payload":None,"ts":0.0}
 _FUND_CACHE={"payload":None,"ts":0.0}
@@ -39,31 +38,31 @@ def _market():
             if z.empty or "t" not in z.columns or "c" not in z.columns: continue
             z.index=pd.to_datetime(z["t"],utc=True,errors="coerce")
             frames[sym]=pd.to_numeric(z["c"],errors="coerce")
-    if len(frames)<4:
+    # Batch Alpaca can fail independently of per-symbol requests. Retry missing
+    # symbols individually, then use the lightweight Yahoo chart API (no yfinance
+    # cookie/session dependency), which is more reliable on small Render workers.
+    for sym in stocks:
+        if sym in frames: continue
         try:
-            d=yf.download(stocks,period="3y",interval="1d",auto_adjust=True,progress=False,group_by="column",threads=False)
-            if d is not None and not d.empty:
-                if isinstance(d.columns,pd.MultiIndex):
-                    p0=d["Close"] if "Close" in d.columns.get_level_values(0) else d.xs("Close",axis=1,level=1)
-                else: p0=d[["Close"]]
-                for sym in stocks:
-                    if sym in p0: frames[sym]=p0[sym]
-        except Exception:
-            pass
+            bars=alpaca_get_bars(sym,timeframe="1Day",limit=800)
+            if bars:
+                z=pd.DataFrame(bars)
+                if not z.empty and "t" in z.columns and "c" in z.columns:
+                    z.index=pd.to_datetime(z["t"],utc=True,errors="coerce")
+                    q=pd.to_numeric(z["c"],errors="coerce").dropna()
+                    if not q.empty: frames[sym]=q
+        except Exception: pass
+    for sym in stocks:
+        if sym in frames: continue
+        try:
+            chart=yahoo_get_chart(sym,interval="1d",period="3y")
+            if chart and chart.get("timestamps") and chart.get("close"):
+                q=pd.Series(pd.to_numeric(chart["close"],errors="coerce"),
+                    index=pd.to_datetime(chart["timestamps"],unit="s",utc=True,errors="coerce")).dropna()
+                if not q.empty: frames[sym]=q
+        except Exception: pass
     if not frames or "SPY" not in frames:
-        raise RuntimeError("Alpaca/Yahoo returned no equity market data.")
-    p=pd.concat(frames,axis=1).sort_index()
-    try:
-        v=yf.download("^VIX",period="3y",interval="1d",auto_adjust=True,progress=False,threads=False)
-        if v is not None and not v.empty:
-            if isinstance(v.columns,pd.MultiIndex): v=v.xs("Close",axis=1,level=0)
-            else: v=v["Close"]
-            p["^VIX"]=pd.to_numeric(v,errors="coerce")
-    except Exception:
-        pass
-    if "^VIX" not in p or p["^VIX"].dropna().empty:
-        r=p["SPY"].pct_change()
-        p["^VIX"]=r.rolling(20).std()*np.sqrt(252)*100.0
+        raise RuntimeError("Live equity market data unavailable from Alpaca and Yahoo.")
     return p.dropna(how="all")
 
 def _fundamental_proxy_uncached():
