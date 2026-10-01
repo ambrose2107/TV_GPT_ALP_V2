@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import requests
 import yfinance as yf
+from core.market_data import alpaca_get_multi_bars
 
 _CACHE={"payload":None,"ts":0.0}
 _FUND_CACHE={"payload":None,"ts":0.0}
@@ -28,11 +29,41 @@ def _fred(sid):
     return d.dropna(subset=["observation_date",sid]).set_index("observation_date")[sid]
 
 def _market():
-    d=yf.download(MARKET,period="3y",interval="1d",auto_adjust=True,progress=False,group_by="column",threads=False)
-    if d is None or d.empty: raise RuntimeError("Yahoo Finance returned no market data.")
-    if isinstance(d.columns,pd.MultiIndex):
-        p=d["Close"] if "Close" in d.columns.get_level_values(0) else d.xs("Close",axis=1,level=1)
-    else:p=d[["Close"]]
+    stocks=[s for s in MARKET if s != "^VIX"]
+    raw=alpaca_get_multi_bars(stocks,timeframe="1Day",limit=800)
+    frames={}
+    if raw:
+        for sym,bars in raw.items():
+            if not bars: continue
+            z=pd.DataFrame(bars)
+            if z.empty or "t" not in z.columns or "c" not in z.columns: continue
+            z.index=pd.to_datetime(z["t"],utc=True,errors="coerce")
+            frames[sym]=pd.to_numeric(z["c"],errors="coerce")
+    if len(frames)<4:
+        try:
+            d=yf.download(stocks,period="3y",interval="1d",auto_adjust=True,progress=False,group_by="column",threads=False)
+            if d is not None and not d.empty:
+                if isinstance(d.columns,pd.MultiIndex):
+                    p0=d["Close"] if "Close" in d.columns.get_level_values(0) else d.xs("Close",axis=1,level=1)
+                else: p0=d[["Close"]]
+                for sym in stocks:
+                    if sym in p0: frames[sym]=p0[sym]
+        except Exception:
+            pass
+    if not frames or "SPY" not in frames:
+        raise RuntimeError("Alpaca/Yahoo returned no equity market data.")
+    p=pd.concat(frames,axis=1).sort_index()
+    try:
+        v=yf.download("^VIX",period="3y",interval="1d",auto_adjust=True,progress=False,threads=False)
+        if v is not None and not v.empty:
+            if isinstance(v.columns,pd.MultiIndex): v=v.xs("Close",axis=1,level=0)
+            else: v=v["Close"]
+            p["^VIX"]=pd.to_numeric(v,errors="coerce")
+    except Exception:
+        pass
+    if "^VIX" not in p or p["^VIX"].dropna().empty:
+        r=p["SPY"].pct_change()
+        p["^VIX"]=r.rolling(20).std()*np.sqrt(252)*100.0
     return p.dropna(how="all")
 
 def _fundamental_proxy_uncached():
