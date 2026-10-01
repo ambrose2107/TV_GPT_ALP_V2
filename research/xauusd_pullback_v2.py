@@ -71,7 +71,13 @@ def _signal_arrays(df, cfg):
     n_break=int(cfg.breakout_lookback)
     down=_rolling_sum_bool(c<o,n_pull)
     up=_rolling_sum_bool(c>o,n_pull)
-    # Breakout levels must use completed bars only. Including the current bar\n    # makes `close > current_high + buffer` impossible (and similarly for shorts).\n    prior_high_raw=_rolling_extreme(h,n_break,True)\n    prior_low_raw=_rolling_extreme(l,n_break,False)\n    prior_high=np.empty_like(prior_high_raw); prior_high[:1]=np.nan; prior_high[1:]=prior_high_raw[:-1]\n    prior_low=np.empty_like(prior_low_raw); prior_low[:1]=np.nan; prior_low[1:]=prior_low_raw[:-1]\n
+    # Breakout levels must use completed bars only. Including the current bar
+    # makes `close > current_high + buffer` impossible (and similarly for shorts).
+    prior_high_raw=_rolling_extreme(h,n_break,True)
+    prior_low_raw=_rolling_extreme(l,n_break,False)
+    prior_high=np.empty_like(prior_high_raw); prior_high[:1]=np.nan; prior_high[1:]=prior_high_raw[:-1]
+    prior_low=np.empty_like(prior_low_raw); prior_low[:1]=np.nan; prior_low[1:]=prior_low_raw[:-1]
+
     ap=a/np.maximum(np.abs(c),1e-9)
     body=np.divide(np.abs(c-o),a,out=np.full(len(c),np.nan,dtype=np.float32),where=a>0)
 
