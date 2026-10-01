@@ -328,7 +328,8 @@ async function runOptimizer(){
     window.lastOptimizerResults=partial;
     await saveOptimizerSnapshot(partial);
    }
-   const seeds=stage1Rows.filter(x=>x.filter_pass).sort((a,b)=>Number(b.robust_score||0)-Number(a.robust_score||0)).slice(0,8);\n   totalTested=stage1Rows.length;totalPassed=seeds.length;
+   const seeds=stage1Rows.filter(x=>x.filter_pass).sort((a,b)=>Number(b.robust_score||0)-Number(a.robust_score||0)).slice(0,8);
+   totalTested=stage1Rows.length;totalPassed=seeds.length;
    const near=stage1Rows.filter(x=>!x.filter_pass).sort((a,b)=>Number(a.trade_shortfall||0)-Number(b.trade_shortfall||0)||Number(b.test_trades||0)-Number(a.test_trades||0)||Number(b.train_trades||0)-Number(a.train_trades||0)).slice(0,8);
    const bestTrain=Math.max(0,...stage1Rows.map(x=>Number(x.train_trades)||0));
    const bestTest=Math.max(0,...stage1Rows.map(x=>Number(x.test_trades)||0));
