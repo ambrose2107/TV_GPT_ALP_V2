@@ -5,7 +5,11 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 import requests
+import yfinance as yf
+from core.logger import get_logger
 from core.market_data import alpaca_get_multi_bars, alpaca_get_bars, yahoo_get_chart
+
+logger = get_logger(__name__)
 
 _CACHE={"payload":None,"ts":0.0}
 _FUND_CACHE={"payload":None,"ts":0.0}
@@ -62,23 +66,53 @@ def _market():
                 if not q.empty: frames[sym]=q
         except Exception: pass
 
-    # VIX is an index, not an Alpaca-tradable symbol. It must be fetched
-    # explicitly from Yahoo; otherwise the old code silently substituted 16
-    # and the history chart could fail because px["^VIX"] did not exist.
+    # VIX is an index, not an Alpaca-tradable symbol. Fetch it from Yahoo,
+    # then use CBOE's public historical CSV as an independent fallback.
+    vix_loaded = False
     try:
-        chart=yahoo_get_chart("^VIX",interval="1d",period="3y")
-        if chart and chart.get("timestamps") and chart.get("close"):
-            q=pd.Series(pd.to_numeric(chart["close"],errors="coerce"),
-                index=pd.to_datetime(chart["timestamps"],unit="s",utc=True,errors="coerce")).dropna()
-            if not q.empty:
-                frames["^VIX"]=q
+        chart = yahoo_get_chart("^VIX", interval="1d", period="3y")
+        if chart:
+            ts = chart.get("timestamps") or []
+            closes = chart.get("close") or []
+            if ts and closes and len(ts) == len(closes):
+                q = pd.Series(
+                    pd.to_numeric(closes, errors="coerce"),
+                    index=pd.to_datetime(ts, unit="s", utc=True, errors="coerce"),
+                    name="^VIX",
+                ).dropna()
+                q = q[~q.index.isna()]
+                if not q.empty:
+                    frames["^VIX"] = q
+                    vix_loaded = True
     except Exception as exc:
         logger.warning("Yahoo VIX fetch failed: %s", exc)
 
+    if not vix_loaded:
+        try:
+            url = "https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv"
+            response = requests.get(url, timeout=12, headers={"User-Agent": "Mozilla/5.0"})
+            response.raise_for_status()
+            vix_df = pd.read_csv(io.StringIO(response.text))
+            date_col = next((x for x in vix_df.columns if x.strip().lower() == "date"), None)
+            close_col = next((x for x in vix_df.columns if x.strip().lower() in ("close", "vix close")), None)
+            if date_col and close_col:
+                q = pd.Series(
+                    pd.to_numeric(vix_df[close_col], errors="coerce").to_numpy(),
+                    index=pd.to_datetime(vix_df[date_col], errors="coerce", utc=True),
+                    name="^VIX",
+                ).dropna()
+                q = q[~q.index.isna()]
+                q = q[q.index >= pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=1100)]
+                if not q.empty:
+                    frames["^VIX"] = q
+                    vix_loaded = True
+        except Exception as exc:
+            logger.warning("CBOE VIX history fetch failed: %s", exc)
+
     if not frames or "SPY" not in frames:
         raise RuntimeError("Live equity market data unavailable from Alpaca and Yahoo.")
-    if "^VIX" not in frames:
-        raise RuntimeError("VIX data unavailable from Yahoo. Crash score withheld rather than using a fabricated VIX value.")
+    if not vix_loaded or "^VIX" not in frames:
+        raise RuntimeError("VIX data unavailable from both Yahoo and CBOE. Crash score withheld; no placeholder VIX value used.")
     # Align the independently fetched series on their common date index.
     return pd.concat(frames, axis=1).dropna(how="all")
 
