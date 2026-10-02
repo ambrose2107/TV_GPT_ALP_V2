@@ -61,8 +61,24 @@ def _market():
                     index=pd.to_datetime(chart["timestamps"],unit="s",utc=True,errors="coerce")).dropna()
                 if not q.empty: frames[sym]=q
         except Exception: pass
+
+    # VIX is an index, not an Alpaca-tradable symbol. It must be fetched
+    # explicitly from Yahoo; otherwise the old code silently substituted 16
+    # and the history chart could fail because px["^VIX"] did not exist.
+    try:
+        chart=yahoo_get_chart("^VIX",interval="1d",period="3y")
+        if chart and chart.get("timestamps") and chart.get("close"):
+            q=pd.Series(pd.to_numeric(chart["close"],errors="coerce"),
+                index=pd.to_datetime(chart["timestamps"],unit="s",utc=True,errors="coerce")).dropna()
+            if not q.empty:
+                frames["^VIX"]=q
+    except Exception as exc:
+        logger.warning("Yahoo VIX fetch failed: %s", exc)
+
     if not frames or "SPY" not in frames:
         raise RuntimeError("Live equity market data unavailable from Alpaca and Yahoo.")
+    if "^VIX" not in frames:
+        raise RuntimeError("VIX data unavailable from Yahoo. Crash score withheld rather than using a fabricated VIX value.")
     # Align the independently fetched series on their common date index.
     return pd.concat(frames, axis=1).dropna(how="all")
 
