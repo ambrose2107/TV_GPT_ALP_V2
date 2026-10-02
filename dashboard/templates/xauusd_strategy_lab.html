@@ -64,10 +64,10 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
       <label>Train % <input id="optTrain" type="number" min="50" max="80" value="70" style="width:70px"></label>
       <label>Min train trades <input id="optMinTrain" type="number" min="5" value="10" style="width:85px"></label>
       <label>Min test trades <input id="optMinTest" type="number" min="3" value="5" style="width:85px"></label>
-      <button id="runOptimizer" class="primary">🧠 Optimize</button><button id="restoreOptimizer">↩ Restore last run</button><a href="/xauusd-pullback-v2" class="detail-link">Pullback page</a><a href="/xauusd-trend-ribbon-v2" class="detail-link">Ribbon page</a>
+      <button id="runOptimizer" class="primary">🧠 Optimize</button><button id="exportOptimizerJson" disabled>⬇ Optimizer JSON</button><button id="validateBestLong" disabled>📈 Validate Best Long-Term</button><button id="restoreOptimizer">↩ Restore last run</button><a href="/xauusd-pullback-v2" class="detail-link">Pullback page</a><a href="/xauusd-trend-ribbon-v2" class="detail-link">Ribbon page</a>
       <span id="optimizerStatus" class="muted">Chronological train/test.</span>
     </div>
-    <div id="optimizerResults" class="scroll" style="margin-top:10px;max-height:420px"><div class="empty">No optimization run yet.</div></div>
+    <div id="optimizerBest" class="empty" style="margin-top:10px;border:1px solid var(--line);border-radius:6px">Best configuration will appear after optimization.</div><div id="optimizerValidation" class="empty" style="margin-top:10px">Long-term validation will appear here.</div><div id="optimizerResults" class="scroll" style="margin-top:10px;max-height:420px"><div class="empty">No optimization run yet.</div></div>
   </div>
 </div>
 
@@ -274,6 +274,7 @@ function showOptimizerSnapshot(s, restored=false){
   $('optimizerResults').innerHTML='<div class="empty">Saved run has no result rows yet.</div>';
  }
  window.lastOptimizerResults=s;
+ renderOptimizerBest();
  const stamp=s.saved_at?(' · saved '+s.saved_at):'';
  $('optimizerStatus').textContent=(restored?'Restored saved optimizer run':'Optimizer snapshot saved')+
   (s.status?' · '+s.status:'')+' · '+(s.tested||0)+' evaluations'+stamp;
@@ -285,6 +286,64 @@ async function restoreOptimizerSnapshot(){
   const d=await r.json();
   if(d.available&&d.snapshot)showOptimizerSnapshot(d.snapshot,true);
  }catch(_){/* restore is optional; page remains usable */}
+}
+function optimizerRows(){
+ const s=window.lastOptimizerResults||{};
+ return Array.isArray(s.results)?s.results:[];
+}
+function chooseBestOptimizerRow(rows){
+ const candidates=rows.filter(r=>Number(r.test_trades||0)>=Number($('optMinTest').value||5));
+ if(!candidates.length)return null;
+ return candidates.slice().sort((a,b)=>{
+  const score=r=>{
+   const trainPf=Number(r.train_pf||0),testPf=Number(r.test_pf||0),exp=Number(r.test_expectancy_R||0);
+   const ret=Math.max(Number(r.test_return_pct||0),0),dd=Math.abs(Number(r.test_max_dd_pct||0)),trades=Math.min(Number(r.test_trades||0),50);
+   return Math.min(trainPf,testPf)+.35*exp+.003*ret+.002*trades-.01*dd;
+  };
+  return score(b)-score(a);
+ })[0];
+}
+function renderOptimizerBest(){
+ const rows=optimizerRows(),best=chooseBestOptimizerRow(rows);
+ const box=$('optimizerBest');
+ if(!best){box.innerHTML='<b>No best configuration yet.</b> Need at least '+esc($('optMinTest').value||5)+' test trades.';$('exportOptimizerJson').disabled=true;$('validateBestLong').disabled=true;return null;}
+ const score=(()=>{const trainPf=Number(best.train_pf||0),testPf=Number(best.test_pf||0),exp=Number(best.test_expectancy_R||0),ret=Math.max(Number(best.test_return_pct||0),0),dd=Math.abs(Number(best.test_max_dd_pct||0)),trades=Math.min(Number(best.test_trades||0),50);return Math.min(trainPf,testPf)+.35*exp+.003*ret+.002*trades-.01*dd;})();
+ box.innerHTML='<b>🏆 Best research configuration</b> <span class="badge">selection score '+esc(score.toFixed(3))+'</span><br>'+
+  'EMA '+esc(best.ema_fast)+'/'+esc(best.ema_slow)+' · ATR stop '+esc(best.atr_stop)+' · RR '+esc(best.rr)+' · cooldown '+esc(best.cooldown_bars)+
+  ' · body ATR '+esc(best.min_body_atr)+' · EMA gap '+esc(best.min_ema_gap_atr)+' · min ATR '+esc(best.min_atr_pct)+' · breakout buffer '+esc(best.breakout_buffer_atr)+
+  '<br>Train: '+esc(best.train_trades)+' trades / PF '+esc(num(best.train_pf))+' · Test: '+esc(best.test_trades)+' trades / PF '+esc(num(best.test_pf))+
+  ' · Test expectancy '+esc(num(best.test_expectancy_R))+'R · Test return '+esc(num(best.test_return_pct))+'% · Max DD '+esc(num(best.test_max_dd_pct))+'%';
+ window.bestOptimizerConfig=best;$('exportOptimizerJson').disabled=false;$('validateBestLong').disabled=false;
+ return best;
+}
+async function exportOptimizerJson(){
+ const rows=optimizerRows(),best=renderOptimizerBest();
+ if(!rows.length){$('optimizerStatus').textContent='Run the optimizer first.';return;}
+ $('exportOptimizerJson').disabled=true;
+ try{
+  const r=await fetch('/api/xauusd-research-v2/export-optimizer-json',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:selectedSymbol(),strategy:$('optStrategy').value,optimizer:window.lastOptimizerResults,best,min_test_trades:Number($('optMinTest').value)||5})});
+  if(!r.ok){let d={};try{d=await r.json()}catch(_){}throw new Error(d.error||('HTTP '+r.status));}
+  const blob=await r.blob(),a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=selectedSymbol()+'_optimizer_results_'+new Date().toISOString().replace(/[:.]/g,'-').slice(0,19)+'.json';
+  document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(a.href);
+  $('optimizerStatus').innerHTML='<span class="ok">Optimizer JSON exported: '+rows.length+' evaluations + best configuration.</span>';
+ }catch(e){$('optimizerStatus').innerHTML='<span class="bad">Optimizer JSON export error: '+esc(e.message)+'</span>';}
+ finally{$('exportOptimizerJson').disabled=!window.bestOptimizerConfig;}
+}
+async function validateBestLong(){
+ const best=renderOptimizerBest();if(!best)return;
+ const btn=$('validateBestLong');btn.disabled=true;$('optimizerValidation').innerHTML='<span class="warn">Running best configuration on long 5m history (bounded to 30,000 bars)…</span>';
+ try{
+  const r=await fetch('/api/xauusd-research-v2/validate-best',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:selectedSymbol(),strategy:'pullback',best,n_bars:30000,long_only:true})});
+  const d=await r.json();if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
+  const m=d.metrics||{};
+  $('optimizerValidation').innerHTML='<b>📈 Long-term / out-of-sample-style validation</b><br>'+
+   'Long only · '+esc(d.bars)+' 5m bars · '+esc(d.data_source)+'<br>'+
+   'Trades '+esc(m.num_trades)+' · Win '+esc(num(m.win_rate))+'% · PF '+esc(num(m.profit_factor))+' · Expectancy '+esc(num(m.expectancy_R))+'R · Total R '+esc(num(m.total_R))+
+   ' · Return '+esc(num(m.total_return_pct))+'% · Max DD '+esc(num(m.max_drawdown_pct))+'% · Final equity '+esc(num(m.final_equity));
+  window.bestLongValidation=d;
+ }catch(e){$('optimizerValidation').innerHTML='<span class="bad">Long-term validation error: '+esc(e.message)+'</span>';}
+ finally{btn.disabled=false;}
 }
 async function runOptimizer(){
  const btn=$('runOptimizer');btn.disabled=true;
@@ -370,6 +429,7 @@ async function runOptimizer(){
    $('optimizerResults').innerHTML='<table><tr>'+cols.map(x=>'<th>'+esc(x)+'</th>').join('')+'</tr>'+rows.slice(0,50).map(row=>'<tr>'+cols.map(x=>'<td>'+esc(typeof row[x]==='number'?num(row[x]):row[x])+'</td>').join('')+'</tr>').join('')+'</table>';
   }
   window.lastOptimizerResults={strategy,symbol:'SPY',tested:totalTested,passed:totalPassed,results:rows};
+  renderOptimizerBest();
   await saveOptimizerSnapshot({status:'Completed',strategy,symbol:'SPY',tested:totalTested,passed:totalPassed,results:rows.slice(0,250)});
   $('optimizerStatus').innerHTML='<span class="ok">Completed low-memory optimizer: '+totalTested+' evaluations; '+totalPassed+' passed. Results retained for export.</span>';
  }catch(e){
@@ -404,12 +464,12 @@ async function exportMarketDataWithTrades(){
  }catch(e){$('exportStatus').innerHTML='<span class="bad">Export error: '+esc(e.message)+'</span>';}
  finally{btn.disabled=false;}
 }
-$('runAll').onclick=runAll;$('runOptimizer').onclick=runOptimizer;$('restoreOptimizer').onclick=()=>restoreOptimizerSnapshot();
+$('runAll').onclick=runAll;$('runOptimizer').onclick=runOptimizer;$('exportOptimizerJson').onclick=exportOptimizerJson;$('validateBestLong').onclick=validateBestLong;$('restoreOptimizer').onclick=()=>restoreOptimizerSnapshot();
 restoreOptimizerSnapshot();$('downloadCsv').onclick=downloadResultsCsv;$('downloadJson').onclick=downloadResultsJson;$('exportExcel').onclick=exportExcel;$('exportMarketTrades').onclick=exportMarketDataWithTrades;
 $('clear').onclick=()=>{
  lastResults={};document.querySelectorAll('#comparison tr[data-k]').forEach(x=>x.remove());
  for(const k of Object.keys(defs)){setStatus(k,'Ready');$('metrics-'+k).innerHTML='<div class="empty">No result yet.</div>';if($('pnl-'+k))$('pnl-'+k).innerHTML='<div class="empty">P&amp;L trend will appear after the run.</div>';$('trades-'+k).innerHTML='';}
- $('downloadCsv').disabled=true;$('downloadJson').disabled=true;$('globalStatus').textContent='Ready';$('exportStatus').textContent='Exports selected ticker market data plus V2 trades.';
+ $('downloadCsv').disabled=true;$('downloadJson').disabled=true;$('exportOptimizerJson').disabled=true;$('validateBestLong').disabled=true;$('optimizerBest').innerHTML='Best configuration will appear after optimization.';$('optimizerValidation').innerHTML='Long-term validation will appear here.';$('globalStatus').textContent='Ready';$('exportStatus').textContent='Exports selected ticker market data plus V2 trades.';
 };
 </script>
 </body>
