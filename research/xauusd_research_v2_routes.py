@@ -539,18 +539,27 @@ def validate_best_pullback():
         trades=result["trades"]
         if hasattr(trades,"to_dict"):
             trades=trades.to_dict(orient="records")
-        curve=result["equity_curve"]
+        # Do not serialize one JSON object per 5m bar. On Render Free that can
+        # create a very large response and undo the memory savings of the optimizer.
+        # Keep the full backtest internally, but return a compact chart curve.
+        curve=result.get("equity_curve")
         pnl_curve=[]
-        if curve is not None:
-            for ts,val in curve.items():
+        if curve is not None and len(curve):
+            max_points=800
+            step=max(1, int(len(curve)/max_points))
+            sampled=curve.iloc[::step]
+            if sampled.index[-1] != curve.index[-1]:
+                sampled=pd.concat([sampled,curve.iloc[[-1]]])
+            for ts,val in sampled.items():
                 pnl_curve.append({"timestamp":str(ts),"equity":float(val),"pnl":float(val-10000.0),
                                    "return_pct":float((val/10000.0-1)*100)})
         m=dict(result["metrics"])
         return jsonify(_safe({
             "strategy":"pullback","symbol":symbol,"data_source":source,"bars":len(df),
             "long_only":long_only,"config":cfg.__dict__,"metrics":m,
-            "trades":trades[-500:],"pnl_curve":pnl_curve[-30000:],
-            "validation_window":"long bounded 5m validation using the selected configuration"
+            "trades":trades[-500:],"pnl_curve":pnl_curve,
+            "validation_window":"long bounded 5m validation using the selected configuration",
+            "pnl_points_returned":len(pnl_curve)
         }))
     except Exception as exc:
         return jsonify({"error":f"{type(exc).__name__}: {exc}"}),500
