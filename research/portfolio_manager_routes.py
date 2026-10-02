@@ -66,8 +66,27 @@ def portfolio_data():
                 "cost_basis": cb, "unrealized_pl": pl, "unrealized_pct": pct,
                 "weight_pct": (mv / equity * 100) if equity else 0,
             })
+        theme_map = {
+            "Semiconductors & equipment": {"AMD","ASML","MRVL","TSM","SNDK","KLAC","MU","INTC","SMH","QCOM","NVDA","AVGO","AMAT","LRCX","SOXX"},
+            "AI infrastructure / optical": {"LITE","AAOI","NBIS","CRWV","ORCL","VRT","ANET","DELL","SMCI"},
+            "Quantum / emerging technology": {"QBTS","RGTI","IONQ","QUBT"},
+            "Space / frontier growth": {"RKLB","ASTS","ONDS","OUST"},
+            "Crypto-linked": {"IBIT","CONL","COIN","MARA","RIOT"},
+            "Broad market / diversified ETFs": {"SPY","QQQ","IWM","DIA","VTI","VOO","SMH","SOXX"},
+        }
+        for p in positions:
+            p["theme"] = next((name for name, members in theme_map.items() if p["symbol"] in members), "Other / unclassified")
         positions.sort(key=lambda x: abs(x["market_value"]), reverse=True)
         total_mv = sum(abs(p["market_value"]) for p in positions)
+        theme_totals = {}
+        for p in positions:
+            row = theme_totals.setdefault(p["theme"], {"market_value": 0.0, "symbols": []})
+            row["market_value"] += abs(p["market_value"])
+            row["symbols"].append(p["symbol"])
+        theme_exposure = [{"theme": k, "market_value": round(v["market_value"], 2),
+                           "weight_pct": (v["market_value"] / equity * 100) if equity else 0,
+                           "symbols": v["symbols"]}
+                          for k, v in sorted(theme_totals.items(), key=lambda kv: -kv[1]["market_value"])]
         invested = (total_mv / equity * 100) if equity else 0
         # One bounded daily-bar request; avoid large per-ticker calls on Render free tier.
         symbols = list(dict.fromkeys([p["symbol"] for p in positions if p["symbol"]]))[:35]
@@ -148,7 +167,7 @@ def portfolio_data():
                 payload = {
                     "as_of": datetime.now(timezone.utc).isoformat(), "account":{"equity":equity,"cash":cash,
                     "buying_power":_safe_float(account.get("buying_power")),"portfolio_value":_safe_float(account.get("portfolio_value") or equity)},
-                    "positions":positions,"summary":{"position_count":len(positions),"market_value":total_mv,
+                    "positions":positions,"theme_exposure":theme_exposure,"summary":{"position_count":len(positions),"market_value":total_mv,
                     "invested_pct":invested,"cash_pct":(cash/equity*100 if equity else 0),
                     "unrealized_pl":sum(p["unrealized_pl"] for p in positions),
                     "top5_weight_pct":sum(p["weight_pct"] for p in positions[:5]),
