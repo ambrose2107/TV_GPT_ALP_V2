@@ -1279,6 +1279,46 @@ async function loadAccount() {
   } catch(e) { console.warn('Account error:', e); }
 }
 
+async function downloadOpenPositionsCSV() {
+  const btn = document.querySelector('#pane-pos button[onclick="downloadOpenPositionsCSV()"]');
+  const oldLabel = btn ? btn.textContent : '';
+  if(btn) { btn.disabled = true; btn.textContent = '⏳ Preparing CSV…'; }
+  try {
+    const r = await fetch('/api/open_positions_csv', {
+      method: 'GET',
+      credentials: 'same-origin',
+      cache: 'no-store'
+    });
+    if(!r.ok) {
+      let detail = '';
+      try { const j = await r.json(); detail = j.error || j.message || ''; } catch(_) {}
+      throw new Error(detail || `CSV export failed (HTTP ${r.status})`);
+    }
+    const blob = await r.blob();
+    if(!blob.size) throw new Error('The CSV response was empty.');
+    const disposition = r.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="?([^";]+)"?/i);
+    const filename = match ? match[1] : 'open_positions.csv';
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    if(!disposition.toLowerCase().includes('attachment')) {
+      throw new Error('Server did not return a downloadable CSV attachment.');
+    }
+  } catch(e) {
+    console.error('Open positions CSV download failed:', e);
+    alert('Could not download open positions CSV: ' + e.message);
+  } finally {
+    if(btn) { btn.disabled = false; btn.textContent = oldLabel || '📥 Download CSV'; }
+  }
+}
+
 async function loadPositions() {
   const el = $('pos-tbl');
   el.innerHTML = '<div class="loading"><span class="spin"></span></div>';
