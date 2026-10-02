@@ -14,7 +14,7 @@ from research.xauusd_pullback_v1 import atr
 class PullbackV2Config:
     ema_fast:int=50; ema_slow:int=200; atr_len:int=14; pullback_bars:int=3; breakout_lookback:int=5
     atr_stop:float=1.2; rr:float=2.0; risk_pct:float=.5; cooldown_bars:int=8
-    session_start_utc:int=13; session_end_utc:int=21; min_ema_gap_atr:float=.10
+    session_start_utc:int=13; session_end_utc:int=21; min_ema_gap_atr:float=.10; long_only:bool=False
     breakout_buffer_atr:float=.15; min_body_atr:float=.40; min_atr_pct:float=.00125; max_atr_pct:float=.02
 
 
@@ -93,6 +93,8 @@ def _signal_arrays(df, cfg):
     )
     long_mask=valid&(c>es)&(ef>es)&(down>=1)&(c>prior_high+cfg.breakout_buffer_atr*a)
     short_mask=valid&(c<es)&(ef<es)&(up>=1)&(c<prior_low-cfg.breakout_buffer_atr*a)
+    if cfg.long_only:
+        short_mask=np.zeros_like(short_mask, dtype=bool)
 
     signal=np.zeros(len(c),dtype=np.int8)
     signal[long_mask]=1
