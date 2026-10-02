@@ -45,11 +45,28 @@ def portfolio_data():
         return jsonify(_CACHE["payload"])
     try:
         import requests
-        base = Config.ALPACA_BASE_URL.rstrip("/")
+        base = (Config.ALPACA_BASE_URL or "").rstrip("/")
         headers = _headers()
-        ar = requests.get(base + "/v2/account", headers=headers, timeout=8)
-        pr = requests.get(base + "/v2/positions", headers=headers, timeout=8)
-        ar.raise_for_status(); pr.raise_for_status()
+        if not headers.get("APCA-API-KEY-ID") or not headers.get("APCA-API-SECRET-KEY"):
+            raise RuntimeError("Alpaca credentials are missing. Set ALPACA_API_KEY and ALPACA_SECRET_KEY (or APCA_API_KEY_ID and APCA_API_SECRET_KEY) in Render Environment, then redeploy.")
+        if not base:
+            raise RuntimeError("Alpaca API base URL is empty. Check ALPACA_MODE.")
+        try:
+            ar = requests.get(base + "/v2/account", headers=headers, timeout=10)
+        except requests.RequestException as ex:
+            raise RuntimeError("Could not connect to Alpaca account API. Check Render outbound connectivity and ALPACA_MODE. Details: " + str(ex)[:240])
+        if ar.status_code in (401, 403):
+            raise RuntimeError("Alpaca rejected the credentials for " + base + " (HTTP " + str(ar.status_code) + "). Check that the key/secret pair matches this environment: paper keys for ALPACA_MODE=paper, live keys for ALPACA_MODE=live. No credentials were displayed.")
+        if not ar.ok:
+            raise RuntimeError("Alpaca account API returned HTTP " + str(ar.status_code) + ": " + ar.text[:240])
+        try:
+            pr = requests.get(base + "/v2/positions", headers=headers, timeout=10)
+        except requests.RequestException as ex:
+            raise RuntimeError("Connected to Alpaca account, but positions request failed: " + str(ex)[:240])
+        if pr.status_code in (401, 403):
+            raise RuntimeError("Alpaca rejected the positions request (HTTP " + str(pr.status_code) + "). Verify the API key/secret and account permissions.")
+        if not pr.ok:
+            raise RuntimeError("Alpaca positions API returned HTTP " + str(pr.status_code) + ": " + pr.text[:240])
         account, raw = ar.json(), pr.json()
         equity = _safe_float(account.get("equity") or account.get("portfolio_value"))
         cash = _safe_float(account.get("cash"))
@@ -193,7 +210,11 @@ def portfolio_data():
         return jsonify(payload)
     except Exception as ex:
         logger.exception("Portfolio Manager data error")
-        return jsonify({"error":"Could not load Alpaca portfolio data. Check Alpaca credentials and market-data connectivity.","detail":str(ex)}), 503
+        # Safe diagnostic text: never include request headers or credential values.
+        return jsonify({"error":"Portfolio data could not be loaded.","detail":str(ex)[:500],
+                        "configured":{"alpaca_key_present":bool(_headers().get("APCA-API-KEY-ID")),
+                                      "alpaca_secret_present":bool(_headers().get("APCA-API-SECRET-KEY")),
+                                      "api_base":(Config.ALPACA_BASE_URL or "").rstrip("/")}}), 503
 
 @portfolio_bp.route("/api/portfolio-manager/ai", methods=["POST"])
 def portfolio_ai():
