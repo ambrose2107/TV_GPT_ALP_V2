@@ -458,6 +458,104 @@ def optimize():
         return jsonify({"error":f"{type(exc).__name__}: {exc}"}),500
 
 
+def _optimizer_best(rows, min_test_trades=5):
+    """Select a research candidate without letting tiny-sample PF dominate."""
+    candidates = [r for r in (rows or []) if isinstance(r, dict)]
+    candidates = [r for r in candidates if int(r.get("test_trades", 0) or 0) >= int(min_test_trades)]
+    if not candidates:
+        return None
+    def key(r):
+        train_pf=float(r.get("train_pf", 0) or 0)
+        test_pf=float(r.get("test_pf", 0) or 0)
+        exp=float(r.get("test_expectancy_R", 0) or 0)
+        ret=float(r.get("test_return_pct", 0) or 0)
+        dd=abs(float(r.get("test_max_dd_pct", 0) or 0))
+        trades=int(r.get("test_trades", 0) or 0)
+        agreement=min(train_pf, test_pf)
+        # Small trade-count bonus, DD penalty, and train/test PF agreement.
+        research_score=agreement + 0.35*exp + 0.003*max(ret,0) + 0.002*min(trades,50) - 0.01*dd
+        return (research_score, agreement, exp, ret, trades)
+    best=max(candidates, key=key)
+    out=dict(best)
+    train_pf=float(out.get("train_pf",0) or 0); test_pf=float(out.get("test_pf",0) or 0)
+    exp=float(out.get("test_expectancy_R",0) or 0); ret=float(out.get("test_return_pct",0) or 0)
+    dd=abs(float(out.get("test_max_dd_pct",0) or 0)); trades=int(out.get("test_trades",0) or 0)
+    out["research_selection_score"]=round(min(train_pf,test_pf)+0.35*exp+0.003*max(ret,0)+0.002*min(trades,50)-0.01*dd,4)
+    out["selection_method"]="train/test PF agreement + expectancy + return + trade-count support - drawdown penalty"
+    return out
+
+
+@bp.route("/api/xauusd-research-v2/export-optimizer-json", methods=["POST"])
+def export_optimizer_json():
+    if not session.get("logged_in"):
+        return jsonify({"error":"Unauthorized"}), 401
+    body=request.get_json(silent=True) or {}
+    optimizer=body.get("optimizer") or {}
+    rows=optimizer.get("results") if isinstance(optimizer,dict) else []
+    if not isinstance(rows,list):
+        rows=[]
+    best=body.get("best") or _optimizer_best(rows, int(body.get("min_test_trades",5)))
+    package={
+        "schema_version":"optimizer-research-v1",
+        "exported_at_utc":datetime.now(timezone.utc).isoformat(),
+        "symbol":str(body.get("symbol","SPY")).strip().upper(),
+        "strategy":str(body.get("strategy","pullback")).strip().lower(),
+        "best_configuration":_safe(best),
+        "all_evaluations":_safe(rows),
+        "optimizer_metadata":_safe({k:v for k,v in optimizer.items() if k not in ("results",)}),
+        "note":"Research export. Best configuration is a selection rule, not a guarantee of future performance."
+    }
+    response=app_response=jsonify(_safe(package))
+    response.headers["Content-Disposition"]='attachment; filename="optimizer_results.json"'
+    return response
+
+
+@bp.route("/api/xauusd-research-v2/validate-best", methods=["POST"])
+def validate_best_pullback():
+    if not session.get("logged_in"):
+        return jsonify({"error":"Unauthorized"}), 401
+    body=request.get_json(silent=True) or {}
+    symbol=str(body.get("symbol","SPY")).strip().upper()
+    cfg_raw=body.get("config") or body.get("best") or {}
+    if not isinstance(cfg_raw,dict):
+        return jsonify({"error":"A best configuration object is required."}),400
+    try:
+        # Keep this bounded for Render Free. 30k 5m bars is the maximum long-window validation.
+        n_bars=max(5000,min(30000,int(body.get("n_bars",30000))))
+        long_only=bool(body.get("long_only",True))
+        cfg=PullbackV2Config(
+            ema_fast=int(cfg_raw.get("ema_fast",20)), ema_slow=int(cfg_raw.get("ema_slow",50)),
+            min_atr_pct=float(cfg_raw.get("min_atr_pct",0)),
+            min_ema_gap_atr=float(cfg_raw.get("min_ema_gap_atr",0)),
+            breakout_buffer_atr=float(cfg_raw.get("breakout_buffer_atr",0.15)),
+            min_body_atr=float(cfg_raw.get("min_body_atr",0.30)),
+            rr=float(cfg_raw.get("rr",2.2)),
+            cooldown_bars=int(cfg_raw.get("cooldown_bars",8)),
+            atr_stop=float(cfg_raw.get("atr_stop",1.0)),
+            long_only=long_only,
+        )
+        df,source=_intraday(symbol,n_bars)
+        result=pullback_v2_backtest(df,cfg,details=True)
+        trades=result["trades"]
+        if hasattr(trades,"to_dict"):
+            trades=trades.to_dict(orient="records")
+        curve=result["equity_curve"]
+        pnl_curve=[]
+        if curve is not None:
+            for ts,val in curve.items():
+                pnl_curve.append({"timestamp":str(ts),"equity":float(val),"pnl":float(val-10000.0),
+                                   "return_pct":float((val/10000.0-1)*100)})
+        m=dict(result["metrics"])
+        return jsonify(_safe({
+            "strategy":"pullback","symbol":symbol,"data_source":source,"bars":len(df),
+            "long_only":long_only,"config":cfg.__dict__,"metrics":m,
+            "trades":trades[-500:],"pnl_curve":pnl_curve[-30000:],
+            "validation_window":"long bounded 5m validation using the selected configuration"
+        }))
+    except Exception as exc:
+        return jsonify({"error":f"{type(exc).__name__}: {exc}"}),500
+
+
 @bp.route("/api/strategy-lab/export-json", methods=["POST"])
 def export_strategy_lab_json():
     """Export one complete AI research package: strategies, trades, Alpaca history and multi-timeframe OHLCV."""
