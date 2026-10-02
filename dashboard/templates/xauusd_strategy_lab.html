@@ -334,8 +334,9 @@ async function validateBestLong(){
  const best=renderOptimizerBest();if(!best)return;
  const btn=$('validateBestLong');btn.disabled=true;$('optimizerValidation').innerHTML='<span class="warn">Running best configuration on long 5m history (bounded to 30,000 bars)…</span>';
  try{
-  const r=await fetch('/api/xauusd-research-v2/validate-best',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:selectedSymbol(),strategy:'pullback',best,n_bars:30000,long_only:true})});
-  const d=await r.json();if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
+  const r=await fetch('/api/xauusd-research-v2/validate-best',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:selectedSymbol(),strategy:'pullback',best,n_bars:30000,long_only:true})});
+  const raw=await r.text();let d={};try{d=JSON.parse(raw)}catch(_){throw new Error('Validation returned a non-JSON response (HTTP '+r.status+')');}
+  if(!r.ok)throw new Error(d.error||('HTTP '+r.status));
   const m=d.metrics||{};
   $('optimizerValidation').innerHTML='<b>📈 Long-term / out-of-sample-style validation</b><br>'+
    'Long only · '+esc(d.bars)+' 5m bars · '+esc(d.data_source)+'<br>'+
@@ -432,6 +433,13 @@ async function runOptimizer(){
   renderOptimizerBest();
   await saveOptimizerSnapshot({status:'Completed',strategy,symbol:'SPY',tested:totalTested,passed:totalPassed,results:rows.slice(0,250)});
   $('optimizerStatus').innerHTML='<span class="ok">Completed low-memory optimizer: '+totalTested+' evaluations; '+totalPassed+' passed. Results retained for export.</span>';
+  // Automatically continue to the selected best long-only validation so the
+  // workflow does not stop after optimization. The button remains available
+  // for a manual re-run.
+  if(strategy==='pullback'){
+   $('optimizerStatus').innerHTML+='<br><span class="warn">Running best long-term validation…</span>';
+   await validateBestLong();
+  }
  }catch(e){
   $('optimizerStatus').innerHTML='<span class="bad">Optimizer error: '+esc(e.message)+'</span>';
  }finally{btn.disabled=false;}
