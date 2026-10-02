@@ -182,20 +182,21 @@ def portfolio_ai():
     if err: return err
     body = request.get_json(silent=True) or {}
     snapshot = body.get("snapshot") or {}
-    # AI is optional: only call a configured Ollama-compatible endpoint, never block the core dashboard.
-    base = os.environ.get("OLLAMA_BASE_URL", "").rstrip("/")
-    model = os.environ.get("OLLAMA_MODEL", "")
-    if not base or not model:
-        return jsonify({"available":False,"message":"AI commentary is optional and not configured. Set OLLAMA_BASE_URL and OLLAMA_MODEL; the quantitative dashboard works without it."}), 200
     try:
-        import requests, json
-        prompt = ("Act as a cautious portfolio risk analyst. Use only supplied data. Do not predict tops or claim certainty. "
-                  "Give concise risk observations, scenario limitations, and conditional review triggers; do not issue automatic orders. "
-                  "Snapshot JSON:\n" + json.dumps(snapshot, separators=(",",":"))[:18000])
-        r = requests.post(base + "/api/generate", json={"model":model,"prompt":prompt,"stream":False},
-                          timeout=25)
-        r.raise_for_status()
-        return jsonify({"available":True,"model":model,"analysis":(r.json().get("response") or "")[:12000]})
+        # Reuse the AI provider already configured for MirrorFish (Groq/OpenRouter/HuggingFace).
+        from mirrorfish.engine import chat, get_provider_status
+        status = get_provider_status()
+        configured = any(v.get("configured") for v in status.values())
+        if not configured:
+            return jsonify({"available":False,"message":"No existing MirrorFish AI provider is configured. The quantitative dashboard works without AI."}), 200
+        prompt = ("Review this portfolio risk snapshot as a cautious hedge-fund risk analyst. "
+                  "Use only the supplied figures. Distinguish observed facts from hypotheses; "
+                  "do not claim to predict tops or guarantee a pullback. Discuss concentration, "
+                  "correlation, 20% market stress assumptions, and which profit-taking candidates "
+                  "deserve a manual review. Do not recommend automatic orders. Keep the answer concise. "
+                  "Snapshot JSON: " + __import__("json").dumps(snapshot, separators=(",",":"))[:16000])
+        answer = chat(prompt, {"module":"Portfolio Manager","as_of":snapshot.get("as_of")})
+        return jsonify({"available":True,"analysis":str(answer)[:12000]})
     except Exception as ex:
         logger.warning("Portfolio AI unavailable: %s",ex)
-        return jsonify({"available":False,"message":"AI endpoint unavailable; use the quantitative signals below.","detail":str(ex)}),200
+        return jsonify({"available":False,"message":"Existing MirrorFish AI endpoint unavailable; use the quantitative dashboard below.","detail":str(ex)}),200
