@@ -81,7 +81,17 @@ def portfolio_data():
                                threads=False, timeout=12)
             if hist is not None and not hist.empty:
                 import pandas as pd
-                close = hist["Close"] if isinstance(hist.columns, pd.MultiIndex) else hist[["Close"]]
+                if isinstance(hist.columns, pd.MultiIndex):
+                    if "Close" in hist.columns.get_level_values(-1):
+                        close = hist.xs("Close", axis=1, level=-1)
+                    elif "Close" in hist.columns.get_level_values(0):
+                        close = hist.xs("Close", axis=1, level=0)
+                    else:
+                        close = None
+                else:
+                    close = hist[["Close"]] if "Close" in hist.columns else None
+                if close is None:
+                    raise ValueError("Could not identify adjusted close prices in market-data response")
                 if isinstance(close, pd.Series): close = close.to_frame()
                 close = close.dropna(axis=1, how="all")
                 rets = close.pct_change(fill_method=None).dropna(how="all")
