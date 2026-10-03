@@ -11,11 +11,12 @@ logger = get_logger(__name__)
 
 PROVIDERS = {
     "groq": {
-        "name":          "Groq (LLaMA 3.3 70B — free)",
+        "name":          "Groq (GPT OSS 20B)",
         "url":           "https://api.groq.com/openai/v1/chat/completions",
         "env_key":       "GROQ_API_KEY",
-        "default_model": "llama-3.3-70b-versatile",
-        "models":        ["llama-3.3-70b-versatile","llama-3.1-8b-instant","mixtral-8x7b-32768","gemma2-9b-it"],
+        # Llama 3.3 70B was retired for free/developer accounts in Aug 2026.
+        "default_model": "openai/gpt-oss-20b",
+        "models":        ["openai/gpt-oss-20b", "openai/gpt-oss-120b"],
         "headers_extra": {},
     },
     "openrouter": {
@@ -27,7 +28,7 @@ PROVIDERS = {
         "headers_extra": {"HTTP-Referer":"https://optitrade-ai.railway.app","X-Title":"OptiTrade MirrorFish"},
     },
     "huggingface": {
-        "name":          "HuggingFace Inference (free)",
+        "name":          "HuggingFace Inference (GPT OSS 20B)",
         "url":           "https://router.huggingface.co/v1/chat/completions",
         "env_key":       "HUGGINGFACE_API_KEY",
         "default_model": "openai/gpt-oss-20b",
@@ -105,7 +106,7 @@ def get_provider_status():
 def analyze_symbol(symbol: str, market_data: dict, signals: dict) -> dict:
     pname, p = _get_provider()
     if not p:
-        return {"error": "No LLM provider configured. Add GROQ_API_KEY to Railway env vars.",
+        return {"error": "No LLM provider configured. Add GROQ_API_KEY to Render environment variables.",
                 "prediction": "NEUTRAL", "confidence": 0, "reasoning": "No provider.",
                 "key_levels": {"support": 0, "resistance": 0}, "sentiment": "unknown",
                 "risk_note": "Add a free API key.", "provider": "none"}
@@ -134,10 +135,11 @@ Required JSON format:
 
     try:
         messages = [{"role":"system","content":SYSTEM_PROMPT},{"role":"user","content":prompt}]
-        raw = _call_openai(p, _model_for(pname, p), messages, max_tokens=512)
+        model = _model_for(pname, p)
+        raw = _call_openai(p, model, messages, max_tokens=512)
         result = _parse_json(raw)
         result["provider"] = p["name"]
-        result["model"]    = _model_for(pname, p)
+        result["model"]    = model
         result["timestamp_utc"] = datetime.utcnow().isoformat()
         return result
     except Exception as e:
@@ -195,7 +197,7 @@ def chat(message: str, context: dict = None, provider_name: str = None) -> str:
     pname, p = _get_provider(provider_name)
     if not p:
         return ("MirrorFish is not configured. Add GROQ_API_KEY (free at console.groq.com) "
-                "to your Railway environment variables.")
+                "to your Render environment variables.")
     ctx = f"\n\nContext: {json.dumps(context, default=str)[:400]}" if context else ""
     messages = [{"role":"system","content":SYSTEM_PROMPT + ctx},{"role":"user","content":message}]
     try:
