@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, render_template, request, session
 from core.config import Config
 from core.logger import get_logger
 import os, math, time
+import requests
 from brokers.alpaca_adapter import AlpacaAdapter
 from datetime import datetime, timezone
 
@@ -52,11 +53,34 @@ def portfolio_data():
             account = adapter.get_account()
             raw = adapter.get_positions()
         except Exception as ex:
-            raise RuntimeError(
-                "Portfolio Manager could not read Alpaca through the existing account adapter. "
-                "Check the same Alpaca configuration used by the working Positions tab. "
-                "Details: " + str(ex)[:300]
-            )
+            # The dashboard's working Positions tab also supports legacy Render
+            # environment names.  Retry with those exact credentials before
+            # declaring Portfolio Manager unavailable.
+            key = Config.ALPACA_API_KEY or os.environ.get("APCA_API_KEY_ID", "") or os.environ.get("ALPACA_KEY", "")
+            secret = Config.ALPACA_SECRET_KEY or os.environ.get("APCA_API_SECRET_KEY", "") or os.environ.get("ALPACA_SECRET", "")
+            base = Config.ALPACA_BASE_URL
+            if not key or not secret:
+                raise RuntimeError(
+                    "Alpaca credentials are not available to Portfolio Manager. "
+                    "The Positions tab may be using legacy APCA_API_KEY_ID/APCA_API_SECRET_KEY names."
+                ) from ex
+            headers = {
+                "APCA-API-KEY-ID": key,
+                "APCA-API-SECRET-KEY": secret,
+                "Content-Type": "application/json",
+            }
+            try:
+                ar = requests.get(base + "/v2/account", headers=headers, timeout=8)
+                ar.raise_for_status()
+                pr = requests.get(base + "/v2/positions", headers=headers, timeout=8)
+                pr.raise_for_status()
+                account = ar.json()
+                raw = pr.json()
+            except Exception as retry_ex:
+                raise RuntimeError(
+                    "Alpaca account/positions request failed. "
+                    "Adapter: " + str(ex)[:180] + "; fallback: " + str(retry_ex)[:280]
+                ) from retry_ex
         if not isinstance(account, dict):
             raise RuntimeError("Alpaca account response was not an object.")
         if not isinstance(raw, list):
