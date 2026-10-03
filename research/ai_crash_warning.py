@@ -370,10 +370,22 @@ def build_dashboard(force=False):
           "Volatility":"VIX pressure","Recession":"Sahm/unemployment pressure"}
         factors=[{"name":k,"value":v,"label":labels[k],"status":"HIGH" if v>=70 else "ELEVATED" if v>=50 else "LOW"} for k,v in comps.items()]
         hist=_history(px,core)
+        market_date=px.index.max()
+        market_age_days=max(0,int((pd.Timestamp.now(tz="UTC")-market_date).total_seconds()/86400)) if getattr(market_date,"tzinfo",None) else max(0,int((datetime.now()-market_date).total_seconds()/86400))
+        fundamental_count=len(fund.get("rows",[]) or [])
+        quality_warnings=[]
+        if market_age_days>5: quality_warnings.append("Market prices may be stale.")
+        if fundamental_count<3: quality_warnings.append("Hyperscaler fundamental coverage is limited; AI capex/debt scores rely partly on neutral defaults.")
+        missing_macro=[k for k,v in f.items() if v is None or len(v.dropna())==0]
+        if missing_macro: quality_warnings.append("Missing macro series: "+", ".join(missing_macro))
+        data_quality={"market_latest_date":market_date.strftime("%Y-%m-%d"),"market_age_days":market_age_days,
+          "fundamental_companies_covered":fundamental_count,"fundamental_companies_expected":len(HYPERSCALERS),
+          "macro_series_covered":len(f)-len(missing_macro),"macro_series_expected":len(FRED),
+          "warnings":quality_warnings}
         payload={"as_of":datetime.now(timezone.utc).isoformat(),"score":s,"regime":_regime(s),"drivers":drivers,
           "components":factors,"confirmations":{"credit":comps["Credit"]>=70,"recession":comps["Recession"]>=70,
           "breadth":comps["Market Breadth"]>=70,"liquidity":comps["Liquidity"]>=70},
-          "details":core["details"],"fundamentals":fund,"history":hist,
+          "details":core["details"],"fundamentals":fund,"data_quality":data_quality,"history":hist,
           "v2":_v2_overlay(s,comps,hist),
           "historical_replay":_historical_crash_replay(f),
           "methodology":{"weights":{"AI Fundamental":18,"AI Financing":14,"Credit":20,"Liquidity":10,"Market Breadth":14,"Real Rates":10,"Volatility":5,"Recession":9},
