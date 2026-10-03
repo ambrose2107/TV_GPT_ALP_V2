@@ -111,12 +111,35 @@ def _market():
         except Exception as exc:
             logger.warning("CBOE VIX history fetch failed: %s", exc)
 
+    # Alpaca does not provide the VIX index through its ordinary stock-bars API.
+    # If both official-index sources fail, use VIXY from Alpaca as a clearly
+    # labelled ETF proxy for live risk scoring; never treat its price as VIX.
+    volatility_source = "Official VIX index (Yahoo/CBOE)"
+    if not vix_loaded:
+        try:
+            bars = alpaca_get_bars("VIXY", timeframe="1Day", limit=800)
+            if bars:
+                z = pd.DataFrame(bars)
+                if not z.empty and "t" in z.columns and "c" in z.columns:
+                    z.index = pd.to_datetime(z["t"], utc=True, errors="coerce")
+                    q = pd.to_numeric(z["c"], errors="coerce").dropna()
+                    if not q.empty:
+                        frames["VIXY"] = q
+                        vix_loaded = True
+                        volatility_source = "Alpaca VIXY ETF proxy (20D return)"
+        except Exception as exc:
+            logger.warning("Alpaca VIXY proxy fetch failed: %s", exc)
+
     if not frames or "SPY" not in frames:
         raise RuntimeError("Live equity market data unavailable from Alpaca and Yahoo.")
-    if not vix_loaded or "^VIX" not in frames:
-        raise RuntimeError("VIX data unavailable from both Yahoo and CBOE. Crash score withheld; no placeholder VIX value used.")
+    if not vix_loaded or ("^VIX" not in frames and "VIXY" not in frames):
+        raise RuntimeError("Volatility data unavailable from Yahoo, CBOE and Alpaca VIXY. No placeholder volatility value used.")
+    if "^VIX" in frames:
+        volatility_source = "Official VIX index (Yahoo/CBOE)"
     # Align the independently fetched series on their common date index.
-    return pd.concat(frames, axis=1).dropna(how="all")
+    px = pd.concat(frames, axis=1).dropna(how="all")
+    px.attrs["volatility_source"] = volatility_source
+    return px
 
 def _fundamental_proxy_uncached():
     rows=[]
@@ -169,7 +192,22 @@ def _score(px,f,fund):
     nf=f["nfci"]; nn=float(nf.iloc[-1]); nm=nf.rolling(104,min_periods=26).mean().iloc[-1]; ns=nf.rolling(104,min_periods=26).std().iloc[-1]
     liq=_clip(((nn-float(nm))/max(float(ns),.15)+.5)*35) if len(nf)>=26 else 50
     real=f["dfii10"]; rn,rc=_latest_change(real,60); real_score=_clip(((rn or 0)-1)*22+max(rc or 0,0)*10)
-    v=px["^VIX"].dropna(); vn=float(v.iloc[-1]) if len(v) else 16; vol=_clip((vn-16)*4)
+    volatility_source = px.attrs.get("volatility_source", "Official VIX index (Yahoo/CBOE)")
+    if "^VIX" in px.columns and px["^VIX"].notna().any():
+        v = px["^VIX"].dropna()
+        vn = float(v.iloc[-1])
+        volatility_proxy = None
+        vol = _clip((vn-16)*4)
+        volatility_source = "Official VIX index (Yahoo/CBOE)"
+    elif "VIXY" in px.columns and px["VIXY"].notna().any():
+        v = px["VIXY"].dropna()
+        vn = None
+        vixy_return = ((float(v.iloc[-1])/float(v.iloc[-min(21, len(v))])-1)*100) if len(v)>1 else 0.0
+        volatility_proxy = round(vixy_return, 2)
+        vol = _clip(50 + vixy_return*2.0)
+        volatility_source = "Alpaca VIXY ETF proxy (20D return)"
+    else:
+        raise RuntimeError("No valid volatility index or ETF proxy available.")
     b=[]
     bd={}
     for a,label in [("RSP","equal_weight"),("IWM","small_caps"),("SOXX","semis")]:
@@ -193,7 +231,8 @@ def _score(px,f,fund):
     w={"AI Fundamental":.18,"AI Financing":.14,"Credit":.20,"Liquidity":.10,"Market Breadth":.14,"Real Rates":.10,"Volatility":.05,"Recession":.09}
     score=_clip(sum(comps[k]*w[k] for k in comps))
     return {"score":round(score,1),"components":comps,"details":{"hy_oas":hn,"hy_oas_20d_change":hc,"nfci":nn,
-      "real10y":rn,"real10y_60d_change":rc,"vix":vn,"sahm":sahm,"breadth":bd,
+      "real10y":rn,"real10y_60d_change":rc,"vix":vn,"volatility_proxy":volatility_proxy,
+      "volatility_source":volatility_source,"sahm":sahm,"breadth":bd,
       "capex_revenue_pct":ratio,"capex_growth_gap_pct":cgap,"debt_growth_gap_pct":dgap}}
 
 def _v2_overlay(score, components, history):
@@ -244,11 +283,18 @@ def _history(px,core=None):
     for d in idx:
         try:
             hist=px.loc[:d]
-            v=hist["^VIX"].dropna()
+            has_vix = "^VIX" in hist.columns and hist["^VIX"].notna().any()
+            has_vixy = "VIXY" in hist.columns and hist["VIXY"].notna().any()
+            v = hist["^VIX"].dropna() if has_vix else (hist["VIXY"].dropna() if has_vixy else pd.Series(dtype=float))
             q=hist["QQQ"].dropna()
             spy=hist["SPY"].dropna()
             if v.empty or len(q)<20 or len(spy)<20: continue
-            vn=float(v.iloc[-1])
+            if has_vix:
+                vn=float(v.iloc[-1])
+                vol=_clip((vn-18)*3.2)
+            else:
+                vixy_return=((float(v.iloc[-1])/float(v.iloc[-min(21,len(v))])-1)*100) if len(v)>1 else 0.0
+                vol=_clip(50+vixy_return*2.0)
             mom=((float(q.iloc[-1])/float(q.iloc[-min(127,len(q))])-1)*100) if len(q)>20 else 0.0
             sh=spy.tail(126)
             dd=(float(sh.max())/float(sh.iloc[-1])-1)*100 if len(sh)>20 and float(sh.max()) else 0.0
@@ -258,7 +304,6 @@ def _history(px,core=None):
                     r=(hist[sym]/hist["SPY"]).dropna()
                     if len(r)>20: rel.append((float(r.iloc[-1])/float(r.iloc[-min(64,len(r))])-1)*100)
             breadth=float(np.mean([_clip(50-x*2.5) for x in rel])) if rel else 50.0
-            vol=_clip((vn-18)*3.2)
             momentum=_clip(50-mom*1.5)
             drawdown=_clip(dd*2.2)
             score=_clip(.30*vol+.35*momentum+.20*drawdown+.15*breadth)
@@ -380,7 +425,11 @@ def build_dashboard(force=False):
         if fundamental_count<3: quality_warnings.append("Hyperscaler fundamental coverage is limited; AI capex/debt scores rely partly on neutral defaults.")
         missing_macro=[k for k,v in f.items() if v is None or len(v.dropna())==0]
         if missing_macro: quality_warnings.append("Missing macro series: "+", ".join(missing_macro))
+        volatility_source = core["details"].get("volatility_source", "unknown")
+        if "VIXY ETF proxy" in volatility_source:
+            quality_warnings.append("Official VIX index unavailable; using Alpaca VIXY ETF proxy. VIXY is not the VIX index.")
         data_quality={"market_latest_date":market_date.strftime("%Y-%m-%d"),"market_age_days":market_age_days,
+          "volatility_source":volatility_source,
           "fundamental_companies_covered":fundamental_count,"fundamental_companies_expected":len(HYPERSCALERS),
           "macro_series_covered":len(f)-len(missing_macro),"macro_series_expected":len(FRED),
           "warnings":quality_warnings}
