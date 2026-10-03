@@ -1077,14 +1077,38 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
   </div>
 <!-- AI CRASH EARLY-WARNING TERMINAL -->
 <style>
- #ai-crash-terminal .ac-section{border:1px solid #30363d;border-radius:9px;overflow:hidden;min-width:0}
+ #ai-crash-terminal{width:100%;max-width:100%;min-width:0;overflow:hidden;padding:clamp(10px,1.4vw,16px)}
+ #ai-crash-terminal *{min-width:0}
+ #ai-crash-terminal .ac-top-grid{display:grid;grid-template-columns:minmax(150px,.65fr) minmax(0,1fr) minmax(0,1fr);gap:12px;margin-bottom:12px}
+ #ai-crash-terminal .ac-mid-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:12px}
+ #ai-crash-terminal .ac-section{border:1px solid #30363d;border-radius:9px;overflow:hidden;min-width:0;max-width:100%}
  #ai-crash-terminal .ac-section .sec-hdr{padding:10px 12px;background:rgba(255,255,255,.02)}
- #ai-crash-terminal .ac-table-wrap{overflow:auto;max-width:100%;max-height:360px}
- #ai-crash-terminal .ac-table{width:100%;border-collapse:collapse;font-size:11px;min-width:660px}
+ #ai-crash-terminal .ac-table-wrap{display:block;overflow-x:auto;overflow-y:auto;max-width:100%;max-height:360px;-webkit-overflow-scrolling:touch}
+ #ai-crash-terminal .ac-table{width:100%;border-collapse:collapse;font-size:11px;min-width:720px}
  #ai-crash-terminal .ac-table th{position:sticky;top:0;background:#161b22;z-index:1;text-align:left;color:#8b949e;font-weight:600}
- #ai-crash-terminal .ac-table th,#ai-crash-terminal .ac-table td{padding:8px 9px;border-bottom:1px solid #21262d;vertical-align:top}
- #ai-crash-terminal .ac-note{font-size:11px;line-height:1.55;color:#8b949e;padding:10px 12px}
- @media(max-width:700px){ #ai-crash-terminal #ai-crash-v2{grid-template-columns:repeat(2,minmax(0,1fr))!important}#ai-crash-terminal .ac-table{min-width:600px}}
+ #ai-crash-terminal .ac-table th,#ai-crash-terminal .ac-table td{padding:8px 9px;border-bottom:1px solid #21262d;vertical-align:top;overflow-wrap:anywhere}
+ #ai-crash-terminal .ac-note{font-size:11px;line-height:1.55;color:#8b949e;padding:10px 12px;overflow-wrap:anywhere}
+ #ai-crash-terminal .card,#ai-crash-terminal .sec{min-width:0;max-width:100%}
+ #ai-crash-terminal #ai-crash-chart{width:100%;min-width:0}
+ #ai-crash-terminal #ai-crash-sheet table{min-width:590px}
+ @media(max-width:980px){
+   #ai-crash-terminal .ac-top-grid{grid-template-columns:minmax(130px,.55fr) repeat(2,minmax(0,1fr));gap:8px}
+   #ai-crash-terminal .ac-mid-grid{grid-template-columns:minmax(0,1fr)}
+ }
+ @media(max-width:700px){
+   #ai-crash-terminal .ac-top-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+   #ai-crash-terminal #ai-crash-score-card{grid-column:1/-1}
+   #ai-crash-terminal #ai-crash-v2{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+   #ai-crash-terminal .sec{padding:10px}
+   #ai-crash-terminal .ac-section .sec-hdr{align-items:flex-start}
+   #ai-crash-terminal .ac-table{min-width:720px}
+   #ai-crash-terminal #ai-crash-chart{height:180px!important;padding:6px 0!important}
+ }
+ @media(max-width:420px){
+   #ai-crash-terminal .ac-top-grid{grid-template-columns:minmax(0,1fr)}
+   #ai-crash-terminal #ai-crash-score-card{grid-column:auto}
+   #ai-crash-terminal #ai-crash-v2{grid-template-columns:minmax(0,1fr)!important}
+ }
  </style>
 <div class="sec" id="ai-crash-terminal" style="margin-bottom:14px">
   <div class="sec-hdr">
@@ -1093,8 +1117,8 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
   </div>
   <div id="ai-crash-loading" style="padding:18px;color:#8b949e">Loading risk monitor…</div>
   <div id="ai-crash-body" style="display:none;padding:10px 0">
-    <div style="display:grid;grid-template-columns:180px 1fr 1fr;gap:12px;margin-bottom:12px">
-      <div class="card" style="text-align:center"><div class="lbl">AI CRASH RISK</div><div id="ai-crash-score" class="val" style="font-size:38px">—</div><div id="ai-crash-regime" style="font-weight:700;margin-top:3px">—</div><div style="font-size:10px;color:#8b949e;margin-top:6px">0–100 composite</div></div>
+    <div class="ac-top-grid">
+      <div id="ai-crash-score-card" class="card" style="text-align:center"><div class="lbl">AI CRASH RISK</div><div id="ai-crash-score" class="val" style="font-size:38px">—</div><div id="ai-crash-regime" style="font-weight:700;margin-top:3px">—</div><div style="font-size:10px;color:#8b949e;margin-top:6px">0–100 composite</div></div>
       <div class="sec" style="margin:0"><div class="sec-hdr"><h3 style="font-size:13px">Primary Drivers</h3></div><div id="ai-crash-drivers" style="padding:12px;font-size:12px"></div></div>
       <div class="sec" style="margin:0"><div class="sec-hdr"><h3 style="font-size:13px">Confirmation Matrix</h3></div><div id="ai-crash-confirm" style="padding:8px 12px;font-size:11px"></div></div>
     </div>
@@ -1103,7 +1127,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
       <div class="sec-hdr"><h3 style="font-size:13px">V2 Regime Confirmation</h3><span class="sub">Persistence · acceleration · multi-block confirmation</span></div>
       <div id="ai-crash-v2" style="padding:10px 12px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:11px"></div>
     </div>
-    <div style="display:grid;grid-template-columns:1.15fr .85fr;gap:12px">
+    <div class="ac-mid-grid">
       <div class="sec" style="margin:0"><div class="sec-hdr"><h3 style="font-size:13px">Recent Broad-Market Proxy — 12M</h3><span class="sub">Not the live composite score</span></div><div id="ai-crash-chart" style="height:190px;padding:8px 10px"></div></div>
       <div class="sec" style="margin:0"><div class="sec-hdr"><h3 style="font-size:13px">Factor Attribution</h3></div><div id="ai-crash-factors" style="padding:8px 12px"></div></div>
     </div>
@@ -4189,7 +4213,8 @@ async function loadAICrashDashboard(force){
     const dq=d.data_quality||{}, qw=dq.warnings||[], qel=$('ai-crash-quality');
     if(qel){
       qel.innerHTML='<strong style="color:#c9d1d9">Data quality & coverage</strong> · Market data through '+String(dq.market_latest_date||'unknown')+
-        ' ('+(dq.market_age_days==null?'age unknown':dq.market_age_days+' day(s) old')+') · Fundamentals '+Number(dq.fundamental_companies_covered||0)+'/'+Number(dq.fundamental_companies_expected||5)+
+        ' ('+(dq.market_age_days==null?'age unknown':dq.market_age_days+' day(s) old')+') · Volatility source: '+String(dq.volatility_source||'not reported')+
+        ' · Fundamentals '+Number(dq.fundamental_companies_covered||0)+'/'+Number(dq.fundamental_companies_expected||5)+
         ' companies · Macro series '+Number(dq.macro_series_covered||0)+'/'+Number(dq.macro_series_expected||4)+
         (qw.length?'<div style="color:#d29922;margin-top:4px">'+qw.map(x=>String(x).replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]))).join(' · ')+'</div>':'<div style="color:#3fb950;margin-top:4px">No coverage warnings reported by the current checks.</div>');
     }
@@ -4221,7 +4246,11 @@ async function loadAICrashDashboard(force){
     }
 
     $('ai-crash-factors').innerHTML=(d.components||[]).map(f=>'<div style="margin:7px 0"><div style="display:flex;justify-content:space-between;font-size:11px"><span>'+f.name+'<small style="color:#8b949e"> · '+f.label+'</small></span><strong>'+Number(f.value).toFixed(1)+'</strong></div><div style="height:6px;background:#21262d;border-radius:4px"><div style="width:'+Math.max(0,Math.min(100,Number(f.value)))+'%;height:100%;background:'+(Number(f.value)>=70?'#f85149':Number(f.value)>=50?'#d29922':'#3fb950')+'"></div></div></div>').join('');
-    const x=d.details||{},fund=d.fundamentals||{},rows=[['HY OAS',x.hy_oas,'%',x.hy_oas_20d_change,'20d Δ'],['NFCI',x.nfci,'',null,''],['10Y real yield',x.real10y,'%',x.real10y_60d_change,'60d Δ'],['VIX',x.vix,'',null,''],['Sahm',x.sahm,'pp',null,''],['Capex / revenue proxy',x.capex_revenue_pct,'%',x.capex_growth_gap_pct,'capex growth − revenue growth'],['Debt growth gap',x.debt_growth_gap_pct,'pp',null,'debt growth − revenue growth']];
+    const x=d.details||{},fund=d.fundamentals||{};
+    const volatilityRow=x.volatility_source==='Alpaca VIXY ETF proxy (20D return)'?
+      ['VIXY 20D return proxy',x.volatility_proxy,'%',null,'Alpaca ETF proxy; not the VIX index']:
+      ['VIX',x.vix,'index pts',null,'Official VIX index'];
+    const rows=[['HY OAS',x.hy_oas,'%',x.hy_oas_20d_change,'20d Δ'],['NFCI',x.nfci,'',null,''],['10Y real yield',x.real10y,'%',x.real10y_60d_change,'60d Δ'],volatilityRow,['Sahm',x.sahm,'pp',null,''],['Capex / revenue proxy',x.capex_revenue_pct,'%',x.capex_growth_gap_pct,'capex growth − revenue growth'],['Debt growth gap',x.debt_growth_gap_pct,'pp',null,'debt growth − revenue growth']];
     $('ai-crash-sheet').innerHTML='<table><thead><tr><th>Metric</th><th>Latest</th><th>Unit</th><th>Change / Gap</th><th>Interpretation</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+r[0]+'</td><td>'+(r[1]==null?'—':Number(r[1]).toFixed(2))+'</td><td>'+r[2]+'</td><td>'+(r[3]==null?'—':Number(r[3]).toFixed(2))+'</td><td style="color:#8b949e">'+r[4]+'</td></tr>').join('')+'</tbody></table><div style="padding:9px 0;color:#8b949e;font-size:10px">Coverage: '+((fund.rows||[]).length)+' hyperscaler financial statements. Capex is a company-level proxy, not pure AI capex.</div>';
   }catch(e){body.style.display='none';load.style.display='block';load.innerHTML='⚠️ AI risk monitor unavailable: '+e.message+'<br><span style="font-size:10px">Market/FRED data may be temporarily unavailable. Backtest engine remains independent.</span>';}
 }
