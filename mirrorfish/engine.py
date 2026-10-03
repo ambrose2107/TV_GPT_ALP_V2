@@ -28,12 +28,11 @@ PROVIDERS = {
     },
     "huggingface": {
         "name":          "HuggingFace Inference (free)",
-        "url":           "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3",
+        "url":           "https://router.huggingface.co/v1/chat/completions",
         "env_key":       "HUGGINGFACE_API_KEY",
-        "default_model": "mistralai/Mistral-7B-Instruct-v0.3",
-        "models":        ["mistralai/Mistral-7B-Instruct-v0.3"],
+        "default_model": "openai/gpt-oss-20b",
+        "models":        ["openai/gpt-oss-20b"],
         "headers_extra": {},
-        "hf_mode":       True,
     },
 }
 
@@ -44,11 +43,21 @@ SYSTEM_PROMPT = (
 )
 
 def _get_provider():
-    for name in ["groq", "openrouter", "huggingface"]:
+    # Optional explicit selection lets Render use the hosted model reliably.
+    requested = os.environ.get("MIRRORFISH_PROVIDER", "").strip().lower()
+    order = [requested] if requested in PROVIDERS else ["groq", "openrouter", "huggingface"]
+    for name in order:
         p = PROVIDERS[name]
         if os.environ.get(p["env_key"]):
             return name, p
     return None, None
+
+def _model_for(name, provider):
+    # A provider-specific override is useful when the hosted model is changed.
+    override = os.environ.get("MIRRORFISH_MODEL", "").strip()
+    if override and (name == os.environ.get("MIRRORFISH_PROVIDER", "").strip().lower() or name == "huggingface"):
+        return override
+    return provider["default_model"]
 
 def _call_openai(p, model, messages, max_tokens=600, temperature=0.3):
     key = os.environ.get(p["env_key"], "")
@@ -56,19 +65,16 @@ def _call_openai(p, model, messages, max_tokens=600, temperature=0.3):
     resp = requests.post(p["url"], headers=headers,
                          json={"model": model, "messages": messages,
                                "max_tokens": max_tokens, "temperature": temperature},
-                         timeout=30)
-    resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"].strip()
-
-def _call_hf(p, prompt, max_tokens=400):
-    key = os.environ.get(p["env_key"], "")
-    headers = {"Authorization": f"Bearer {key}"}
-    resp = requests.post(p["url"], headers=headers,
-                         json={"inputs": prompt, "parameters": {"max_new_tokens": max_tokens, "temperature": 0.3}},
                          timeout=45)
-    resp.raise_for_status()
+    if not resp.ok:
+        # Preserve useful provider diagnostics (especially 401/404/429) in logs/UI.
+        detail = (resp.text or "")[:700]
+        raise RuntimeError(f"{p['name']} HTTP {resp.status_code}: {detail}")
     data = resp.json()
-    return data[0].get("generated_text", "") if isinstance(data, list) else str(data)
+    try:
+        return data["choices"][0]["message"]["content"].strip()
+    except (KeyError, IndexError, TypeError) as exc:
+        raise RuntimeError(f"{p['name']} returned an unexpected response format") from exc
 
 def _parse_json(raw):
     raw = raw.strip()
@@ -127,17 +133,11 @@ Required JSON format:
 }}"""
 
     try:
-        if p.get("hf_mode"):
-            raw = _call_hf(p, SYSTEM_PROMPT + "\n\n" + prompt)
-            start = raw.find("{"); end = raw.rfind("}") + 1
-            raw = raw[start:end] if start != -1 else "{}"
-            result = json.loads(raw)
-        else:
-            messages = [{"role":"system","content":SYSTEM_PROMPT},{"role":"user","content":prompt}]
-            raw = _call_openai(p, p["default_model"], messages, max_tokens=512)
-            result = _parse_json(raw)
+        messages = [{"role":"system","content":SYSTEM_PROMPT},{"role":"user","content":prompt}]
+        raw = _call_openai(p, _model_for(pname, p), messages, max_tokens=512)
+        result = _parse_json(raw)
         result["provider"] = p["name"]
-        result["model"]    = p["default_model"]
+        result["model"]    = _model_for(pname, p)
         result["timestamp_utc"] = datetime.utcnow().isoformat()
         return result
     except Exception as e:
@@ -183,7 +183,7 @@ Required JSON:
 
     try:
         messages = [{"role":"system","content":SYSTEM_PROMPT},{"role":"user","content":prompt}]
-        raw = _call_openai(p, p["default_model"], messages, max_tokens=400)
+        raw = _call_openai(p, _model_for(pname, p), messages, max_tokens=400)
         result = _parse_json(raw)
         result["provider"] = p["name"]
         return result
@@ -199,9 +199,7 @@ def chat(message: str, context: dict = None) -> str:
     ctx = f"\n\nContext: {json.dumps(context, default=str)[:400]}" if context else ""
     messages = [{"role":"system","content":SYSTEM_PROMPT + ctx},{"role":"user","content":message}]
     try:
-        if p.get("hf_mode"):
-            return _call_hf(p, SYSTEM_PROMPT + "\n\nUser: " + message)
-        return _call_openai(p, p["default_model"], messages, max_tokens=600, temperature=0.5)
+        return _call_openai(p, _model_for(pname, p), messages, max_tokens=600, temperature=0.5)
     except Exception as e:
         logger.error(f"MirrorFish chat error: {e}")
         return f"MirrorFish error: {str(e)}"
