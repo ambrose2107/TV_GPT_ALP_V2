@@ -332,8 +332,7 @@ def _historical_crash_replay(f):
                 continue
             breach_date=breach.index[0]
             hist=p.loc[:breach_date]
-            peak_window=hist.loc[hist.index>=peak_ix-pd.Timedelta(days=90)]
-            pre=peak_window.loc[peak_window.index<breach_date]
+            pre=hist.loc[(hist.index>=breach_date-pd.Timedelta(days=90)) & (hist.index<breach_date)]
             crossed=pre[pre["replay_score"]>=60]
             first=crossed.index[0] if not crossed.empty else None
             peak_row=p.loc[:peak_ix].iloc[-1]
