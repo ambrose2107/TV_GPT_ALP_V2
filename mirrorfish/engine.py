@@ -42,9 +42,9 @@ SYSTEM_PROMPT = (
     "Always respond in valid JSON when asked. Never give financial advice — note analysis is educational only."
 )
 
-def _get_provider():
-    # Optional explicit selection lets Render use the hosted model reliably.
-    requested = os.environ.get("MIRRORFISH_PROVIDER", "").strip().lower()
+def _get_provider(preferred=None):
+    # A caller can explicitly select a provider; otherwise preserve legacy priority.
+    requested = (preferred or os.environ.get("MIRRORFISH_PROVIDER", "")).strip().lower()
     order = [requested] if requested in PROVIDERS else ["groq", "openrouter", "huggingface"]
     for name in order:
         p = PROVIDERS[name]
@@ -191,8 +191,8 @@ Required JSON:
         logger.error(f"MirrorFish portfolio error: {e}")
         return {"portfolio_health":"UNKNOWN","summary":str(e),"provider":p["name"],"error":str(e)}
 
-def chat(message: str, context: dict = None) -> str:
-    pname, p = _get_provider()
+def chat(message: str, context: dict = None, provider_name: str = None) -> str:
+    pname, p = _get_provider(provider_name)
     if not p:
         return ("MirrorFish is not configured. Add GROQ_API_KEY (free at console.groq.com) "
                 "to your Railway environment variables.")
