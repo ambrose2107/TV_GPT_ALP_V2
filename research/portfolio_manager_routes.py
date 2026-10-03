@@ -137,9 +137,13 @@ def portfolio_data():
             from datetime import timedelta
             start_date = (datetime.now(timezone.utc) - timedelta(days=190)).date().isoformat()
             data_url = "https://data.alpaca.markets/v2/stocks/bars"
-            resp = requests.get(
-                data_url,
-                params={
+            # Alpaca caps each page at 10,000 bars across symbols. Follow a
+            # small bounded number of page tokens so 12M returns aren't silently
+            # truncated when the portfolio contains many tickers.
+            bars = {}
+            page_token = None
+            for _page in range(4):
+                params = {
                     "symbols": ",".join(data_symbols),
                     "timeframe": "1Day",
                     "start": start_date,
@@ -147,15 +151,25 @@ def portfolio_data():
                     "adjustment": "all",
                     "feed": "iex",
                     "sort": "asc",
-                },
-                headers={"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret},
-                timeout=12,
-            )
-            resp.raise_for_status()
-            body = resp.json()
-            bars = body.get("bars") if isinstance(body, dict) else None
-            if not isinstance(bars, dict):
-                raise ValueError("Alpaca market-data response did not contain bars.")
+                }
+                if page_token:
+                    params["page_token"] = page_token
+                resp = requests.get(
+                    data_url, params=params,
+                    headers={"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret},
+                    timeout=12,
+                )
+                resp.raise_for_status()
+                body = resp.json()
+                page_bars = body.get("bars") if isinstance(body, dict) else None
+                if not isinstance(page_bars, dict):
+                    raise ValueError("Alpaca market-data response did not contain bars.")
+                for sym, rows in page_bars.items():
+                    if isinstance(rows, list):
+                        bars.setdefault(sym, []).extend(rows)
+                page_token = body.get("next_page_token")
+                if not page_token:
+                    break
             import pandas as pd
             close_data = {}
             for sym, rows in bars.items():
