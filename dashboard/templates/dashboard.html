@@ -1098,12 +1098,13 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
       <div class="sec" style="margin:0"><div class="sec-hdr"><h3 style="font-size:13px">Primary Drivers</h3></div><div id="ai-crash-drivers" style="padding:12px;font-size:12px"></div></div>
       <div class="sec" style="margin:0"><div class="sec-hdr"><h3 style="font-size:13px">Confirmation Matrix</h3></div><div id="ai-crash-confirm" style="padding:8px 12px;font-size:11px"></div></div>
     </div>
+    <div id="ai-crash-quality" class="ac-note" style="margin:0 0 12px;border:1px solid #30363d;border-radius:8px">Checking source coverage…</div>
     <div class="sec" style="margin:0 0 12px">
       <div class="sec-hdr"><h3 style="font-size:13px">V2 Regime Confirmation</h3><span class="sub">Persistence · acceleration · multi-block confirmation</span></div>
       <div id="ai-crash-v2" style="padding:10px 12px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:11px"></div>
     </div>
     <div style="display:grid;grid-template-columns:1.15fr .85fr;gap:12px">
-      <div class="sec" style="margin:0"><div class="sec-hdr"><h3 style="font-size:13px">Recent Risk Score — 12M</h3><span class="sub">Not a historical backtest</span></div><div id="ai-crash-chart" style="height:190px;padding:8px 10px"></div></div>
+      <div class="sec" style="margin:0"><div class="sec-hdr"><h3 style="font-size:13px">Recent Broad-Market Proxy — 12M</h3><span class="sub">Not the live composite score</span></div><div id="ai-crash-chart" style="height:190px;padding:8px 10px"></div></div>
       <div class="sec" style="margin:0"><div class="sec-hdr"><h3 style="font-size:13px">Factor Attribution</h3></div><div id="ai-crash-factors" style="padding:8px 12px"></div></div>
     </div>
     <div class="ac-section" style="margin:12px 0 0">
@@ -4185,6 +4186,14 @@ async function loadAICrashDashboard(force){
     const score=+d.score||0; $('ai-crash-score').textContent=score.toFixed(1);$('ai-crash-score').className='val '+aiCrashScoreClass(score);
     const rg=$('ai-crash-regime');rg.textContent=d.regime||'—';rg.style.color=score>=70?'#f85149':score>=50?'#d29922':'#3fb950';
     $('ai-crash-updated').textContent=d.as_of?new Date(d.as_of).toLocaleString():'';
+    const dq=d.data_quality||{}, qw=dq.warnings||[], qel=$('ai-crash-quality');
+    if(qel){
+      qel.innerHTML='<strong style="color:#c9d1d9">Data quality & coverage</strong> · Market data through '+String(dq.market_latest_date||'unknown')+
+        ' ('+(dq.market_age_days==null?'age unknown':dq.market_age_days+' day(s) old')+') · Fundamentals '+Number(dq.fundamental_companies_covered||0)+'/'+Number(dq.fundamental_companies_expected||5)+
+        ' companies · Macro series '+Number(dq.macro_series_covered||0)+'/'+Number(dq.macro_series_expected||4)+
+        (qw.length?'<div style="color:#d29922;margin-top:4px">'+qw.map(x=>String(x).replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]))).join(' · ')+'</div>':'<div style="color:#3fb950;margin-top:4px">No coverage warnings reported by the current checks.</div>');
+    }
+
     $('ai-crash-drivers').innerHTML=(d.drivers||[]).map(x=>'<span class="tag ty" style="margin:3px;display:inline-block">'+x+'</span>').join('')||'<span style="color:#8b949e">No dominant driver above threshold.</span>';
     const cm=d.confirmations||{};$('ai-crash-confirm').innerHTML=Object.keys(cm).map(k=>'<div style="display:flex;justify-content:space-between;border-bottom:1px solid #21262d;padding:5px 0"><span>'+k.replace(/_/g,' ')+'</span><strong style="color:'+(cm[k]?'#f85149':'#3fb950')+'">'+(cm[k]?'CONFIRMED':'not confirmed')+'</strong></div>').join('');
     const v2=d.v2||{};
