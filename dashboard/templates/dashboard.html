@@ -1072,7 +1072,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
 <div class="sec" id="ai-crash-terminal" style="margin-bottom:14px">
   <div class="sec-hdr">
     <div><h2>🧠 AI Crash Early-Warning Terminal</h2><span class="sub">Fundamentals → financing → credit → liquidity → breadth → macro</span></div>
-    <div style="display:flex;gap:7px;align-items:center"><span id="ai-crash-updated" class="sub"></span><button class="btn btn-n btn-s" onclick="loadAICrashDashboard(true)">↻ Refresh</button></div>
+    <div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"><span id="ai-crash-updated" class="sub"></span><button class="btn btn-n btn-s" onclick="exportAICrashCSV()">⇩ Export CSV</button><button class="btn btn-n btn-s" onclick="loadAICrashDashboard(true)">↻ Refresh</button></div>
   </div>
   <div id="ai-crash-loading" style="padding:18px;color:#8b949e">Loading risk monitor…</div>
   <div id="ai-crash-body" style="display:none;padding:10px 0">
@@ -4091,11 +4091,40 @@ function drawAICrashHistory(rows){
    [25,50,70,85].map(v=>'<line x1="'+p+'" x2="'+(w-p)+'" y1="'+(h-p-v*(h-2*p)/100)+'" y2="'+(h-p-v*(h-2*p)/100)+'" stroke="#8b949e" stroke-dasharray="4 4" opacity=".3"/>').join('')+
    '<path d="'+path+'" fill="none" stroke="#58a6ff" stroke-width="2"/><text x="3" y="'+(h-p+4)+'" fill="#8b949e" font-size="10">0</text><text x="3" y="'+(p+4)+'" fill="#8b949e" font-size="10">100</text><text x="'+p+'" y="'+(h-3)+'" fill="#8b949e" font-size="9">'+rows[0].t+'</text><text x="'+(w-p-72)+'" y="'+(h-3)+'" fill="#8b949e" font-size="9">'+rows[rows.length-1].t+'</text></svg>';
 }
+let aiCrashLastPayload = null;
+function exportAICrashCSV(){
+  if(!aiCrashLastPayload){alert('Load the AI Crash monitor first, then export its output.');return;}
+  const rows=[['as_of',aiCrashLastPayload.as_of||''],['section','metric','value']];
+  function walk(value,path){
+    if(value===null||value===undefined){rows.push([path,'']);return;}
+    if(Array.isArray(value)){
+      if(!value.length){rows.push([path,'[]']);return;}
+      value.forEach((item,i)=>walk(item,path+'['+i+']'));return;
+    }
+    if(typeof value==='object'){
+      const keys=Object.keys(value);
+      if(!keys.length){rows.push([path,'{}']);return;}
+      keys.forEach(k=>walk(value[k],path?path+'.'+k:k));return;
+    }
+    rows.push([path,String(value)]);
+  }
+  walk(aiCrashLastPayload,'payload');
+  const csv=rows.map(row=>row.map(v=>{
+    const s=String(v==null?'':v);
+    return '"'+s.replace(/"/g,'""')+'"';
+  }).join(',')).join('\\r\\n');
+  const blob=new Blob(['\\uFEFF',csv],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  const stamp=(aiCrashLastPayload.as_of||new Date().toISOString()).replace(/[:.]/g,'-');
+  a.href=url;a.download='ai_crash_monitor_'+stamp+'.csv';
+  document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+}
 async function loadAICrashDashboard(force){
   const load=$('ai-crash-loading'),body=$('ai-crash-body'); if(!load||!body)return;
   load.style.display='block';load.textContent=force?'Refreshing risk monitor…':'Loading risk monitor…';
   try{
     const d=await aiApiFetch('/api/ai-crash/dashboard'+(force?'?refresh=1':'')); if(d.error)throw new Error(d.error);
+    aiCrashLastPayload=d;
     load.style.display='none';body.style.display='';
     const score=+d.score||0; $('ai-crash-score').textContent=score.toFixed(1);$('ai-crash-score').className='val '+aiCrashScoreClass(score);
     const rg=$('ai-crash-regime');rg.textContent=d.regime||'—';rg.style.color=score>=70?'#f85149':score>=50?'#d29922':'#3fb950';
