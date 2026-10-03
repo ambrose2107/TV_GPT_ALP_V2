@@ -273,8 +273,10 @@ def _historical_crash_replay(f):
     Cached separately so it adds only a few daily series and does not slow every refresh.
     """
     now=time.time()
-    if _HIST_CACHE["payload"] is not None and now-_HIST_CACHE["ts"]<HIST_CACHE_TTL:
-        return _HIST_CACHE["payload"]
+    cached=_HIST_CACHE["payload"]
+    cache_ttl=HIST_CACHE_TTL if cached and cached.get("available") else 15*60
+    if cached is not None and now-_HIST_CACHE["ts"]<cache_ttl:
+        return cached
     try:
         from concurrent.futures import ThreadPoolExecutor
         def _load_long(sym):
