@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, render_template, request, session
 from core.config import Config
 from core.logger import get_logger
 import os, math, time
+from brokers.alpaca_adapter import AlpacaAdapter
 from datetime import datetime, timezone
 
 portfolio_bp = Blueprint("portfolio_manager", __name__)
@@ -44,30 +45,22 @@ def portfolio_data():
     if not force and _CACHE["payload"] and now - _CACHE["at"] < CACHE_SECONDS:
         return jsonify(_CACHE["payload"])
     try:
-        import requests
-        base = (Config.ALPACA_BASE_URL or "").rstrip("/")
-        headers = _headers()
-        if not headers.get("APCA-API-KEY-ID") or not headers.get("APCA-API-SECRET-KEY"):
-            raise RuntimeError("Alpaca credentials are missing. Set ALPACA_API_KEY and ALPACA_SECRET_KEY (or APCA_API_KEY_ID and APCA_API_SECRET_KEY) in Render Environment, then redeploy.")
-        if not base:
-            raise RuntimeError("Alpaca API base URL is empty. Check ALPACA_MODE.")
+        # Reuse the same Alpaca adapter already used by the working Positions/Account dashboard.
+        # This keeps Portfolio Manager on the exact same credentials, ALPACA_MODE and request path.
+        adapter = AlpacaAdapter()
         try:
-            ar = requests.get(base + "/v2/account", headers=headers, timeout=10)
-        except requests.RequestException as ex:
-            raise RuntimeError("Could not connect to Alpaca account API. Check Render outbound connectivity and ALPACA_MODE. Details: " + str(ex)[:240])
-        if ar.status_code in (401, 403):
-            raise RuntimeError("Alpaca rejected the credentials for " + base + " (HTTP " + str(ar.status_code) + "). Check that the key/secret pair matches this environment: paper keys for ALPACA_MODE=paper, live keys for ALPACA_MODE=live. No credentials were displayed.")
-        if not ar.ok:
-            raise RuntimeError("Alpaca account API returned HTTP " + str(ar.status_code) + ": " + ar.text[:240])
-        try:
-            pr = requests.get(base + "/v2/positions", headers=headers, timeout=10)
-        except requests.RequestException as ex:
-            raise RuntimeError("Connected to Alpaca account, but positions request failed: " + str(ex)[:240])
-        if pr.status_code in (401, 403):
-            raise RuntimeError("Alpaca rejected the positions request (HTTP " + str(pr.status_code) + "). Verify the API key/secret and account permissions.")
-        if not pr.ok:
-            raise RuntimeError("Alpaca positions API returned HTTP " + str(pr.status_code) + ": " + pr.text[:240])
-        account, raw = ar.json(), pr.json()
+            account = adapter.get_account()
+            raw = adapter.get_positions()
+        except Exception as ex:
+            raise RuntimeError(
+                "Portfolio Manager could not read Alpaca through the existing account adapter. "
+                "Check the same Alpaca configuration used by the working Positions tab. "
+                "Details: " + str(ex)[:300]
+            )
+        if not isinstance(account, dict):
+            raise RuntimeError("Alpaca account response was not an object.")
+        if not isinstance(raw, list):
+            raise RuntimeError("Alpaca positions response was not a list.")
         equity = _safe_float(account.get("equity") or account.get("portfolio_value"))
         cash = _safe_float(account.get("cash"))
         positions = []
