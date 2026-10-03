@@ -1,0 +1,195 @@
+<!-- Portfolio Manager embedded panel for the Backtest tab. No order execution. -->
+<div class="sec" id="portfolio-manager-panel">
+  <div class="sec-hdr">
+    <div>
+      <h2>🛡️ Portfolio Manager</h2>
+      <span class="sub">Position risk · concentration · correlation · 20% stress · profit-taking review</span>
+    </div>
+    <div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap">
+      <span id="pm-updated" class="sub"></span>
+      <button class="btn btn-n btn-s" id="pm-ai-btn" onclick="pmRunAI()">🧠 AI Review</button>
+      <button class="btn btn-n btn-s" onclick="pmLoad(true)">↻ Refresh</button>
+    </div>
+  </div>
+
+  <div id="pm-loading" style="padding:18px;color:#8b949e">Portfolio Manager is ready. Select this pane to load live Alpaca positions.</div>
+  <div id="pm-body" style="display:none">
+    <div class="grid" style="margin-bottom:12px">
+      <div class="card"><div class="lbl">Equity</div><div class="val" id="pm-equity">—</div></div>
+      <div class="card"><div class="lbl">Invested</div><div class="val b" id="pm-invested">—</div></div>
+      <div class="card"><div class="lbl">Cash</div><div class="val" id="pm-cash">—</div></div>
+      <div class="card"><div class="lbl">Unrealized P&L</div><div class="val" id="pm-upl">—</div></div>
+      <div class="card"><div class="lbl">Positions</div><div class="val b" id="pm-count">—</div></div>
+      <div class="card"><div class="lbl">Top 5 Weight</div><div class="val" id="pm-top5">—</div></div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:12px">
+      <div class="sec" style="margin:0">
+        <div class="sec-hdr"><h3 style="font-size:13px">20% Market Decline Stress</h3><span class="sub">Scenario, not forecast</span></div>
+        <div style="padding:12px">
+          <div class="card" style="margin-bottom:8px"><div class="lbl">Simple invested shock</div><div class="val r" id="pm-simple20">—</div></div>
+          <div class="card"><div class="lbl">Beta-weighted estimate</div><div class="val r" id="pm-beta20">—</div></div>
+          <div id="pm-method" style="font-size:10px;color:#8b949e;line-height:1.5;margin-top:9px"></div>
+        </div>
+      </div>
+
+      <div class="sec" style="margin:0">
+        <div class="sec-hdr"><h3 style="font-size:13px">Theme Concentration</h3><span class="sub">Ticker-based classification</span></div>
+        <div id="pm-themes" style="padding:8px 12px"></div>
+      </div>
+    </div>
+
+    <div class="sec" style="margin-bottom:12px">
+      <div class="sec-hdr"><h3 style="font-size:13px">Largest Positions</h3><span class="sub">Live Alpaca market value</span></div>
+      <div id="pm-positions" style="overflow-x:auto"></div>
+    </div>
+
+    <div class="sec" style="margin-bottom:12px">
+      <div class="sec-hdr">
+        <div><h3 style="font-size:13px">Profit-Taking / Buyback Review</h3><span class="sub">Extension + trend evidence; not a sell signal</span></div>
+      </div>
+      <div id="pm-watchlist" style="overflow-x:auto"></div>
+    </div>
+
+    <div class="sec" style="margin-bottom:12px">
+      <div class="sec-hdr"><h3 style="font-size:13px">High-Correlation Pairs</h3><span class="sub">90D daily returns · ≥0.75 shown</span></div>
+      <div id="pm-corr" style="overflow-x:auto"></div>
+    </div>
+
+    <div class="sec" style="margin-bottom:12px">
+      <div class="sec-hdr"><h3 style="font-size:13px">Sell / Buyback Planner</h3><span class="sub">Planning only — this pane never submits orders</span></div>
+      <div style="padding:12px">
+        <div class="row" style="align-items:end">
+          <label style="font-size:11px;color:#8b949e">Ticker
+            <select id="pm-plan-sym" style="margin-top:4px;min-width:110px"></select>
+          </label>
+          <label style="font-size:11px;color:#8b949e">Trim %
+            <input id="pm-plan-trim" type="number" value="25" min="0" max="100" step="5" style="margin-top:4px;max-width:100px">
+          </label>
+          <label style="font-size:11px;color:#8b949e">Invalidation %
+            <input id="pm-plan-inv" type="number" value="8" min="1" max="50" step="1" style="margin-top:4px;max-width:110px">
+          </label>
+          <button class="btn btn-b btn-s" onclick="pmPlan()">Build Plan</button>
+        </div>
+        <div id="pm-plan-out" style="margin-top:10px;color:#8b949e;font-size:11px">
+          Choose a position to create a rules-based review plan. The system will not place an order.
+        </div>
+      </div>
+    </div>
+
+    <div class="sec" id="pm-ai-box" style="display:none">
+      <div class="sec-hdr"><h3 style="font-size:13px">AI Portfolio Review</h3><span class="sub">Existing MirrorFish provider</span></div>
+      <div id="pm-ai-out" style="padding:12px;color:#c9d1d9;white-space:pre-wrap;line-height:1.55;font-size:11px"></div>
+    </div>
+
+    <div id="pm-warnings" style="margin-top:10px;color:#d29922;font-size:10px"></div>
+  </div>
+</div>
+
+<script>
+let pmLastData = null;
+
+function pmMoney(v) {
+  if(v === null || v === undefined || !isFinite(Number(v))) return '—';
+  return '$' + Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function pmPct(v) {
+  if(v === null || v === undefined || !isFinite(Number(v))) return '—';
+  return (Number(v)>=0?'+':'') + Number(v).toFixed(1) + '%';
+}
+function pmEsc(v) {
+  return String(v==null?'':v).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+}
+function pmLoad(force=false) {
+  const loading=$('pm-loading'), body=$('pm-body');
+  if(!loading||!body) return;
+  loading.style.display='block';
+  loading.textContent=force?'Refreshing live portfolio…':'Loading live Alpaca portfolio…';
+  body.style.display='none';
+  apiFetch('/api/portfolio-manager'+(force?'?refresh=1':''))
+    .then(d=>{
+      if(d.error) throw new Error(d.error);
+      pmLastData=d;
+      pmRender(d);
+      loading.style.display='none'; body.style.display='';
+    })
+    .catch(e=>{
+      loading.innerHTML='⚠️ Portfolio Manager unavailable: '+pmEsc(e.message)+
+        '<br><span style="font-size:10px;color:#8b949e">The rest of the Backtest tab remains independent.</span>';
+      body.style.display='none';
+    });
+}
+function pmRender(d) {
+  const a=d.account||{}, s=d.summary||{};
+  $('pm-equity').textContent=pmMoney(a.equity);
+  $('pm-invested').textContent=(s.invested_pct==null?'—':Number(s.invested_pct).toFixed(1)+'%');
+  $('pm-cash').textContent=pmMoney(a.cash);
+  const upl=Number(s.unrealized_pl||0);
+  $('pm-upl').innerHTML='<span class="'+(upl>=0?'g':'r')+'">'+pmMoney(upl)+'</span>';
+  $('pm-count').textContent=s.position_count ?? '—';
+  $('pm-top5').textContent=s.top5_weight_pct==null?'—':Number(s.top5_weight_pct).toFixed(1)+'%';
+  $('pm-simple20').textContent=pmMoney(s.simple_minus20_pct_dollars);
+  $('pm-beta20').textContent=pmMoney(s.beta_minus20_estimate);
+  $('pm-method').textContent=d.methodology||'';
+  $('pm-updated').textContent=d.as_of?'As of '+new Date(d.as_of).toLocaleString():'';
+
+  const themes=d.theme_exposure||[];
+  $('pm-themes').innerHTML=themes.length?themes.slice(0,8).map(x=>
+    '<div style="display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #21262d;padding:7px 0">'+
+    '<span>'+pmEsc(x.theme)+'</span><strong>'+Number(x.weight_pct||0).toFixed(1)+'%</strong></div>').join(''):
+    '<div style="padding:10px;color:#8b949e">No theme data.</div>';
+
+  const pos=d.positions||[];
+  $('pm-positions').innerHTML=pos.length?'<table><thead><tr><th>Symbol</th><th>Weight</th><th>Value</th><th>Unrealized</th><th>Return</th></tr></thead><tbody>'+
+    pos.slice(0,15).map(p=>'<tr><td><strong>'+pmEsc(p.symbol)+'</strong></td><td>'+Number(p.weight_pct||0).toFixed(1)+'%</td><td>'+pmMoney(p.market_value)+'</td>'+
+    '<td class="'+(Number(p.unrealized_pl)>=0?'g':'r')+'">'+pmMoney(p.unrealized_pl)+'</td><td class="'+(Number(p.unrealized_pct)>=0?'g':'r')+'">'+pmPct(p.unrealized_pct)+'</td></tr>').join('')+
+    '</tbody></table>':'<div style="padding:12px;color:#8b949e">No open positions.</div>';
+
+  const tech=d.technical||{};
+  const watch=pos.map(p=>({p,m:tech[p.symbol]})).filter(x=>x.m).sort((a,b)=>
+    Number(b.m.pullback_watch_score||0)-Number(a.m.pullback_watch_score||0) ||
+    Number(b.p.unrealized_pct||0)-Number(a.p.unrealized_pct||0));
+  $('pm-watchlist').innerHTML=watch.length?'<table><thead><tr><th>Symbol</th><th>Gain</th><th>20D</th><th>vs MA20</th><th>vs 3M High</th><th>Vol</th><th>Review score</th><th>Evidence</th></tr></thead><tbody>'+
+    watch.slice(0,15).map(x=>{
+      const m=x.m, ext=m.ma20?((m.last/m.ma20-1)*100):null;
+      const sc=Number(m.pullback_watch_score||0);
+      return '<tr><td><strong>'+pmEsc(x.p.symbol)+'</strong></td><td class="'+(Number(x.p.unrealized_pct)>=0?'g':'r')+'">'+pmPct(x.p.unrealized_pct)+'</td>'+
+      '<td>'+pmPct(m.ret20_pct)+'</td><td>'+pmPct(ext)+'</td><td>'+pmPct(m.drawdown_from_3m_high_pct)+'</td>'+
+      '<td>'+Number(m.volatility_pct||0).toFixed(1)+'%</td><td><strong>'+sc+'/10</strong></td>'+
+      '<td style="color:#8b949e;max-width:330px">'+pmEsc((m.flags||[]).join(' · ')||'No major warning flag')+'</td></tr>';
+    }).join('')+'</tbody></table>':
+    '<div style="padding:12px;color:#8b949e">Historical technical data unavailable for the current positions.</div>';
+
+  const pairs=d.high_correlations||[];
+  $('pm-corr').innerHTML=pairs.length?'<table><thead><tr><th>Symbol A</th><th>Symbol B</th><th>90D Correlation</th><th>Risk interpretation</th></tr></thead><tbody>'+
+    pairs.slice(0,20).map(x=>'<tr><td><strong>'+pmEsc(x.a)+'</strong></td><td><strong>'+pmEsc(x.b)+'</strong></td><td>'+Number(x.corr).toFixed(2)+'</td><td style="color:#8b949e">Similar daily-return behavior; combined exposure may be less diversified than position count suggests.</td></tr>').join('')+
+    '</tbody></table>':'<div style="padding:12px;color:#8b949e">No pairs above the 0.75 threshold with sufficient history.</div>';
+
+  const sel=$('pm-plan-sym');
+  if(sel) sel.innerHTML=pos.map(p=>'<option value="'+pmEsc(p.symbol)+'">'+pmEsc(p.symbol)+'</option>').join('');
+  $('pm-warnings').textContent=(d.warnings||[]).join(' · ');
+}
+function pmPlan() {
+  const sym=$('pm-plan-sym').value;
+  const trim=Math.max(0,Math.min(100,Number($('pm-plan-trim').value||0)));
+  const inv=Math.max(1,Math.min(50,Number($('pm-plan-inv').value||8)));
+  const p=(pmLastData?.positions||[]).find(x=>x.symbol===sym);
+  const m=(pmLastData?.technical||{})[sym];
+  const out=$('pm-plan-out');
+  if(!p){out.textContent='Select a position first.';return;}
+  const trimValue=Number(p.market_value||0)*trim/100;
+  out.innerHTML='<strong>'+pmEsc(sym)+'</strong>: review a '+trim.toFixed(0)+'% trim (~'+pmMoney(trimValue)+') only if your thesis still supports it.<br>'+
+    'Trend invalidation to define manually: '+inv.toFixed(0)+'% below the current price/technical reference. '+
+    (m?'Current technical context: 20D return '+pmPct(m.ret20_pct)+', price vs 20D mean '+pmPct(m.ma20?((m.last/m.ma20-1)*100):null)+'. ':'')+
+    'Buyback review should require a predefined re-entry condition; do not assume the stock will pull back after a trim.';
+}
+function pmRunAI() {
+  if(!pmLastData){ alert('Load the Portfolio Manager first.'); return; }
+  const btn=$('pm-ai-btn'), box=$('pm-ai-box'), out=$('pm-ai-out');
+  btn.disabled=true; box.style.display=''; out.textContent='AI reviewing the quantitative snapshot…';
+  apiPost('/api/portfolio-manager/ai',{snapshot:pmLastData})
+    .then(d=>{out.textContent=d.analysis||d.message||'No AI review returned.';})
+    .catch(e=>{out.textContent='AI review unavailable: '+e.message;})
+    .finally(()=>{btn.disabled=false;});
+}
+</script>
