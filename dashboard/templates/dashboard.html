@@ -219,7 +219,6 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
   <div class="tab"     onclick="switchTab(10,'set')">⚙️ Settings</div>
   <div class="tab"     onclick="switchTab(11,'calc')">🧮 Inv. Calculator</div>
   <div class="tab"     onclick="switchTab(12,'bt')">🧪 Backtest</div>
-  <div class="tab" onclick="window.location.href='/portfolio-manager'">🛡️ Portfolio Manager</div>
 </div>
 
 <!-- DATA SOURCE BANNER -->
@@ -1068,6 +1067,14 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
 
 <!-- ── BACKTEST TAB ───────────────────────────────────────────────────────── -->
 <div class="pane" id="pane-bt">
+  <div class="sec" id="bt-subnav" style="margin-bottom:12px">
+    <div style="display:flex;gap:7px;flex-wrap:wrap">
+      <button class="btn btn-b btn-s bt-stab on" onclick="btSub('crash',0)">🧠 AI Crash</button>
+      <button class="btn btn-n btn-s bt-stab" onclick="btSub('strategy',1)">🧪 Strategy Backtest</button>
+      <button class="btn btn-n btn-s bt-stab" onclick="btSub('portfolio',2)">🛡️ Portfolio Manager</button>
+    </div>
+    <div id="bt-substatus" class="sub" style="margin-top:7px">AI Crash Early-Warning Terminal</div>
+  </div>
 <!-- AI CRASH EARLY-WARNING TERMINAL -->
 <div class="sec" id="ai-crash-terminal" style="margin-bottom:14px">
   <div class="sec-hdr">
@@ -1093,6 +1100,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
   </div>
 </div>
 
+  <div id="bt-strategy-pane" style="display:none">
   <div class="sec">
     <div class="sec-hdr">
       <h2>🧪 Strategy Backtest</h2>
@@ -1160,6 +1168,13 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
         <tbody id="bt-trades-body"></tbody>
       </table>
     </div>
+  </div>
+</div>
+  </div>
+
+
+  <div id="bt-portfolio-pane" style="display:none">
+    {% include 'portfolio_manager_panel.html' %}
   </div>
 </div>
 
@@ -1245,7 +1260,7 @@ function switchTab(idx, name) {
   }
   if(name==='mf')   loadMirrorFish();
   if(name==='calc') calcOnOpen();
-  if(name==='bt')   { loadBacktestStrategies(); loadAICrashDashboard(false); }
+  if(name==='bt')   { btSub('crash',0); loadBacktestStrategies(); loadAICrashDashboard(false); }
 }
 function anaSub(name, idx) {
   ['signals','charts','ema','bb','compare'].forEach(n=>{
@@ -1256,6 +1271,26 @@ function anaSub(name, idx) {
 function resSub(name, idx) {
   ['inst','earn','sect','ins'].forEach(n=>$('res-'+n).style.display=n===name?'block':'none');
   document.querySelectorAll('#pane-res .stab').forEach((t,i)=>t.classList.toggle('on',i===idx));
+}
+
+// ── BACKTEST SUBTABS ────────────────────────────────────────────────────────
+function btSub(name, idx) {
+  const panes = {
+    crash: $('ai-crash-terminal'),
+    strategy: $('bt-strategy-pane'),
+    portfolio: $('bt-portfolio-pane')
+  };
+  Object.keys(panes).forEach(k => { if(panes[k]) panes[k].style.display = k===name ? '' : 'none'; });
+  document.querySelectorAll('#bt-subnav .bt-stab').forEach((b,i) => {
+    b.classList.toggle('on', i===idx);
+    b.classList.toggle('btn-b', i===idx);
+    b.classList.toggle('btn-n', i!==idx);
+  });
+  const labels={crash:'AI Crash Early-Warning Terminal',strategy:'Strategy Backtest and comparison engine',portfolio:'Institutional portfolio risk and profit-taking review'};
+  if($('bt-substatus')) $('bt-substatus').textContent=labels[name]||'';
+  if(name==='portfolio' && !pmLastData) pmLoad(false);
+  if(name==='crash') loadAICrashDashboard(false);
+  if(name==='strategy') loadBacktestStrategies();
 }
 
 // ── ACCOUNT ─────────────────────────────────────────────────────────────────
