@@ -1,19 +1,35 @@
 <!-- Portfolio Manager embedded panel for the Backtest tab. No order execution. -->
 <style>
+#portfolio-manager-panel .pm-section-tools{display:flex;gap:6px;align-items:center;margin-left:auto}
+#portfolio-manager-panel .pm-min-btn{font-size:10px;padding:3px 7px;line-height:1.2}
+#portfolio-manager-panel .pm-collapsible-body{transition:none}
 #portfolio-manager-panel .pm-table-wrap{width:100%;overflow:auto;max-height:390px;border-radius:8px}
-#portfolio-manager-panel .pm-table-wrap table{min-width:760px;width:100%}
-#portfolio-manager-panel .pm-table-wrap th{position:sticky;top:0;z-index:2}
-#portfolio-manager-panel .pm-table-wrap td{padding:9px 10px;white-space:nowrap}
+#portfolio-manager-panel .pm-table-wrap table{width:100%;min-width:0;table-layout:auto}
+#portfolio-manager-panel .pm-table-wrap th{position:sticky;top:0;z-index:2;padding:7px 6px;white-space:nowrap;font-size:10px}
+#portfolio-manager-panel .pm-table-wrap td{padding:7px 6px;white-space:nowrap;font-size:10px}
 #portfolio-manager-panel .pm-table-wrap tbody tr:nth-child(even){background:rgba(255,255,255,.018)}
 #portfolio-manager-panel .pm-table-wrap tbody tr:hover{background:rgba(88,166,255,.06)}
 #portfolio-manager-panel .pm-watch-wrap{max-height:460px}
-#portfolio-manager-panel .pm-watch-wrap table{min-width:1100px}
-#portfolio-manager-panel .pm-watch-wrap td.pm-evidence{min-width:430px;width:44%;white-space:normal;line-height:1.5;vertical-align:top}
-#portfolio-manager-panel .pm-corr-wrap table{min-width:760px}
+#portfolio-manager-panel .pm-watch-wrap table{width:100%;min-width:900px;table-layout:fixed}
+#portfolio-manager-panel .pm-watch-wrap th:nth-child(1){width:7%}
+#portfolio-manager-panel .pm-watch-wrap th:nth-child(2){width:7%}
+#portfolio-manager-panel .pm-watch-wrap th:nth-child(3){width:7%}
+#portfolio-manager-panel .pm-watch-wrap th:nth-child(4){width:9%}
+#portfolio-manager-panel .pm-watch-wrap th:nth-child(5){width:10%}
+#portfolio-manager-panel .pm-watch-wrap th:nth-child(6){width:7%}
+#portfolio-manager-panel .pm-watch-wrap th:nth-child(7){width:9%}
+#portfolio-manager-panel .pm-watch-wrap th:nth-child(8){width:44%}
+#portfolio-manager-panel .pm-watch-wrap td.pm-evidence{white-space:normal;line-height:1.35;vertical-align:top;display:table-cell;max-width:360px;overflow-wrap:anywhere}
+#portfolio-manager-panel .pm-corr-wrap table{width:100%;min-width:0;table-layout:fixed}
+#portfolio-manager-panel .pm-corr-wrap th:nth-child(1),#portfolio-manager-panel .pm-corr-wrap th:nth-child(2){width:18%}
+#portfolio-manager-panel .pm-corr-wrap th:nth-child(3){width:20%}
+#portfolio-manager-panel .pm-corr-wrap th:nth-child(4){width:44%}
+#portfolio-manager-panel .pm-corr-wrap td:last-child{white-space:normal;line-height:1.35;overflow-wrap:anywhere}
 #portfolio-manager-panel .pm-plan-box{border:1px solid #30363d;border-radius:8px;background:rgba(255,255,255,.015)}
 @media(max-width:760px){
   #portfolio-manager-panel .pm-table-wrap{max-height:330px}
   #portfolio-manager-panel .pm-watch-wrap{max-height:400px}
+  #portfolio-manager-panel .pm-watch-wrap table{min-width:820px}
 }
 </style>
 
@@ -58,7 +74,7 @@
     </div>
 
     <div class="sec" style="margin-bottom:12px">
-      <div class="sec-hdr"><h3 style="font-size:13px">Largest Positions</h3><span class="sub">Live Alpaca market value</span></div>
+      <div class="sec-hdr"><h3 style="font-size:13px">Largest Positions</h3><span class="pm-section-tools"><button type="button" class="btn btn-n btn-s pm-min-btn" onclick="pmToggle(this)">− Minimize</button></span><span class="sub">Live Alpaca market value</span></div>
       <div id="pm-positions" class="pm-table-wrap"></div>
     </div>
 
@@ -70,12 +86,12 @@
     </div>
 
     <div class="sec" style="margin-bottom:12px">
-      <div class="sec-hdr"><h3 style="font-size:13px">High-Correlation Pairs</h3><span class="sub">90D daily returns · ≥0.75 shown</span></div>
+      <div class="sec-hdr"><h3 style="font-size:13px">High-Correlation Pairs</h3><span class="pm-section-tools"><button type="button" class="btn btn-n btn-s pm-min-btn" onclick="pmToggle(this)">− Minimize</button></span><span class="sub">90D daily returns · ≥0.75 shown</span></div>
       <div id="pm-corr" class="pm-table-wrap pm-corr-wrap"></div>
     </div>
 
     <div class="sec" style="margin-bottom:12px">
-      <div class="sec-hdr"><h3 style="font-size:13px">Sell / Buyback Planner</h3><span class="sub">Planning only — this pane never submits orders</span></div>
+      <div class="sec-hdr"><h3 style="font-size:13px">Sell / Buyback Planner</h3><span class="pm-section-tools"><button type="button" class="btn btn-n btn-s pm-min-btn" onclick="pmToggle(this)">− Minimize</button></span><span class="sub">Planning only — this pane never submits orders</span></div>
       <div class="pm-plan-box" style="padding:12px">
         <div class="row" style="align-items:end">
           <label style="font-size:11px;color:#8b949e">Ticker
@@ -96,7 +112,7 @@
     </div>
 
     <div class="sec" id="pm-ai-box" style="display:none">
-      <div class="sec-hdr"><h3 style="font-size:13px">AI Portfolio Review</h3><span class="sub">Existing MirrorFish provider</span></div>
+      <div class="sec-hdr"><h3 style="font-size:13px">AI Portfolio Review</h3><span class="pm-section-tools"><button type="button" class="btn btn-n btn-s pm-min-btn" onclick="pmToggle(this)">− Minimize</button></span><span class="sub">Existing MirrorFish provider</span></div>
       <div id="pm-ai-out" style="padding:12px;color:#c9d1d9;white-space:pre-wrap;line-height:1.55;font-size:11px"></div>
     </div>
 
@@ -118,7 +134,7 @@ function pmPct(v) {
 function pmEsc(v) {
   return String(v==null?'':v).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
 }
-function pmLoad(force=false) {
+function pmToggle(btn) {\n  const sec=btn.closest(".sec"); if(!sec) return;\n  const hdr=sec.querySelector(".sec-hdr");\n  const bodies=Array.from(sec.children).filter(x=>x!==hdr);\n  const hidden=bodies.some(x=>x.style.display!==\"none\");\n  bodies.forEach(x=>x.style.display=hidden?"none":"");\n  btn.textContent=hidden?"+ Expand":"− Minimize";\n}\nfunction pmLoad(force=false) {
   const loading=$('pm-loading'), body=$('pm-body');
   if(!loading||!body) return;
   loading.style.display='block';
