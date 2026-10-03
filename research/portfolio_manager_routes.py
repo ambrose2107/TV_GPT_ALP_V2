@@ -277,7 +277,10 @@ def portfolio_ai():
                   "correlation, 20% market stress assumptions, and which profit-taking candidates "
                   "deserve a manual review. Do not recommend automatic orders. Keep the answer concise. "
                   "Snapshot JSON: " + __import__("json").dumps(snapshot, separators=(",",":"))[:16000])
-        answer = chat(prompt, {"module":"Portfolio Manager","as_of":snapshot.get("as_of")})
+        # Prefer the same gpt-oss-20b model used by the hosted Hugging Face route
+        # when its token is configured; otherwise retain the existing provider fallback.
+        preferred = "huggingface" if status.get("huggingface", {}).get("configured") else None
+        answer = chat(prompt, {"module":"Portfolio Manager","as_of":snapshot.get("as_of")}, provider_name=preferred)
         return jsonify({"available":True,"analysis":str(answer)[:12000]})
     except Exception as ex:
         logger.warning("Portfolio AI unavailable: %s",ex)
