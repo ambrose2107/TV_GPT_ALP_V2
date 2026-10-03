@@ -134,7 +134,16 @@ function pmPct(v) {
 function pmEsc(v) {
   return String(v==null?'':v).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
 }
-function pmToggle(btn) {\n  const sec=btn.closest(".sec"); if(!sec) return;\n  const hdr=sec.querySelector(".sec-hdr");\n  const bodies=Array.from(sec.children).filter(x=>x!==hdr);\n  const hidden=bodies.some(x=>x.style.display!==\"none\");\n  bodies.forEach(x=>x.style.display=hidden?"none":"");\n  btn.textContent=hidden?"+ Expand":"− Minimize";\n}\nfunction pmLoad(force=false) {
+function pmToggle(btn) {
+  const sec = btn.closest(".sec");
+  if (!sec) return;
+  const hdr = sec.querySelector(".sec-hdr");
+  const bodies = Array.from(sec.children).filter(x => x !== hdr);
+  const hidden = bodies.some(x => x.style.display !== "none");
+  bodies.forEach(x => { x.style.display = hidden ? "none" : ""; });
+  btn.textContent = hidden ? "+ Expand" : "− Minimize";
+}
+function pmLoad(force=false) {
   const loading=$('pm-loading'), body=$('pm-body');
   if(!loading||!body) return;
   loading.style.display='block';
