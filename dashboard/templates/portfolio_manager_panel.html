@@ -1,4 +1,22 @@
 <!-- Portfolio Manager embedded panel for the Backtest tab. No order execution. -->
+<style>
+#portfolio-manager-panel .pm-table-wrap{width:100%;overflow:auto;max-height:390px;border-radius:8px}
+#portfolio-manager-panel .pm-table-wrap table{min-width:760px;width:100%}
+#portfolio-manager-panel .pm-table-wrap th{position:sticky;top:0;z-index:2}
+#portfolio-manager-panel .pm-table-wrap td{padding:9px 10px;white-space:nowrap}
+#portfolio-manager-panel .pm-table-wrap tbody tr:nth-child(even){background:rgba(255,255,255,.018)}
+#portfolio-manager-panel .pm-table-wrap tbody tr:hover{background:rgba(88,166,255,.06)}
+#portfolio-manager-panel .pm-watch-wrap{max-height:460px}
+#portfolio-manager-panel .pm-watch-wrap table{min-width:1100px}
+#portfolio-manager-panel .pm-watch-wrap td.pm-evidence{min-width:430px;width:44%;white-space:normal;line-height:1.5;vertical-align:top}
+#portfolio-manager-panel .pm-corr-wrap table{min-width:760px}
+#portfolio-manager-panel .pm-plan-box{border:1px solid #30363d;border-radius:8px;background:rgba(255,255,255,.015)}
+@media(max-width:760px){
+  #portfolio-manager-panel .pm-table-wrap{max-height:330px}
+  #portfolio-manager-panel .pm-watch-wrap{max-height:400px}
+}
+</style>
+
 <div class="sec" id="portfolio-manager-panel">
   <div class="sec-hdr">
     <div>
@@ -41,24 +59,24 @@
 
     <div class="sec" style="margin-bottom:12px">
       <div class="sec-hdr"><h3 style="font-size:13px">Largest Positions</h3><span class="sub">Live Alpaca market value</span></div>
-      <div id="pm-positions" style="overflow-x:auto"></div>
+      <div id="pm-positions" class="pm-table-wrap"></div>
     </div>
 
     <div class="sec" style="margin-bottom:12px">
       <div class="sec-hdr">
         <div><h3 style="font-size:13px">Profit-Taking / Buyback Review</h3><span class="sub">Extension + trend evidence; not a sell signal</span></div>
       </div>
-      <div id="pm-watchlist" style="overflow-x:auto"></div>
+      <div id="pm-watchlist" class="pm-table-wrap pm-watch-wrap"></div>
     </div>
 
     <div class="sec" style="margin-bottom:12px">
       <div class="sec-hdr"><h3 style="font-size:13px">High-Correlation Pairs</h3><span class="sub">90D daily returns · ≥0.75 shown</span></div>
-      <div id="pm-corr" style="overflow-x:auto"></div>
+      <div id="pm-corr" class="pm-table-wrap pm-corr-wrap"></div>
     </div>
 
     <div class="sec" style="margin-bottom:12px">
       <div class="sec-hdr"><h3 style="font-size:13px">Sell / Buyback Planner</h3><span class="sub">Planning only — this pane never submits orders</span></div>
-      <div style="padding:12px">
+      <div class="pm-plan-box" style="padding:12px">
         <div class="row" style="align-items:end">
           <label style="font-size:11px;color:#8b949e">Ticker
             <select id="pm-plan-sym" style="margin-top:4px;min-width:110px"></select>
@@ -156,7 +174,7 @@ function pmRender(d) {
       return '<tr><td><strong>'+pmEsc(x.p.symbol)+'</strong></td><td class="'+(Number(x.p.unrealized_pct)>=0?'g':'r')+'">'+pmPct(x.p.unrealized_pct)+'</td>'+
       '<td>'+pmPct(m.ret20_pct)+'</td><td>'+pmPct(ext)+'</td><td>'+pmPct(m.drawdown_from_3m_high_pct)+'</td>'+
       '<td>'+Number(m.volatility_pct||0).toFixed(1)+'%</td><td><strong>'+sc+'/10</strong></td>'+
-      '<td style="color:#8b949e;max-width:330px">'+pmEsc((m.flags||[]).join(' · ')||'No major warning flag')+'</td></tr>';
+      '<td class="pm-evidence" style="color:#8b949e">'+pmEsc((m.flags||[]).join(' · ')||'No major warning flag')+'</td></tr>';
     }).join('')+'</tbody></table>':
     '<div style="padding:12px;color:#8b949e">Historical technical data unavailable for the current positions.</div>';
 
