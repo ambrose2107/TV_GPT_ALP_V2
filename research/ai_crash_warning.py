@@ -235,20 +235,37 @@ def _v2_overlay(score, components, history):
 def _regime(s):
     return "CRISIS" if s>=85 else "DEFENSIVE" if s>=70 else "PRE-CRISIS" if s>=50 else "WATCH" if s>=25 else "NORMAL"
 
-def _history(px,core):
-    idx=px.index; idx=idx[idx>=idx.max()-pd.Timedelta(days=365)]
-    if len(idx)>140:idx=idx[-140:]
+def _history(px,core=None):
+    """Recent, time-varying broad-market proxy history (not the live composite score)."""
+    idx=px.index
+    idx=idx[idx>=idx.max()-pd.Timedelta(days=365)]
+    if len(idx)>140: idx=idx[-140:]
     out=[]
     for d in idx:
         try:
-            v=float(px["^VIX"].loc[:d].dropna().iloc[-1]); q=px["QQQ"].loc[:d].dropna()
-            ret=((q.iloc[-1]/q.iloc[-64])-1)*100 if len(q)>64 else 0
-            ms=_clip(50-ret*1.2+(v-16)*2.5)
-            s=_clip(.55*ms+.45*np.mean([core["components"][k] for k in ["Credit","AI Financing","AI Fundamental","Liquidity"]]))
-            out.append({"t":d.strftime("%Y-%m-%d"),"v":round(s,1)})
-        except Exception:pass
+            hist=px.loc[:d]
+            v=hist["^VIX"].dropna()
+            q=hist["QQQ"].dropna()
+            spy=hist["SPY"].dropna()
+            if v.empty or len(q)<20 or len(spy)<20: continue
+            vn=float(v.iloc[-1])
+            mom=((float(q.iloc[-1])/float(q.iloc[-min(127,len(q))])-1)*100) if len(q)>20 else 0.0
+            sh=spy.tail(126)
+            dd=(float(sh.max())/float(sh.iloc[-1])-1)*100 if len(sh)>20 and float(sh.max()) else 0.0
+            rel=[]
+            for sym in ("RSP","IWM","SOXX"):
+                if sym in hist.columns:
+                    r=(hist[sym]/hist["SPY"]).dropna()
+                    if len(r)>20: rel.append((float(r.iloc[-1])/float(r.iloc[-min(64,len(r))])-1)*100)
+            breadth=float(np.mean([_clip(50-x*2.5) for x in rel])) if rel else 50.0
+            vol=_clip((vn-18)*3.2)
+            momentum=_clip(50-mom*1.5)
+            drawdown=_clip(dd*2.2)
+            score=_clip(.30*vol+.35*momentum+.20*drawdown+.15*breadth)
+            out.append({"t":d.strftime("%Y-%m-%d"),"v":round(score,1)})
+        except Exception:
+            continue
     return out
-
 
 def _historical_crash_replay(f):
     """Replay a time-varying, broad-market warning proxy over prior drawdowns.
@@ -259,15 +276,17 @@ def _historical_crash_replay(f):
     if _HIST_CACHE["payload"] is not None and now-_HIST_CACHE["ts"]<HIST_CACHE_TTL:
         return _HIST_CACHE["payload"]
     try:
-        series={}
-        for sym in ("SPY","QQQ","^VIX"):
+        from concurrent.futures import ThreadPoolExecutor
+        def _load_long(sym):
             chart=yahoo_get_chart(sym,interval="1d",period="max")
             if not chart or not chart.get("timestamps") or not chart.get("close"):
                 raise RuntimeError("Long-run Yahoo history unavailable for "+sym)
             ix=pd.to_datetime(chart["timestamps"],unit="s",utc=True,errors="coerce").tz_localize(None).normalize()
             q=pd.Series(pd.to_numeric(chart["close"],errors="coerce"),index=ix).dropna()
             q=q[~q.index.isna()]
-            series[sym]=q[~q.index.duplicated(keep="last")]
+            return sym,q[~q.index.duplicated(keep="last")]
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            series=dict(pool.map(_load_long,("SPY","QQQ","^VIX")))
         p=pd.concat(series,axis=1).sort_index()
         p=p[~p.index.duplicated(keep="last")]
         hy=f.get("hy_oas",pd.Series(dtype=float)).copy()
