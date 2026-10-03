@@ -16,6 +16,8 @@ _FUND_CACHE={"payload":None,"ts":0.0}
 _LOCK=threading.Lock()
 CACHE_TTL=6*60*60
 FUND_CACHE_TTL=24*60*60
+_HIST_CACHE={"payload":None,"ts":0.0}
+HIST_CACHE_TTL=24*60*60
 FRED={"hy_oas":"BAMLH0A0HYM2","nfci":"NFCI","dfii10":"DFII10","unrate":"UNRATE"}
 MARKET=["SPY","QQQ","RSP","IWM","SOXX","^VIX"]
 HYPERSCALERS=["MSFT","GOOGL","AMZN","META","ORCL"]
@@ -25,7 +27,7 @@ def _clip(x,lo=0.0,hi=100.0):
     except:return 0.0
 
 def _fred(sid):
-    u=f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={sid}&cosd=2023-01-01"
+    u=f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={sid}&cosd=1990-01-01"
     r=requests.get(u,timeout=12); r.raise_for_status()
     d=pd.read_csv(io.StringIO(r.text)); d["observation_date"]=pd.to_datetime(d["observation_date"],errors="coerce")
     d[sid]=pd.to_numeric(d[sid],errors="coerce")
@@ -247,6 +249,96 @@ def _history(px,core):
         except Exception:pass
     return out
 
+
+def _historical_crash_replay(f):
+    """Replay a time-varying, broad-market warning proxy over prior drawdowns.
+    This is a transparent historical diagnostic, not a fitted probability model.
+    Cached separately so it adds only a few daily series and does not slow every refresh.
+    """
+    now=time.time()
+    if _HIST_CACHE["payload"] is not None and now-_HIST_CACHE["ts"]<HIST_CACHE_TTL:
+        return _HIST_CACHE["payload"]
+    try:
+        series={}
+        for sym in ("SPY","QQQ","^VIX"):
+            chart=yahoo_get_chart(sym,interval="1d",period="max")
+            if not chart or not chart.get("timestamps") or not chart.get("close"):
+                raise RuntimeError("Long-run Yahoo history unavailable for "+sym)
+            ix=pd.to_datetime(chart["timestamps"],unit="s",utc=True,errors="coerce").tz_localize(None).normalize()
+            q=pd.Series(pd.to_numeric(chart["close"],errors="coerce"),index=ix).dropna()
+            q=q[~q.index.isna()]
+            series[sym]=q[~q.index.duplicated(keep="last")]
+        p=pd.concat(series,axis=1).sort_index()
+        p=p[~p.index.duplicated(keep="last")]
+        hy=f.get("hy_oas",pd.Series(dtype=float)).copy()
+        nf=f.get("nfci",pd.Series(dtype=float)).copy()
+        hy.index=pd.to_datetime(hy.index,errors="coerce").tz_localize(None).normalize()
+        nf.index=pd.to_datetime(nf.index,errors="coerce").tz_localize(None).normalize()
+        p["hy_oas"]=hy.reindex(p.index).ffill()
+        p["nfci"]=nf.reindex(p.index).ffill()
+        # Daily values use only data available on that date; no present-day component
+        # scores are carried backward into the historical replay.
+        hy_med=p["hy_oas"].rolling(252,min_periods=60).median()
+        hy_chg=p["hy_oas"].diff(20)
+        credit=((p["hy_oas"]/hy_med.clip(lower=.5)-.85)*65 + hy_chg.fillna(0)*25).clip(0,100)
+        vol=((p["^VIX"]-18)*3.2).clip(0,100)
+        qmom=p["QQQ"].pct_change(126)*100
+        momentum=(50-qmom*1.5).clip(0,100)
+        spy_high=p["SPY"].rolling(252,min_periods=60).max()
+        drawdown=((1-p["SPY"]/spy_high).clip(lower=0)*220).clip(0,100)
+        nf_mean=p["nfci"].rolling(104,min_periods=26).mean()
+        nf_std=p["nfci"].rolling(104,min_periods=26).std().clip(lower=.15)
+        liquidity=(40+(p["nfci"]-nf_mean)/nf_std*25).clip(0,100)
+        p["replay_score"]=.30*credit+.20*vol+.25*momentum+.15*drawdown+.10*liquidity
+        p=p.dropna(subset=["SPY","QQQ","^VIX","replay_score"])
+        episodes=[
+          {"name":"Dot-com bust","symbol":"QQQ","peak":"2000-03-10"},
+          {"name":"Global financial crisis","symbol":"SPY","peak":"2007-10-09"},
+          {"name":"COVID shock","symbol":"SPY","peak":"2020-02-19"},
+          {"name":"2022 bear market","symbol":"SPY","peak":"2022-01-03"},
+        ]
+        results=[]
+        for e in episodes:
+            s=e["symbol"]; peak_date=pd.Timestamp(e["peak"])
+            q=p[s].dropna()
+            if q.empty or q.index.min()>peak_date or q.index.max()<peak_date:
+                results.append({"episode":e["name"],"peak_date":e["peak"],"status":"Insufficient history"})
+                continue
+            peak_pos=int(q.index.get_indexer([q.index[q.index.get_indexer([peak_date],method="nearest")[0]]])[0])
+            peak_ix=q.index[peak_pos]; peak_price=float(q.iloc[peak_pos])
+            future=q.iloc[peak_pos+1:peak_pos+253]
+            breach=future[future<=peak_price*.80]
+            if breach.empty:
+                results.append({"episode":e["name"],"peak_date":peak_ix.strftime("%Y-%m-%d"),"status":"20% threshold not found in 12M"})
+                continue
+            breach_date=breach.index[0]
+            hist=p.loc[:breach_date]
+            peak_window=hist.loc[hist.index>=peak_ix-pd.Timedelta(days=90)]
+            pre=peak_window.loc[peak_window.index<breach_date]
+            crossed=pre[pre["replay_score"]>=60]
+            first=crossed.index[0] if not crossed.empty else None
+            peak_row=p.loc[:peak_ix].iloc[-1]
+            results.append({
+              "episode":e["name"],"peak_date":peak_ix.strftime("%Y-%m-%d"),
+              "20pct_date":breach_date.strftime("%Y-%m-%d"),
+              "days_to_20pct":int((breach_date-peak_ix).days),
+              "score_at_peak":round(float(peak_row["replay_score"]),1),
+              "max_score_pre_breach":round(float(pre["replay_score"].max()),1) if not pre.empty else None,
+              "first_signal_date":first.strftime("%Y-%m-%d") if first is not None else None,
+              "lead_days":int((breach_date-first).days) if first is not None else None,
+              "status":"Signal before -20% threshold" if first is not None else "No 60+ signal in 90D pre-breach window"
+            })
+        payload={"available":True,"episodes":results,"method":"Time-varying broad-market proxy: HY OAS level/change, VIX, QQQ 6M momentum, SPY 1Y drawdown and NFCI. 60/100 is an exploratory threshold, not a calibrated probability.",
+          "coverage_start":p.index.min().strftime("%Y-%m-%d") if not p.empty else None,
+          "coverage_end":p.index.max().strftime("%Y-%m-%d") if not p.empty else None,
+          "threshold":60,"warning":"This is a retrospective episode replay, not a fully out-of-sample validation. It tests broad-market crash stress, not AI-specific crashes."}
+    except Exception as exc:
+        logger.warning("Historical crash replay unavailable: %s",exc)
+        payload={"available":False,"episodes":[],"warning":"Historical replay unavailable: "+str(exc)[:220],
+          "method":"Requires long-run SPY, QQQ, VIX and historical macro series."}
+    _HIST_CACHE["payload"]=payload; _HIST_CACHE["ts"]=now
+    return payload
+
 def build_dashboard(force=False):
     now=time.time()
     if not force and _CACHE["payload"] is not None and now-_CACHE["ts"]<CACHE_TTL:return _CACHE["payload"]
@@ -265,6 +357,7 @@ def build_dashboard(force=False):
           "breadth":comps["Market Breadth"]>=70,"liquidity":comps["Liquidity"]>=70},
           "details":core["details"],"fundamentals":fund,"history":hist,
           "v2":_v2_overlay(s,comps,hist),
+          "historical_replay":_historical_crash_replay(f),
           "methodology":{"weights":{"AI Fundamental":18,"AI Financing":14,"Credit":20,"Liquidity":10,"Market Breadth":14,"Real Rates":10,"Volatility":5,"Recession":9},
           "note":"Early-warning monitor, not a crash-date predictor. Hyperscaler capex is a proxy, not AI-only capex."}}
         _CACHE["payload"]=payload; _CACHE["ts"]=now; return payload
