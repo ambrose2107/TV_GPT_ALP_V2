@@ -199,16 +199,61 @@ def portfolio_data():
                         market[sym] = {"last":last,"ma20":ma20,"ma50":ma50,"ret20_pct":ret20,
                                        "ret60_pct":ret60,"volatility_pct":vol,"drawdown_from_3m_high_pct":dd,
                                        "pullback_watch_score":min(score,10),"flags":flags}
+            # Use daily adjusted closes for consistent return/correlation windows.
+            # 21/63/126/252 observations approximate 1/3/6/12 trading months.
+            def _period_return(series, bars):
+                series = series.dropna()
+                if len(series) <= bars:
+                    return None
+                base = _safe_float(series.iloc[-(bars + 1)], 0)
+                last_px = _safe_float(series.iloc[-1], 0)
+                return round((last_px / base - 1) * 100, 2) if base > 0 else None
+
+            def _risk_metrics(sym):
+                if sym not in close.columns:
+                    return {"ret_1m_pct":None,"ret_3m_pct":None,"ret_6m_pct":None,"ret_12m_pct":None,
+                            "volatility_3m_pct":None,"max_drawdown_12m_pct":None,"observations":0,
+                            "coverage_12m_pct":0}
+                series = close[sym].dropna()
+                rr = rets[sym].dropna() if sym in rets.columns else pd.Series(dtype="float64")
+                peak = series.tail(252).cummax()
+                dd = (series.tail(252) / peak - 1) * 100 if len(series) else pd.Series(dtype="float64")
+                return {
+                    "ret_1m_pct": _period_return(series, 21),
+                    "ret_3m_pct": _period_return(series, 63),
+                    "ret_6m_pct": _period_return(series, 126),
+                    "ret_12m_pct": _period_return(series, 252),
+                    "volatility_3m_pct": round(float(rr.tail(63).std() * math.sqrt(252) * 100), 2) if len(rr) >= 20 else None,
+                    "max_drawdown_12m_pct": round(float(dd.min()), 2) if len(series) >= 30 else None,
+                    "observations": int(len(series)),
+                    "coverage_12m_pct": round(min(100.0, len(series) / 252 * 100), 1),
+                }
+
+            risk_by_symbol = {sym: _risk_metrics(sym) for sym in symbols}
             corr_symbols = [s for s in symbols if s in rets.columns and rets[s].count() >= 30]
-            corr = rets[corr_symbols].tail(90).corr() if len(corr_symbols) >= 2 else None
             pairs = []
-            if corr is not None:
-                for i, a in enumerate(corr_symbols):
-                    for b in corr_symbols[i+1:]:
-                        c = _safe_float(corr.loc[a,b], 0)
-                        if c >= 0.75:
-                            pairs.append({"a":a,"b":b,"corr":round(c,2)})
-            pairs.sort(key=lambda x:x["corr"], reverse=True)
+            for i, a in enumerate(corr_symbols):
+                for b in corr_symbols[i+1:]:
+                    aligned = rets[[a,b]].dropna()
+                    corr_1m = _safe_float(aligned.tail(21)[a].corr(aligned.tail(21)[b]), float("nan")) if len(aligned.tail(21)) >= 15 else float("nan")
+                    corr_6m = _safe_float(aligned.tail(126)[a].corr(aligned.tail(126)[b]), float("nan")) if len(aligned.tail(126)) >= 60 else float("nan")
+                    # Keep pairs that are strongly correlated on either horizon, so
+                    # recent relationship changes are visible instead of hidden.
+                    if (math.isfinite(corr_1m) and corr_1m >= 0.75) or (math.isfinite(corr_6m) and corr_6m >= 0.75):
+                        ma, mb = risk_by_symbol[a], risk_by_symbol[b]
+                        pairs.append({
+                            "a":a,"b":b,
+                            "corr_1m":round(corr_1m,2) if math.isfinite(corr_1m) else None,
+                            "corr_6m":round(corr_6m,2) if math.isfinite(corr_6m) else None,
+                            "a_metrics":ma,"b_metrics":mb,
+                            "return_spread_pct":{
+                                "1m":round(ma["ret_1m_pct"]-mb["ret_1m_pct"],2) if ma["ret_1m_pct"] is not None and mb["ret_1m_pct"] is not None else None,
+                                "3m":round(ma["ret_3m_pct"]-mb["ret_3m_pct"],2) if ma["ret_3m_pct"] is not None and mb["ret_3m_pct"] is not None else None,
+                                "6m":round(ma["ret_6m_pct"]-mb["ret_6m_pct"],2) if ma["ret_6m_pct"] is not None and mb["ret_6m_pct"] is not None else None,
+                                "12m":round(ma["ret_12m_pct"]-mb["ret_12m_pct"],2) if ma["ret_12m_pct"] is not None and mb["ret_12m_pct"] is not None else None,
+                            }
+                        })
+            pairs.sort(key=lambda x:max(x.get("corr_1m") or -1, x.get("corr_6m") or -1), reverse=True)
             spy_beta = {}
             if "SPY" in rets.columns and rets["SPY"].count() >= 30:
                 sr = rets["SPY"].dropna().tail(90)
@@ -231,7 +276,7 @@ def portfolio_data():
                 "top5_weight_pct":sum(p["weight_pct"] for p in positions[:5]),
                 "simple_minus20_pct_dollars":-0.20*total_mv,"beta_minus20_estimate":beta_shock,
                 "beta_coverage_count":len(spy_beta)},
-                "technical":market,"high_correlations":pairs[:30],"warnings":warnings,
+                "technical":market,"risk_metrics":risk_by_symbol,"high_correlations":pairs[:30],"warnings":warnings,
                 "methodology":"Scenario estimates are first-order approximations, not forecasts. Beta defaults to 1 where history is unavailable. Leveraged/inverse ETFs, options, gaps, liquidity and changing correlations can cause materially different outcomes."
             }
         except Exception as ex:
@@ -245,7 +290,7 @@ def portfolio_data():
                 "invested_pct":invested,"cash_pct":(cash/equity*100 if equity else 0),
                 "unrealized_pl":sum(p["unrealized_pl"] for p in positions),"top5_weight_pct":sum(p["weight_pct"] for p in positions[:5]),
                 "simple_minus20_pct_dollars":-0.20*total_mv,"beta_minus20_estimate":-0.20*total_mv,"beta_coverage_count":0},
-                "technical":{},"high_correlations":[],"warnings":warnings,
+                "technical":{},"risk_metrics":{},"high_correlations":[],"warnings":warnings,
                 "methodology":"Scenario estimates are first-order approximations, not forecasts."
             }
         _CACHE.update({"at":now,"payload":payload})
