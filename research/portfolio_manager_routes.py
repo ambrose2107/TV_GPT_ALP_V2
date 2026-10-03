@@ -135,7 +135,7 @@ def portfolio_data():
             if not key or not secret:
                 raise RuntimeError("Alpaca market-data credentials are unavailable.")
             from datetime import timedelta
-            start_date = (datetime.now(timezone.utc) - timedelta(days=190)).date().isoformat()
+            start_date = (datetime.now(timezone.utc) - timedelta(days=430)).date().isoformat()
             data_url = "https://data.alpaca.markets/v2/stocks/bars"
             # Alpaca caps each page at 10,000 bars across symbols. Follow a
             # small bounded number of page tokens so 12M returns aren't silently
