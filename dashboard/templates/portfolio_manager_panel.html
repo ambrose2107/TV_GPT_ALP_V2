@@ -86,7 +86,7 @@
     </div>
 
     <div class="sec" style="margin-bottom:12px">
-      <div class="sec-hdr"><h3 style="font-size:13px">High-Correlation Pairs</h3><span class="pm-section-tools"><button type="button" class="btn btn-n btn-s pm-min-btn" onclick="pmToggle(this)">− Minimize</button></span><span class="sub">90D daily returns · ≥0.75 shown</span></div>
+      <div class="sec-hdr"><h3 style="font-size:13px">High-Correlation Pairs</h3><span class="pm-section-tools"><button type="button" class="btn btn-n btn-s pm-min-btn" onclick="pmToggle(this)">− Minimize</button></span><span class="sub">1M / 6M daily returns · ≥0.75 on either window</span></div>
       <div id="pm-corr" class="pm-table-wrap pm-corr-wrap"></div>
     </div>
 
@@ -204,9 +204,30 @@ function pmRender(d) {
     '<div style="padding:12px;color:#8b949e">Historical technical data unavailable for the current positions.</div>';
 
   const pairs=d.high_correlations||[];
-  $('pm-corr').innerHTML=pairs.length?'<table><thead><tr><th>Symbol A</th><th>Symbol B</th><th>90D Correlation</th><th>Risk interpretation</th></tr></thead><tbody>'+
-    pairs.slice(0,20).map(x=>'<tr><td><strong>'+pmEsc(x.a)+'</strong></td><td><strong>'+pmEsc(x.b)+'</strong></td><td>'+Number(x.corr).toFixed(2)+'</td><td style="color:#8b949e">Similar daily-return behavior; combined exposure may be less diversified than position count suggests.</td></tr>').join('')+
-    '</tbody></table>':'<div style="padding:12px;color:#8b949e">No pairs above the 0.75 threshold with sufficient history.</div>';
+  const fmtMetric=(v)=>v===null||v===undefined||!isFinite(Number(v))?'—':pmPct(v);
+  const corrCell=(v)=>v===null||v===undefined||!isFinite(Number(v))?'—':Number(v).toFixed(2);
+  $('pm-corr').innerHTML=pairs.length?'<table><thead><tr>'+
+    '<th>Pair</th><th>1M Corr.</th><th>6M Corr.</th>'+
+    '<th>A 1M</th><th>B 1M</th><th>Spread 1M</th>'+
+    '<th>A 3M</th><th>B 3M</th><th>Spread 3M</th>'+
+    '<th>A 6M</th><th>B 6M</th><th>Spread 6M</th>'+
+    '<th>A 12M</th><th>B 12M</th><th>Spread 12M</th>'+
+    '<th>A Vol.</th><th>B Vol.</th><th>A Max DD</th><th>B Max DD</th><th>Coverage A/B</th></tr></thead><tbody>'+
+    pairs.slice(0,30).map(x=>{
+      const a=x.a_metrics||{}, b=x.b_metrics||{}, sp=x.return_spread_pct||{};
+      const spread=(v)=>'<span class="'+(v==null?'':Number(v)>0?'g':Number(v)<0?'r':'')+'">'+fmtMetric(v)+'</span>';
+      return '<tr><td><strong>'+pmEsc(x.a)+' / '+pmEsc(x.b)+'</strong></td>'+
+        '<td>'+corrCell(x.corr_1m)+'</td><td>'+corrCell(x.corr_6m)+'</td>'+
+        '<td>'+fmtMetric(a.ret_1m_pct)+'</td><td>'+fmtMetric(b.ret_1m_pct)+'</td><td>'+spread(sp['1m'])+'</td>'+
+        '<td>'+fmtMetric(a.ret_3m_pct)+'</td><td>'+fmtMetric(b.ret_3m_pct)+'</td><td>'+spread(sp['3m'])+'</td>'+
+        '<td>'+fmtMetric(a.ret_6m_pct)+'</td><td>'+fmtMetric(b.ret_6m_pct)+'</td><td>'+spread(sp['6m'])+'</td>'+
+        '<td>'+fmtMetric(a.ret_12m_pct)+'</td><td>'+fmtMetric(b.ret_12m_pct)+'</td><td>'+spread(sp['12m'])+'</td>'+
+        '<td>'+fmtMetric(a.volatility_3m_pct)+'</td><td>'+fmtMetric(b.volatility_3m_pct)+'</td>'+
+        '<td>'+fmtMetric(a.max_drawdown_12m_pct)+'</td><td>'+fmtMetric(b.max_drawdown_12m_pct)+'</td>'+
+        '<td>'+(a.coverage_12m_pct==null?'—':a.coverage_12m_pct+'%')+' / '+(b.coverage_12m_pct==null?'—':b.coverage_12m_pct+'%')+'</td></tr>';
+    }).join('')+
+    '</tbody></table><div style="padding:8px;color:#8b949e;font-size:10px">Returns use adjusted daily closes: 1M ≈ 21, 3M ≈ 63, 6M ≈ 126, 12M ≈ 252 trading days. Spread = A return minus B return; positive favors A over that period, not necessarily on a risk-adjusted basis. Volatility is annualized from recent daily returns; max drawdown is the worst peak-to-trough decline within the available trailing year. “—” means insufficient data.</div>':
+    '<div style="padding:12px;color:#8b949e">No pairs met the 0.75 correlation threshold on either 1M or 6M window, or history was insufficient.</div>';
 
   const sel=$('pm-plan-sym');
   if(sel) sel.innerHTML=pos.map(p=>'<option value="'+pmEsc(p.symbol)+'">'+pmEsc(p.symbol)+'</option>').join('');
