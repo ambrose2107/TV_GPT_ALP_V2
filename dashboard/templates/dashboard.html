@@ -1076,6 +1076,16 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
     <div id="bt-substatus" class="sub" style="margin-top:7px">AI Crash Early-Warning Terminal</div>
   </div>
 <!-- AI CRASH EARLY-WARNING TERMINAL -->
+<style>
+ #ai-crash-terminal .ac-section{border:1px solid #30363d;border-radius:9px;overflow:hidden;min-width:0}
+ #ai-crash-terminal .ac-section .sec-hdr{padding:10px 12px;background:rgba(255,255,255,.02)}
+ #ai-crash-terminal .ac-table-wrap{overflow:auto;max-width:100%;max-height:360px}
+ #ai-crash-terminal .ac-table{width:100%;border-collapse:collapse;font-size:11px;min-width:660px}
+ #ai-crash-terminal .ac-table th{position:sticky;top:0;background:#161b22;z-index:1;text-align:left;color:#8b949e;font-weight:600}
+ #ai-crash-terminal .ac-table th,#ai-crash-terminal .ac-table td{padding:8px 9px;border-bottom:1px solid #21262d;vertical-align:top}
+ #ai-crash-terminal .ac-note{font-size:11px;line-height:1.55;color:#8b949e;padding:10px 12px}
+ @media(max-width:700px){#ai-crash-terminal #ai-crash-v2{grid-template-columns:repeat(2,minmax(0,1fr))!important}#ai-crash-terminal .ac-table{min-width:600px}}
+ </style>
 <div class="sec" id="ai-crash-terminal" style="margin-bottom:14px">
   <div class="sec-hdr">
     <div><h2>🧠 AI Crash Early-Warning Terminal</h2><span class="sub">Fundamentals → financing → credit → liquidity → breadth → macro</span></div>
@@ -1093,10 +1103,21 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
       <div id="ai-crash-v2" style="padding:10px 12px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:11px"></div>
     </div>
     <div style="display:grid;grid-template-columns:1.15fr .85fr;gap:12px">
-      <div class="sec" style="margin:0"><div class="sec-hdr"><h3 style="font-size:13px">Risk History — 12M</h3><span class="sub">Native SVG</span></div><div id="ai-crash-chart" style="height:190px;padding:8px 10px"></div></div>
+      <div class="sec" style="margin:0"><div class="sec-hdr"><h3 style="font-size:13px">Recent Risk Score — 12M</h3><span class="sub">Not a historical backtest</span></div><div id="ai-crash-chart" style="height:190px;padding:8px 10px"></div></div>
       <div class="sec" style="margin:0"><div class="sec-hdr"><h3 style="font-size:13px">Factor Attribution</h3></div><div id="ai-crash-factors" style="padding:8px 12px"></div></div>
     </div>
-    <div class="sec" style="margin:12px 0 0"><div class="sec-hdr"><h3 style="font-size:13px">Institutional Risk Sheet</h3><span class="sub">Transparent proxies — not a crash-date predictor</span></div><div id="ai-crash-sheet" style="overflow-x:auto"></div></div>
+    <div class="ac-section" style="margin:12px 0 0">
+   <div class="sec-hdr"><h3 style="font-size:13px">Historical Crash Replay</h3><span class="sub">Time-varying broad-market indicators · exploratory threshold</span></div>
+   <div id="ai-crash-replay" class="ac-table-wrap"></div>
+   <div id="ai-crash-replay-note" class="ac-note">Checking whether a broad-market risk proxy crossed its warning threshold before historical 20% drawdowns. This is not an AI-specific model or a calibrated probability.</div>
+ </div>
+ <div class="ac-section" style="margin:12px 0 0">
+   <div class="sec-hdr"><h3 style="font-size:13px">Institutional Risk Sheet</h3><span class="sub">Transparent proxies · not a crash-date predictor</span></div>
+   <div id="ai-crash-sheet" class="ac-table-wrap"></div>
+ </div>
+ <div class="ac-note" style="margin-top:8px;border:1px solid #30363d;border-radius:8px">
+   <strong style="color:#c9d1d9">How to read this terminal:</strong> the live 0–100 score is a hand-weighted risk index, not a crash probability. Recent risk history is illustrative; the replay is the separate historical check. A warning can arrive late or produce false alarms. Read credit deterioration, breadth, volatility and financing evidence together, and review data coverage before acting.
+ </div>
   </div>
 </div>
 
@@ -4174,6 +4195,22 @@ async function loadAICrashDashboard(force){
       ['Confirmed Blocks',v2.confirmed_blocks==null?'—':v2.confirmed_blocks+'/4']
     ].map(x=>'<div class="card" style="padding:8px 10px"><div class="lbl">'+x[0]+'</div><div style="font-weight:700;margin-top:4px">'+x[1]+'</div></div>').join('');
     drawAICrashHistory(d.history||[]);
+    const replay=d.historical_replay||{}, replayRows=replay.episodes||[];
+    const replayEl=$('ai-crash-replay'), replayNote=$('ai-crash-replay-note');
+    if(replayEl){
+      if(!replay.available){
+        replayEl.innerHTML='<div style="padding:12px;color:#d29922">Historical replay unavailable: '+String(replay.warning||'long-run data unavailable').replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]))+'</div>';
+      } else {
+        replayEl.innerHTML='<table class="ac-table"><thead><tr><th>Episode</th><th>Peak</th><th>−20% date</th><th>Score at peak</th><th>Max pre-breach</th><th>First ≥60</th><th>Lead days</th><th>Result</th></tr></thead><tbody>'+
+          replayRows.map(r=>'<tr><td><strong>'+String(r.episode||'—')+'</strong></td><td>'+(r.peak_date||'—')+'</td><td>'+(r['20pct_date']||'—')+'</td><td>'+(r.score_at_peak==null?'—':Number(r.score_at_peak).toFixed(1))+'</td><td>'+(r.max_score_pre_breach==null?'—':Number(r.max_score_pre_breach).toFixed(1))+'</td><td>'+(r.first_signal_date||'—')+'</td><td>'+(r.lead_days==null?'—':r.lead_days)+'</td><td>'+String(r.status||'—')+'</td></tr>').join('')+
+          '</tbody></table>';
+      }
+    }
+    if(replayNote){
+      const span=replay.coverage_start&&replay.coverage_end?'Data coverage: '+replay.coverage_start+' to '+replay.coverage_end+'. ':'';
+      replayNote.textContent=span+(replay.method||'Historical score uses only indicators available in the historical period.')+' '+(replay.warning||'Threshold ≥60 is exploratory, not calibrated; this is retrospective and not out-of-sample validation.');
+    }
+
     $('ai-crash-factors').innerHTML=(d.components||[]).map(f=>'<div style="margin:7px 0"><div style="display:flex;justify-content:space-between;font-size:11px"><span>'+f.name+'<small style="color:#8b949e"> · '+f.label+'</small></span><strong>'+Number(f.value).toFixed(1)+'</strong></div><div style="height:6px;background:#21262d;border-radius:4px"><div style="width:'+Math.max(0,Math.min(100,Number(f.value)))+'%;height:100%;background:'+(Number(f.value)>=70?'#f85149':Number(f.value)>=50?'#d29922':'#3fb950')+'"></div></div></div>').join('');
     const x=d.details||{},fund=d.fundamentals||{},rows=[['HY OAS',x.hy_oas,'%',x.hy_oas_20d_change,'20d Δ'],['NFCI',x.nfci,'',null,''],['10Y real yield',x.real10y,'%',x.real10y_60d_change,'60d Δ'],['VIX',x.vix,'',null,''],['Sahm',x.sahm,'pp',null,''],['Capex / revenue proxy',x.capex_revenue_pct,'%',x.capex_growth_gap_pct,'capex growth − revenue growth'],['Debt growth gap',x.debt_growth_gap_pct,'pp',null,'debt growth − revenue growth']];
     $('ai-crash-sheet').innerHTML='<table><thead><tr><th>Metric</th><th>Latest</th><th>Unit</th><th>Change / Gap</th><th>Interpretation</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+r[0]+'</td><td>'+(r[1]==null?'—':Number(r[1]).toFixed(2))+'</td><td>'+r[2]+'</td><td>'+(r[3]==null?'—':Number(r[3]).toFixed(2))+'</td><td style="color:#8b949e">'+r[4]+'</td></tr>').join('')+'</tbody></table><div style="padding:9px 0;color:#8b949e;font-size:10px">Coverage: '+((fund.rows||[]).length)+' hyperscaler financial statements. Capex is a company-level proxy, not pure AI capex.</div>';
