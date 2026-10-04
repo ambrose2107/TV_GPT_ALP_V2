@@ -1072,6 +1072,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
       <button class="btn btn-b btn-s bt-stab on" onclick="btSub('crash',0)">🧠 AI Crash</button>
       <button class="btn btn-n btn-s bt-stab" onclick="btSub('strategy',1)">🧪 Strategy Backtest</button>
       <button class="btn btn-n btn-s bt-stab" onclick="btSub('portfolio',2)">🛡️ Portfolio Manager</button>
+      <button class="btn btn-n btn-s bt-stab" onclick="btSub('early-signal',3)">🔎 Early-Signal Scanner</button>
     </div>
     <div id="bt-substatus" class="sub" style="margin-top:7px">AI Crash Early-Warning Terminal</div>
   </div>
@@ -1219,6 +1220,49 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
   </div>
 
 
+  <div id="bt-early-signal-pane" style="display:none">
+    <div class="sec">
+      <div class="sec-hdr">
+        <div><h2>🔎 Early-Signal Stock Scanner</h2><span class="sub">Transparent 0–100 research score · CSV input only · no broker, live feed, or automatic trading</span></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-n btn-s" onclick="earlySignalLoadExample()">Load example</button>
+          <button class="btn btn-n btn-s" onclick="earlySignalRun()">▶ Score candidates</button>
+          <button class="btn btn-g btn-s" onclick="earlySignalExport('watch')">⇩ Watchlist CSV</button>
+          <button class="btn btn-n btn-s" onclick="earlySignalExport('all')">⇩ All scores CSV</button>
+        </div>
+      </div>
+      <div style="padding:12px">
+        <div style="padding:10px 12px;margin-bottom:12px;border:1px solid #66521b;background:rgba(158,106,3,.10);border-radius:7px;color:#e3c778;font-size:11px;line-height:1.55">
+          <b>Research only:</b> a high score sorts candidates for manual review; it does not predict returns. Volume and attention spikes can reflect hype or manipulation, and news counts do not measure news quality. Confirm every result at the original source.
+        </div>
+        <div class="row" style="align-items:center;margin-bottom:8px">
+          <label style="font-size:11px;color:#8b949e">Upload CSV <input id="early-signal-file" type="file" accept=".csv,text/csv" style="max-width:230px;margin-left:6px" onchange="earlySignalReadFile(this)"></label>
+          <label style="font-size:11px;color:#8b949e">Minimum score <input id="early-signal-threshold" type="number" min="0" max="100" value="50" style="width:70px;margin-left:5px"></label>
+          <label style="font-size:11px;color:#8b949e">Max watchlist <input id="early-signal-topn" type="number" min="1" max="100" value="5" style="width:65px;margin-left:5px"></label>
+        </div>
+        <div class="row" style="align-items:center;margin-bottom:8px">
+          <span class="sub">Weights (should total 100)</span>
+          <label class="sub">Volume <input id="early-signal-w-volume" type="number" min="0" max="100" value="30" style="width:58px"></label>
+          <label class="sub">Momentum <input id="early-signal-w-momentum" type="number" min="0" max="100" value="25" style="width:58px"></label>
+          <label class="sub">News <input id="early-signal-w-news" type="number" min="0" max="100" value="25" style="width:58px"></label>
+          <label class="sub">Attention <input id="early-signal-w-attention" type="number" min="0" max="100" value="20" style="width:58px"></label>
+        </div>
+        <div class="sub" style="margin:8px 0 5px">CSV columns required: candidate, volume_today, volume_avg_20d, price_change_5d_pct, news_items_7d, mentions_7d, mentions_avg_7d. Paste your own provider-exported data below; the scanner does not fetch data itself.</div>
+        <textarea id="early-signal-csv" spellcheck="false" style="width:100%;min-height:185px;resize:vertical;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:10px;font:11px/1.5 monospace" aria-label="CSV research data"></textarea>
+        <div id="early-signal-status" class="sub" style="margin:9px 0">Load a permitted-source CSV or use the fictional example data, then score candidates.</div>
+      </div>
+    </div>
+    <div class="sec" style="margin-top:12px">
+      <div class="sec-hdr"><h3>Ranked research candidates</h3><span class="sub">Sorted by transparent score · every row requires human review</span></div>
+      <div style="overflow-x:auto">
+        <table id="early-signal-table" style="width:100%;min-width:700px">
+          <thead><tr><th>Rank</th><th>Candidate</th><th>Total / 100</th><th>Volume / weight</th><th>Momentum / weight</th><th>News / weight</th><th>Attention / weight</th><th>Status</th></tr></thead>
+          <tbody id="early-signal-results"><tr><td colspan="8" style="padding:18px;color:#8b949e;text-align:center">No scan run yet.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="sub" style="padding:10px 2px;line-height:1.6">Scoring: volume reaches full points at 3× its 20-day average; momentum at +10% over 5 days; news at 5 items in 7 days; attention at 3× its usual rate. Intermediate values scale linearly and clamp to 0–100%. These are educational defaults, not validated predictive weights. Example rows are fictional.</div>
+  </div>
   <div id="bt-portfolio-pane" style="display:none">
     {% include 'portfolio_manager_panel.html' %}
   </div>
@@ -1324,7 +1368,8 @@ function btSub(name, idx) {
   const panes = {
     crash: $('ai-crash-terminal'),
     strategy: $('bt-strategy-pane'),
-    portfolio: $('bt-portfolio-pane')
+    portfolio: $('bt-portfolio-pane'),
+    'early-signal': $('bt-early-signal-pane')
   };
   Object.keys(panes).forEach(k => { if(panes[k]) panes[k].style.display = k===name ? '' : 'none'; });
   document.querySelectorAll('#bt-subnav .bt-stab').forEach((b,i) => {
@@ -1332,12 +1377,77 @@ function btSub(name, idx) {
     b.classList.toggle('btn-b', i===idx);
     b.classList.toggle('btn-n', i!==idx);
   });
-  const labels={crash:'AI Crash Early-Warning Terminal',strategy:'Strategy Backtest and comparison engine',portfolio:'Institutional portfolio risk and profit-taking review'};
+  const labels={crash:'AI Crash Early-Warning Terminal',strategy:'Strategy Backtest and comparison engine',portfolio:'Institutional portfolio risk and profit-taking review','early-signal':'Research-only volume, momentum, news and attention scanner'};
   if($('bt-substatus')) $('bt-substatus').textContent=labels[name]||'';
   if(name==='portfolio' && !pmLastData) pmLoad(false);
   if(name==='crash') loadAICrashDashboard(false);
   if(name==='strategy') loadBacktestStrategies();
 }
+
+// ── EARLY-SIGNAL STOCK SCANNER (client-side, research-only) ──────────────────
+const EARLY_SIGNAL_EXAMPLE = 'candidate,volume_today,volume_avg_20d,price_change_5d_pct,news_items_7d,mentions_7d,mentions_avg_7d\nCandidate A,2400000,800000,6.5,4,310,120\nCandidate B,950000,900000,1.2,1,80,75\nCandidate C,1800000,600000,-2.0,6,520,140\nCandidate D,400000,500000,0.4,0,20,25\nCandidate E,1300000,650000,3.1,2,150,130';
+let earlySignalRows = [];
+let earlySignalWatch = [];
+function earlySignalLoadExample(){ $('early-signal-csv').value=EARLY_SIGNAL_EXAMPLE; $('early-signal-status').textContent='Fictional example loaded. These are not real securities or market observations.'; }
+function earlySignalReadFile(input){
+  const file=input && input.files && input.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=()=>{ $('early-signal-csv').value=String(reader.result||''); $('early-signal-status').textContent='Loaded '+file.name+'. Review the columns and click Score candidates.'; };
+  reader.onerror=()=>{ $('early-signal-status').textContent='Could not read that file. Try another CSV.'; };
+  reader.readAsText(file);
+}
+function earlySignalParseCSV(text){
+  const rows=[]; let row=[], cell='', quoted=false; text=String(text||'').replace(/^\uFEFF/,'');
+  for(let i=0;i<text.length;i++){ const c=text[i];
+    if(c==='"' && quoted && text[i+1]==='"'){cell+='"';i++;}
+    else if(c==='"'){quoted=!quoted;}
+    else if(c===','&&!quoted){row.push(cell.trim());cell='';}
+    else if((c==='\n'||c==='\r')&&!quoted){if(c==='\r'&&text[i+1]==='\n')i++;row.push(cell.trim());if(row.some(v=>v!==''))rows.push(row);row=[];cell='';}
+    else cell+=c;
+  }
+  if(cell!==''||row.length){row.push(cell.trim());if(row.some(v=>v!==''))rows.push(row);}
+  if(rows.length<2) throw new Error('CSV needs a header row and at least one data row.');
+  const headers=rows[0].map(h=>h.trim().toLowerCase());
+  return rows.slice(1).map((r,idx)=>{const o={};headers.forEach((h,i)=>o[h]=r[i]===undefined?'':r[i]);o._row=idx+2;return o;});
+}
+function earlySignalRun(){
+  try{
+    const required=['candidate','volume_today','volume_avg_20d','price_change_5d_pct','news_items_7d','mentions_7d','mentions_avg_7d'];
+    const parsed=earlySignalParseCSV($('early-signal-csv').value);
+    const headers=Object.keys(parsed[0]||{}); const missing=required.filter(k=>!headers.includes(k));
+    if(missing.length) throw new Error('Missing required CSV columns: '+missing.join(', '));
+    const weights={volume:Number($('early-signal-w-volume').value),momentum:Number($('early-signal-w-momentum').value),news:Number($('early-signal-w-news').value),attention:Number($('early-signal-w-attention').value)};
+    if(Object.values(weights).some(v=>!Number.isFinite(v)||v<0)||Math.abs(Object.values(weights).reduce((a,b)=>a+b,0)-100)>0.001) throw new Error('Weights must be non-negative and total exactly 100.');
+    const num=(r,k)=>{const n=Number(r[k]);if(r[k]===undefined||String(r[k]).trim()===''||!Number.isFinite(n))throw new Error('Invalid numeric value for '+k+' on CSV row '+r._row+'.');return n;};
+    const clamp=x=>Math.max(0,Math.min(1,x));
+    earlySignalRows=parsed.map(r=>{
+      if(!String(r.candidate||'').trim())throw new Error('Empty candidate on CSV row '+r._row+'.');
+      const vol=clamp((num(r,'volume_today')/Math.max(num(r,'volume_avg_20d'),1)-1)/2);
+      const mom=clamp(num(r,'price_change_5d_pct')/10);
+      const news=clamp(num(r,'news_items_7d')/5);
+      const att=clamp((num(r,'mentions_7d')/Math.max(num(r,'mentions_avg_7d'),1)-1)/2);
+      const parts={volume:Math.round(vol*weights.volume*10)/10,momentum:Math.round(mom*weights.momentum*10)/10,news:Math.round(news*weights.news*10)/10,attention:Math.round(att*weights.attention*10)/10};
+      return {candidate:String(r.candidate).trim(),...parts,total:Math.round((parts.volume+parts.momentum+parts.news+parts.attention)*10)/10};
+    }).sort((a,b)=>b.total-a.total);
+    const threshold=Math.max(0,Math.min(100,Number($('early-signal-threshold').value)||0));
+    const topn=Math.max(1,Math.min(100,Math.floor(Number($('early-signal-topn').value)||5)));
+    earlySignalWatch=earlySignalRows.filter(r=>r.total>=threshold).slice(0,topn);
+    const watchSet=new Set(earlySignalWatch.map(r=>r.candidate));
+    $('early-signal-results').innerHTML=earlySignalRows.map((r,i)=>'<tr><td>'+(i+1)+'</td><td>'+earlySignalEscape(r.candidate)+'</td><td><b>'+r.total.toFixed(1)+'</b></td><td>'+r.volume.toFixed(1)+' / '+weights.volume+'</td><td>'+r.momentum.toFixed(1)+' / '+weights.momentum+'</td><td>'+r.news.toFixed(1)+' / '+weights.news+'</td><td>'+r.attention.toFixed(1)+' / '+weights.attention+'</td><td>'+(watchSet.has(r.candidate)?'<span style="color:#e3c778">REVIEW REQUIRED</span>':'<span style="color:#8b949e">Below watchlist criteria</span>')+'</td></tr>').join('');
+    $('early-signal-status').textContent='Scored '+earlySignalRows.length+' candidates. '+earlySignalWatch.length+' passed score ≥ '+threshold+' (maximum '+topn+'). Data is descriptive; verify at source.';
+  }catch(e){$('early-signal-status').textContent='Scanner error: '+(e&&e.message?e.message:String(e));}
+}
+function earlySignalEscape(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function earlySignalExport(mode){
+  if(!earlySignalRows.length){$('early-signal-status').textContent='Run Score candidates before exporting.';return;}
+  const list=mode==='watch'?earlySignalWatch:earlySignalRows; const now=new Date().toISOString().slice(0,10);
+  const quote=v=>'"'+String(v).replace(/"/g,'""')+'"';
+  const lines=[['date','rank','candidate','total','volume','momentum','news','attention','status'].join(',')];
+  list.forEach((r,i)=>lines.push([now,i+1,quote(r.candidate),r.total,r.volume,r.momentum,r.news,r.attention,quote(mode==='watch'?'REVIEW REQUIRED':'SCORED - REVIEW REQUIRED')].join(',')));
+  const blob=new Blob([lines.join('\r\n')+'\r\n'],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=mode==='watch'?'early_signal_watchlist.csv':'early_signal_all_scores.csv';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+}
+earlySignalLoadExample();
 
 // ── ACCOUNT ─────────────────────────────────────────────────────────────────
 async function loadAccount() {
