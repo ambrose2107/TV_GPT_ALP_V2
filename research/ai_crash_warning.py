@@ -324,14 +324,54 @@ def _historical_crash_replay(f):
         return cached
     try:
         from concurrent.futures import ThreadPoolExecutor
+        source_map={}
         def _load_long(sym):
-            chart=yahoo_get_chart(sym,interval="1d",period="max")
-            if not chart or not chart.get("timestamps") or not chart.get("close"):
-                raise RuntimeError("Long-run Yahoo history unavailable for "+sym)
-            ix=pd.to_datetime(chart["timestamps"],unit="s",utc=True,errors="coerce").tz_localize(None).normalize()
-            q=pd.Series(pd.to_numeric(chart["close"],errors="coerce"),index=ix).dropna()
-            q=q[~q.index.isna()]
-            return sym,q[~q.index.duplicated(keep="last")]
+            # Yahoo max-range history can fail on hosted workers despite live quotes.
+            try:
+                chart=yahoo_get_chart(sym,interval="1d",period="max")
+                if chart and chart.get("timestamps") and chart.get("close"):
+                    ix=pd.to_datetime(chart["timestamps"],unit="s",utc=True,errors="coerce").tz_localize(None).normalize()
+                    q=pd.Series(pd.to_numeric(chart["close"],errors="coerce"),index=ix).dropna()
+                    q=q[~q.index.isna()]
+                    q=q[~q.index.duplicated(keep="last")]
+                    if len(q)>=250:
+                        source_map[sym]="Yahoo Finance max history"
+                        return sym,q
+            except Exception as exc:
+                logger.warning("Yahoo long history failed for %s: %s",sym,exc)
+            # Independent fallbacks: Stooq daily history for SPY/QQQ, CBOE official VIX CSV.
+            try:
+                if sym in ("SPY","QQQ"):
+                    response=requests.get("https://stooq.com/q/d/l/",params={"s":sym.lower()+".us","i":"d"},
+                        headers={"User-Agent":"Mozilla/5.0"},timeout=18)
+                    response.raise_for_status()
+                    d=pd.read_csv(io.StringIO(response.text))
+                    if {"Date","Close"}.issubset(d.columns):
+                        ix=pd.to_datetime(d["Date"],errors="coerce").dt.normalize()
+                        q=pd.Series(pd.to_numeric(d["Close"],errors="coerce").to_numpy(),index=ix).dropna()
+                        q=q[~q.index.isna()]
+                        q=q[~q.index.duplicated(keep="last")].sort_index()
+                        if len(q)>=250:
+                            source_map[sym]="Stooq daily history fallback"
+                            return sym,q
+                else:
+                    response=requests.get("https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
+                        headers={"User-Agent":"Mozilla/5.0"},timeout=18)
+                    response.raise_for_status()
+                    d=pd.read_csv(io.StringIO(response.text))
+                    dc=next((c for c in d.columns if c.strip().lower()=="date"),None)
+                    cc=next((c for c in d.columns if c.strip().lower() in ("close","vix close")),None)
+                    if dc and cc:
+                        ix=pd.to_datetime(d[dc],errors="coerce").dt.normalize()
+                        q=pd.Series(pd.to_numeric(d[cc],errors="coerce").to_numpy(),index=ix).dropna()
+                        q=q[~q.index.isna()]
+                        q=q[~q.index.duplicated(keep="last")].sort_index()
+                        if len(q)>=250:
+                            source_map[sym]="CBOE official VIX history fallback"
+                            return sym,q
+            except Exception as exc:
+                logger.warning("Independent long-history fallback failed for %s: %s",sym,exc)
+            raise RuntimeError("Long-run history unavailable for "+sym+" (Yahoo and independent fallback failed)")
         with ThreadPoolExecutor(max_workers=3) as pool:
             series=dict(pool.map(_load_long,("SPY","QQQ","^VIX")))
         p=pd.concat(series,axis=1).sort_index()
@@ -393,10 +433,11 @@ def _historical_crash_replay(f):
               "lead_days":int((breach_date-first).days) if first is not None else None,
               "status":"Signal before -20% threshold" if first is not None else "No 60+ signal in 90D pre-breach window"
             })
-        payload={"available":True,"episodes":results,"method":"Time-varying broad-market proxy: HY OAS level/change, VIX, QQQ 6M momentum, SPY 1Y drawdown and NFCI. 60/100 is an exploratory threshold, not a calibrated probability.",
+        payload={"available":True,"episodes":results,"method":"Time-varying broad-US-market proxy: high-yield credit spreads, official VIX, QQQ 6M momentum, SPY 1Y drawdown and NFCI. 60/100 is exploratory, not calibrated.",
           "coverage_start":p.index.min().strftime("%Y-%m-%d") if not p.empty else None,
           "coverage_end":p.index.max().strftime("%Y-%m-%d") if not p.empty else None,
-          "threshold":60,"warning":"This is a retrospective episode replay, not a fully out-of-sample validation. It tests broad-market crash stress, not AI-specific crashes."}
+          "data_sources":source_map,"observations":int(len(p)),
+          "threshold":60,"warning":"Broad US market stress replay, not an AI-specific model or calibrated crash probability. Retrospective threshold check, not out-of-sample validation."}
     except Exception as exc:
         logger.warning("Historical crash replay unavailable: %s",exc)
         payload={"available":False,"episodes":[],"warning":"Historical replay unavailable: "+str(exc)[:220],
@@ -433,7 +474,14 @@ def build_dashboard(force=False):
           "fundamental_companies_covered":fundamental_count,"fundamental_companies_expected":len(HYPERSCALERS),
           "macro_series_covered":len(f)-len(missing_macro),"macro_series_expected":len(FRED),
           "warnings":quality_warnings}
+        # Separate broad-US-market risk from AI-specific concentration/funding risk.
+        market_weights={"Credit":.27,"Liquidity":.14,"Market Breadth":.22,"Real Rates":.14,"Volatility":.10,"Recession":.13}
+        market_score=_clip(sum(comps[k]*w for k,w in market_weights.items()))
+        market_drivers=[k for k,v in sorted(((k,comps[k]) for k in market_weights),key=lambda x:x[1],reverse=True)[:3] if v>=40]
         payload={"as_of":datetime.now(timezone.utc).isoformat(),"score":s,"regime":_regime(s),"drivers":drivers,
+          "us_market":{"score":round(market_score,1),"regime":_regime(market_score),"drivers":market_drivers,
+            "components":{k:round(comps[k],1) for k in market_weights},
+            "method":"Separate broad-market index using credit, liquidity, breadth, real rates, volatility and recession factors; not a calibrated probability."},
           "components":factors,"confirmations":{"credit":comps["Credit"]>=70,"recession":comps["Recession"]>=70,
           "breadth":comps["Market Breadth"]>=70,"liquidity":comps["Liquidity"]>=70},
           "details":core["details"],"fundamentals":fund,"data_quality":data_quality,"history":hist,
