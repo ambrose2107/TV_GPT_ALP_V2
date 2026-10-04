@@ -1074,7 +1074,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
       <button class="btn btn-n btn-s bt-stab" onclick="btSub('portfolio',2)">🛡️ Portfolio Manager</button>
       <button class="btn btn-n btn-s bt-stab" onclick="btSub('early-signal',3)">🔎 Early-Signal Scanner</button>
     </div>
-    <div id="bt-substatus" class="sub" style="margin-top:7px">AI Crash Early-Warning Terminal</div>
+    <div id="bt-substatus" class="sub" style="margin-top:7px">US Market & AI Crash Early-Warning Terminal</div>
   </div>
 <!-- AI CRASH EARLY-WARNING TERMINAL -->
 <style>
@@ -1113,7 +1113,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
  </style>
 <div class="sec" id="ai-crash-terminal" style="margin-bottom:14px">
   <div class="sec-hdr">
-    <div><h2>🧠 AI Crash Early-Warning Terminal</h2><span class="sub">Fundamentals → financing → credit → liquidity → breadth → macro</span></div>
+    <div><h2>🌐 US Market & AI Crash Early-Warning Terminal</h2><span class="sub">Broad-market crash risk plus AI concentration and financing stress</span></div>
     <div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap"><span id="ai-crash-updated" class="sub"></span><button class="btn btn-n btn-s" onclick="exportAICrashCSV()">⇩ Export CSV</button><button class="btn btn-n btn-s" onclick="loadAICrashDashboard(true)">↻ Refresh</button></div>
   </div>
   <div id="ai-crash-loading" style="padding:18px;color:#8b949e">Loading risk monitor…</div>
@@ -4346,7 +4346,9 @@ async function loadAICrashDashboard(force){
     }
     if(replayNote){
       const span=replay.coverage_start&&replay.coverage_end?'Data coverage: '+replay.coverage_start+' to '+replay.coverage_end+'. ':'';
-      replayNote.textContent=span+(replay.method||'Historical score uses only indicators available in the historical period.')+' '+(replay.warning||'Threshold ≥60 is exploratory, not calibrated; this is retrospective and not out-of-sample validation.');
+      const sources=replay.data_sources?' Long-run sources: '+Object.entries(replay.data_sources).map(([k,v])=>k+'='+v).join('; ')+'.':'';
+      const observations=replay.observations?' Observations: '+replay.observations+'.':'';
+      replayNote.textContent=span+(replay.method||'Historical score uses only indicators available in the historical period.')+sources+observations+' '+(replay.warning||'Threshold ≥60 is exploratory, not calibrated; this is retrospective and not out-of-sample validation.');
     }
 
     $('ai-crash-factors').innerHTML=(d.components||[]).map(f=>'<div style="margin:7px 0"><div style="display:flex;justify-content:space-between;font-size:11px"><span>'+f.name+'<small style="color:#8b949e"> · '+f.label+'</small></span><strong>'+Number(f.value).toFixed(1)+'</strong></div><div style="height:6px;background:#21262d;border-radius:4px"><div style="width:'+Math.max(0,Math.min(100,Number(f.value)))+'%;height:100%;background:'+(Number(f.value)>=70?'#f85149':Number(f.value)>=50?'#d29922':'#3fb950')+'"></div></div></div>').join('');
