@@ -17,7 +17,9 @@ from core.logger import get_logger
 early_signal_bp = Blueprint("early_signal", __name__)
 logger = get_logger(__name__)
 _CACHE = {"at": 0.0, "payload": None}
+_NEWS_CACHE = {}
 CACHE_SECONDS = 900
+NEWS_CACHE_SECONDS = 1800
 TIMEOUT_SECONDS = 18
 
 # Curated liquid names across broad market, technology, semiconductors, AI
@@ -39,6 +41,110 @@ def _credentials():
     secret = (getattr(Config, "ALPACA_SECRET_KEY", "") or os.environ.get("APCA_API_SECRET_KEY", "")
               or os.environ.get("ALPACA_SECRET", ""))
     return key, secret
+
+def _marketaux_token():
+    return (os.environ.get("MARKETAUX_API_TOKEN", "")
+            or os.environ.get("MARKETAUX_API_KEY", "")
+            or "").strip()
+
+def _marketaux_news(symbol):
+    """Fetch a tiny, cached news/sentiment feed for one ticker.
+    Kept separate from the scanner ranking so the free API quota is not
+    consumed on every automatic scan refresh.
+    """
+    symbol = (symbol or "").strip().upper()
+    if not symbol:
+        return {"error": "Ticker is required."}
+    token = _marketaux_token()
+    if not token:
+        return {"configured": False, "symbol": symbol, "articles": [],
+                "message": "Set MARKETAUX_API_TOKEN in Render to enable news and sentiment."}
+
+    now = time.time()
+    cached = _NEWS_CACHE.get(symbol)
+    if cached and now - cached["at"] < NEWS_CACHE_SECONDS:
+        payload = dict(cached["payload"])
+        payload["cached"] = True
+        return payload
+
+    params = {
+        "api_token": token,
+        "symbols": symbol,
+        "filter_entities": "true",
+        "language": "en",
+        "limit": 3,
+        "published_after": (datetime.now(timezone.utc) - timedelta(hours=36)).strftime("%Y-%m-%dT%H:%M"),
+        "group_similar": "true",
+    }
+    try:
+        response = requests.get(
+            "https://api.marketaux.com/v1/news/all",
+            params=params,
+            timeout=10,
+        )
+        response.raise_for_status()
+        raw = response.json()
+        articles = []
+        sentiments = []
+        for item in (raw.get("data") or [])[:3]:
+            entities = item.get("entities") or []
+            matched = [e for e in entities if str(e.get("symbol", "")).upper() == symbol]
+            scores = [float(e.get("sentiment_score")) for e in matched
+                      if e.get("sentiment_score") is not None]
+            if scores:
+                sentiments.extend(scores)
+            articles.append({
+                "title": item.get("title") or "Untitled",
+                "source": item.get("source") or "",
+                "published_at": item.get("published_at"),
+                "url": item.get("url"),
+                "snippet": item.get("snippet") or item.get("description") or "",
+                "sentiment_score": round(sum(scores) / len(scores), 3) if scores else None,
+            })
+        avg = sum(sentiments) / len(sentiments) if sentiments else 0.0
+        payload = {
+            "configured": True,
+            "symbol": symbol,
+            "articles": articles,
+            "article_count": len(articles),
+            "sentiment_score": round(avg, 3) if sentiments else None,
+            "sentiment_label": (
+                "Bullish" if avg >= 0.15 else
+                "Bearish" if avg <= -0.15 else
+                "Neutral"
+            ) if sentiments else "No signal",
+            "provider": "MarketAux",
+            "cached": False,
+            "cache_seconds": NEWS_CACHE_SECONDS,
+            "as_of": datetime.now(timezone.utc).isoformat(),
+        }
+        _NEWS_CACHE[symbol] = {"at": now, "payload": payload}
+        return payload
+    except requests.HTTPError as ex:
+        status = ex.response.status_code if ex.response is not None else 502
+        if status == 402:
+            return {"configured": True, "symbol": symbol, "articles": [],
+                    "error": "MarketAux daily free quota has been reached. Try again tomorrow."}
+        logger.warning("MarketAux request rejected: HTTP %s", status)
+        return {"configured": True, "symbol": symbol, "articles": [],
+                "error": "MarketAux rejected the news request (HTTP %s)." % status}
+    except requests.RequestException as ex:
+        logger.warning("MarketAux news unavailable: %s", ex)
+        return {"configured": True, "symbol": symbol, "articles": [],
+                "error": "MarketAux news is temporarily unavailable."}
+    except Exception:
+        logger.exception("MarketAux news processing failed")
+        return {"configured": True, "symbol": symbol, "articles": [],
+                "error": "News/sentiment processing failed."}
+
+@early_signal_bp.route("/api/market-news")
+def market_news():
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+    symbol = __import__("flask").request.args.get("symbol", "").strip().upper()
+    if not symbol or not symbol.replace(".", "").replace("-", "").isalnum() or len(symbol) > 12:
+        return jsonify({"error": "Invalid ticker symbol."}), 400
+    return jsonify(_marketaux_news(symbol))
 
 def _clamp(value, low=0.0, high=100.0):
     return max(low, min(high, value))
@@ -126,7 +232,7 @@ def early_signal_scan():
             "cached": False, "cache_seconds": CACHE_SECONDS, "universe_count": len(UNIVERSE),
             "symbols_received": len(bars_by_symbol), "candidate_count": len(rows),
             "rows": rows[:40], "meta": meta,
-            "methodology": "Score = equal-weight volume expansion, 5-day momentum, moving-average trend, and 5-day relative strength versus SPY. News/social attention are not scored because no separate news/social provider is configured. Research ranking only; not a forecast or trade instruction.",
+            "methodology": "Score = equal-weight volume expansion, 5-day momentum, moving-average trend, and 5-day relative strength versus SPY. MarketAux news/sentiment is available on demand; it is intentionally not included in the automatic rank because the free plan is quota-limited. Research ranking only; not a forecast or trade instruction.",
         }
         _CACHE.update({"at": now, "payload": payload})
         return jsonify(payload)
