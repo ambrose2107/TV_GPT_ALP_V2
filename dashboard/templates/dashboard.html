@@ -1252,7 +1252,21 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
         </table>
       </div>
     </div>
-    <div class="sub" style="padding:10px 2px;line-height:1.6">Data source: Alpaca daily bars (IEX feed), cached for 15 minutes to keep the Render free tier lightweight. The universe is a curated list of liquid US stocks/ETFs, not the entire exchange. News and social-media attention are not scored because no separate news/social provider is configured. Historical performance and this heuristic score are not investment advice.</div>
+    <div class="sub" style="padding:10px 2px;line-height:1.6">Market data: Alpaca daily bars (IEX feed), cached for 15 minutes. News/sentiment: MarketAux, loaded on demand and cached for 30 minutes to protect the free API quota. News sentiment is research context, not a forecast or trade instruction.</div>
+    <div class="sec" style="margin-top:12px">
+      <div class="sec-hdr">
+        <div><h3>📰 News + Sentiment Research</h3><span class="sub">Live financial news for a selected ticker · MarketAux NLP sentiment</span></div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <select id="market-news-symbol" style="min-width:105px"></select>
+          <button class="btn btn-b btn-s" onclick="marketNewsLoad(true)">Load news</button>
+        </div>
+      </div>
+      <div style="padding:12px">
+        <div id="market-news-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px;margin-bottom:10px"></div>
+        <div id="market-news-status" class="sub" style="padding:5px 0 10px">Choose a ticker to load the latest news and sentiment.</div>
+        <div id="market-news-list"></div>
+      </div>
+    </div>
   </div>
 
   <div id="bt-portfolio-pane" style="display:none">
@@ -1374,7 +1388,7 @@ function btSub(name, idx) {
   if(name==='portfolio' && !pmLastData) pmLoad(false);
   if(name==='crash') loadAICrashDashboard(false);
   if(name==='strategy') loadBacktestStrategies();
-  if(name==='early-signal') earlySignalLoad(false);
+  if(name==='early-signal') { earlySignalLoad(false); setTimeout(marketNewsPopulateSymbols,150); }
 }
 
 // ── AUTOMATIC EARLY-SIGNAL STOCK SCANNER ────────────────────────────────────
@@ -1406,6 +1420,7 @@ async function earlySignalLoad(force){
     if(!response.ok)throw new Error(data.error||('Market-data request failed ('+response.status+').'));
     earlySignalRows=Array.isArray(data.rows)?data.rows:[];
     earlySignalMeta=data;
+    marketNewsPopulateSymbols();
     earlySignalLastLoaded=new Date().toISOString();
     earlySignalRender();
     if(status)status.textContent='Loaded '+earlySignalRows.length+' ranked candidates from '+data.symbols_received+' symbols. '+(data.cached?'Cached data':'Fresh request')+' · cache '+Math.round((data.cache_seconds||900)/60)+' min.';
@@ -1440,6 +1455,57 @@ function earlySignalExport(){
   const blob=new Blob([lines.join('\r\n')+'\r\n'],{type:'text/csv;charset=utf-8;'});
   const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='automatic_early_signal_scan.csv';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
 }
+function marketNewsPopulateSymbols(){
+  const el=$('market-news-symbol'); if(!el)return;
+  const symbols=(earlySignalRows||[]).slice(0,40).map(r=>r.symbol).filter(Boolean);
+  const defaults=['TSM','NVDA','MU','AMD','AVGO','MSFT','AAPL','SPY','QQQ'];
+  const merged=[...new Set([...symbols,...defaults])];
+  const current=el.value;
+  el.innerHTML=merged.map(s=>'<option value="'+earlySignalEscape(s)+'">'+earlySignalEscape(s)+'</option>').join('');
+  if(current && merged.includes(current)) el.value=current;
+}
+async function marketNewsLoad(force){
+  const el=$('market-news-symbol'), list=$('market-news-list'), status=$('market-news-status'), summary=$('market-news-summary');
+  if(!el||!list)return;
+  const symbol=(el.value||'TSM').toUpperCase();
+  status.textContent=force?'Loading latest MarketAux news…':'Loading latest MarketAux news…';
+  list.innerHTML='<div class="loading">Fetching news and sentiment…</div>';
+  try{
+    const d=await (await fetch('/api/market-news?symbol='+encodeURIComponent(symbol),{credentials:'same-origin',headers:{'Accept':'application/json'}})).json();
+    if(d.error)throw new Error(d.error);
+    if(!d.configured){
+      status.textContent=d.message||'MarketAux is not configured.';
+      summary.innerHTML='<div class="card"><div class="lbl">Setup required</div><div class="val" style="font-size:14px">MARKETAUX_API_TOKEN</div></div>';
+      list.innerHTML='<div style="padding:12px;color:#8b949e">Create a free MarketAux API key and add it to the Render environment as <b>MARKETAUX_API_TOKEN</b>.</div>';
+      return;
+    }
+    const s=d.sentiment_score;
+    const sc=s==null?'#8b949e':(s>0.15?'#3fb950':(s<-0.15?'#f85149':'#e3c778'));
+    summary.innerHTML=[
+      ['Ticker',symbol],
+      ['News sentiment',d.sentiment_label||'No signal'],
+      ['Score',s==null?'—':Number(s).toFixed(3)],
+      ['Articles',d.article_count||0]
+    ].map(x=>'<div class="card"><div class="lbl">'+earlySignalEscape(x[0])+'</div><div class="val" style="color:'+(x[0]==='News sentiment'?sc:'')+'">'+earlySignalEscape(x[1])+'</div></div>').join('');
+    status.textContent=(d.cached?'Cached':'Fresh')+' · '+(d.provider||'MarketAux')+' · '+(d.as_of?new Date(d.as_of).toLocaleString():'');
+    const articles=d.articles||[];
+    list.innerHTML=articles.length?articles.map(a=>{
+      const ss=a.sentiment_score, color=ss==null?'#8b949e':(ss>0.15?'#3fb950':(ss<-0.15?'#f85149':'#e3c778'));
+      const title=earlySignalEscape(a.title||'Untitled');
+      const href=String(a.url||'#').replace(/"/g,'%22');
+      return '<div style="padding:10px 0;border-bottom:1px solid #21262d">'+
+        '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">'+
+        '<a href="'+href+'" target="_blank" rel="noopener noreferrer" style="font-weight:700;color:#58a6ff;text-decoration:none">'+title+'</a>'+
+        '<span style="white-space:nowrap;color:'+color+';font-weight:700">'+(ss==null?'—':Number(ss).toFixed(2))+'</span></div>'+
+        '<div class="sub" style="margin-top:4px">'+earlySignalEscape(a.source||'')+' · '+(a.published_at?new Date(a.published_at).toLocaleString():'')+'</div>'+
+        '<div style="font-size:11px;color:#8b949e;margin-top:5px;line-height:1.45">'+earlySignalEscape(a.snippet||'')+'</div></div>';
+    }).join(''):'<div style="padding:12px;color:#8b949e">No recent articles found for '+earlySignalEscape(symbol)+'.</div>';
+  }catch(e){
+    status.textContent='News request failed.';
+    list.innerHTML='<div style="padding:12px;color:#f85149">'+earlySignalEscape(e.message||e)+'</div>';
+  }
+}
+
 // ── ACCOUNT ─────────────────────────────────────────────────────────────────
 async function loadAccount() {
   try {
