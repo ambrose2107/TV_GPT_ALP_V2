@@ -107,6 +107,7 @@ def _marketaux_news(symbol):
             "symbol": symbol,
             "articles": articles,
             "article_count": len(articles),
+            "news_intensity": _news_intensity(len(articles)),
             "sentiment_score": round(avg, 3) if sentiments else None,
             "sentiment_label": (
                 "Bullish" if avg >= 0.15 else
@@ -137,6 +138,36 @@ def _marketaux_news(symbol):
         return {"configured": True, "symbol": symbol, "articles": [],
                 "error": "News/sentiment processing failed."}
 
+
+@early_signal_bp.route("/api/early-signal/research/<symbol>")
+def early_signal_research(symbol):
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+    symbol = (symbol or "").strip().upper()
+    if not symbol or not symbol.replace(".", "").replace("-", "").isalnum() or len(symbol) > 12:
+        return jsonify({"error": "Invalid ticker symbol."}), 400
+    scan = early_signal_scan().get_json()
+    if not scan or not scan.get("rows"):
+        return jsonify({"error": "Technical scanner data is unavailable."}), 503
+    row = next((r for r in scan["rows"] if r.get("symbol") == symbol), None)
+    if row is None:
+        return jsonify({"error": "Ticker is not in the current ranked research universe."}), 404
+    news = _marketaux_news(symbol)
+    news_score = news.get("sentiment_score")
+    vc, vw = _volume_confirmation(row.get("return_5d_pct"), row.get("relative_volume"))
+    state, rationale = _confluence_state(row.get("score"), news_score, vc)
+    return jsonify({
+        "symbol": symbol,
+        "technical": row,
+        "news": news,
+        "volume_confirmation": vc,
+        "volume_warning": vw,
+        "news_intensity": news.get("news_intensity", "None"),
+        "overall_state": state,
+        "rationale": rationale,
+        "methodology": "Research confluence combines technical score, MarketAux news sentiment/intensity, and deterministic price-volume confirmation. It is not a forecast or trade instruction."
+    })
+
 @early_signal_bp.route("/api/market-news")
 def market_news():
     if not session.get("logged_in"):
@@ -145,6 +176,39 @@ def market_news():
     if not symbol or not symbol.replace(".", "").replace("-", "").isalnum() or len(symbol) > 12:
         return jsonify({"error": "Invalid ticker symbol."}), 400
     return jsonify(_marketaux_news(symbol))
+
+
+def _news_intensity(article_count):
+    n = int(article_count or 0)
+    return "High" if n >= 3 else ("Medium" if n == 2 else ("Low" if n == 1 else "None"))
+
+def _volume_confirmation(return_5d_pct, relative_volume):
+    ret = float(return_5d_pct or 0)
+    rv = float(relative_volume or 0)
+    if ret >= 1.0 and rv >= 1.2:
+        return "Strong", "Price momentum is supported by above-average volume."
+    if ret >= 1.0 and rv < 1.0:
+        return "Weak", "Positive price momentum with below-average volume; divergence warning."
+    if ret <= -1.0 and rv >= 1.2:
+        return "Strong selling", "Downside momentum is supported by above-average volume."
+    if ret <= -1.0 and rv < 1.0:
+        return "Weak selling", "Downside move lacks strong volume participation."
+    return "Neutral", "No strong price/volume confirmation signal."
+
+def _confluence_state(technical_score, news_score, volume_confirmation):
+    t = float(technical_score or 0)
+    n = float(news_score or 0)
+    if n >= 0.15 and t >= 65 and volume_confirmation == "Strong":
+        return "BULLISH", "Technical trend, positive news and volume are aligned."
+    if n <= -0.15 and t < 45 and volume_confirmation in ("Strong selling", "Weak selling"):
+        return "BEARISH", "Technical weakness and negative news are aligned."
+    if t >= 65 and n < -0.15:
+        return "MIXED", "Technicals are strong but news sentiment is negative."
+    if t >= 65 and volume_confirmation == "Weak":
+        return "BULLISH WITH DIVERGENCE", "Technical momentum is positive, but volume confirmation is weak."
+    if t < 45 and n >= 0.15:
+        return "MIXED", "News is positive but technical structure is not confirming it."
+    return "NEUTRAL", "Signals are not sufficiently aligned for a strong research state."
 
 def _clamp(value, low=0.0, high=100.0):
     return max(low, min(high, value))
@@ -188,6 +252,8 @@ def _score_rows(bars_by_symbol):
                 "trend_score": round(trend_score, 1), "relative_strength_score": round(relative_score, 1),
                 "relative_strength_vs_spy_pct": round(rel_strength, 2), "score": total,
                 "trend": "Uptrend" if last > sma20 and sma50 is not None and sma20 > sma50 else ("Above 20D" if last > sma20 else "Mixed/weak"),
+                "volume_confirmation": _volume_confirmation(ret5, rel_vol)[0],
+                "volume_warning": _volume_confirmation(ret5, rel_vol)[1] if _volume_confirmation(ret5, rel_vol)[0] == "Weak" else "",
                 "bars": len(bars),
             })
         except (TypeError, ValueError, ZeroDivisionError):
