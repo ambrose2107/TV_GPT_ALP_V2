@@ -195,6 +195,30 @@ def _discover_new_symbols():
         _DISCOVERY_CACHE.update({"at":now,"symbols":found}); return found
     except Exception:
         logger.exception("MarketAux stock discovery failed"); return []
+@early_signal_bp.route("/api/early-signal/research/<symbol>")
+def early_signal_research(symbol):
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+    symbol = symbol.strip().upper()
+    if not symbol or not symbol.replace(".", "").replace("-", "").isalnum() or len(symbol) > 12:
+        return jsonify({"error": "Invalid ticker symbol."}), 400
+    try:
+        from research.ollama_analysis import get_research_confluence_analysis, get_local_ai_analysis
+        news = _marketaux_batch_news([symbol], force=False).get(symbol) or _marketaux_news(symbol)
+        technical = get_local_ai_analysis(symbol, ["15m", "1h", "1D"])
+        synthesis = get_research_confluence_analysis(symbol, technical.get("indicators") or {}, news)
+        return jsonify({
+            "symbol": symbol,
+            "technical_score": technical.get("indicators", {}).get("overall_score"),
+            "technical_label": technical.get("indicators", {}).get("overall_label"),
+            "news": news,
+            "ai_model": synthesis.get("model") or technical.get("model"),
+            "analysis": synthesis.get("analysis"),
+        })
+    except Exception as ex:
+        logger.exception("Early-signal research synthesis failed")
+        return jsonify({"error": str(ex)}), 500
+
 @early_signal_bp.route("/api/market-news")
 def market_news():
     if not session.get("logged_in"):
