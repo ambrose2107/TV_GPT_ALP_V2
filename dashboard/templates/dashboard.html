@@ -1254,6 +1254,19 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
     </div>
 
     <div class="sec" style="margin-top:12px">
+      <div class="sec-hdr"><h3>📰 Automatic News for All Ranked Stocks</h3><span class="sub" id="early-news-status">Waiting for scanner</span></div>
+      <div style="padding:10px 12px;color:#8b949e;font-size:11px;line-height:1.5">
+        Automatically pulls recent MarketAux news + sentiment for every stock found by the scanner (up to 40 ranked candidates) using <b>one batched API request</b>. Results are cached for 30 minutes so the free API quota is protected.
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;min-width:760px">
+          <thead><tr><th>Rank</th><th>Symbol</th><th>Technical</th><th>News</th><th>News score</th><th>Intensity</th><th>Latest headline</th></tr></thead>
+          <tbody id="early-news-results"><tr><td colspan="7" style="padding:18px;color:#8b949e;text-align:center">News will load automatically after the stock scanner.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="sec" style="margin-top:12px">
       <div class="sec-hdr"><h3>🧠 Unified Research Signal</h3><span class="sub">Technical + price/volume + MarketAux sentiment</span></div>
       <div style="padding:12px">
         <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px">
@@ -1264,7 +1277,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
         <div id="early-research-rationale" class="sub" style="padding:10px 0"></div>
       </div>
     </div>
-    <div class="sub" style="padding:10px 2px;line-height:1.6">Market data: Alpaca daily bars (IEX feed), cached for 15 minutes. News/sentiment: MarketAux, loaded on demand and cached for 30 minutes to protect the free API quota. News sentiment is research context, not a forecast or trade instruction.</div>
+    <div class="sub" style="padding:10px 2px;line-height:1.6">Market data: Alpaca daily bars (IEX feed), cached for 15 minutes. News/sentiment: MarketAux, automatically fetched for all ranked candidates in one batched request and cached for 30 minutes to protect the free API quota. News sentiment is research context, not a forecast or trade instruction.</div>
     <div class="sec" style="margin-top:12px">
       <div class="sec-hdr">
         <div><h3>📰 News + Sentiment Research</h3><span class="sub">Live financial news for a selected ticker · MarketAux NLP sentiment</span></div>
@@ -1435,6 +1448,7 @@ async function earlySignalLoad(force){
     marketNewsPopulateSymbols();
     earlyResearchPopulate();
     earlySignalLastLoaded=new Date().toISOString();
+    earlyNewsLoadAll();
     earlySignalRender();
     if(status)status.textContent='Loaded '+earlySignalRows.length+' ranked candidates from '+data.symbols_received+' symbols. '+(data.cached?'Cached data':'Fresh request')+' · cache '+Math.round((data.cache_seconds||900)/60)+' min.';
     if($('early-signal-asof'))$('early-signal-asof').textContent='Data timestamp: '+new Date(data.as_of).toLocaleString()+' · '+data.provider;
@@ -1467,6 +1481,46 @@ function earlySignalExport(){
   const lines=[fields.join(',')].concat(earlySignalRows.map(r=>fields.map(k=>quote(r[k])).join(',')));
   const blob=new Blob([lines.join('\r\n')+'\r\n'],{type:'text/csv;charset=utf-8;'});
   const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='automatic_early_signal_scan.csv';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+}
+
+
+let earlyNewsBusy=false;
+let earlyNewsPayload=null;
+async function earlyNewsLoadAll(){
+  if(earlyNewsBusy)return;
+  earlyNewsBusy=true;
+  const status=$('early-news-status'), body=$('early-news-results');
+  if(status)status.textContent='Loading news for all ranked stocks…';
+  if(body)body.innerHTML='<tr><td colspan="7" style="padding:18px;color:#8b949e;text-align:center">Fetching one batched MarketAux request…</td></tr>';
+  try{
+    const rr=await fetch('/api/early-signal/news-all',{credentials:'same-origin',headers:{'Accept':'application/json'}});
+    const d=await rr.json();
+    if(!rr.ok)throw new Error(d.error||'Automatic news request failed');
+    earlyNewsPayload=d;
+    if(d.error)throw new Error(d.error);
+    if(!d.configured){
+      if(status)status.textContent=d.message||'MarketAux is not configured.';
+      if(body)body.innerHTML='<tr><td colspan="7" style="padding:12px;color:#8b949e">Add MARKETAUX_API_TOKEN to Render to enable automatic news.</td></tr>';
+      return;
+    }
+    const results=d.results||{};
+    const rows=(earlySignalRows||[]).slice(0,40).map(r=>{
+      const n=results[r.symbol]||{};
+      const ss=n.sentiment_score;
+      const color=ss==null?'#8b949e':(ss>=0.15?'#3fb950':(ss<=-0.15?'#f85149':'#e3c778'));
+      const label=n.sentiment_label||'No signal';
+      const article=n.articles&&n.articles.length?n.articles[0]:null;
+      const headline=article?earlySignalEscape(article.title||'Untitled'):'—';
+      const href=article&&article.url?String(article.url).replace(/"/g,'%22'):'';
+      const headlineHtml=href?'<a href="'+href+'" target="_blank" rel="noopener noreferrer" style="color:#58a6ff;text-decoration:none">'+headline+'</a>':headline;
+      return '<tr><td>'+earlySignalEscape(r.rank)+'</td><td><b>'+earlySignalEscape(r.symbol)+'</b></td><td style="font-weight:700">'+Number(r.score||0).toFixed(1)+'</td><td style="color:'+color+';font-weight:700">'+earlySignalEscape(label)+'</td><td style="color:'+color+'">'+(ss==null?'—':Number(ss).toFixed(3))+'</td><td>'+earlySignalEscape(n.news_intensity||'None')+' ('+Number(n.article_count||0)+')</td><td style="max-width:420px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+headlineHtml+'</td></tr>';
+    });
+    if(body)body.innerHTML=rows.length?rows.join(''):'<tr><td colspan="7" style="padding:12px;color:#8b949e">No ranked stocks available.</td></tr>';
+    if(status)status.textContent=(d.cached?'Cached':'Fresh')+' · '+Number(d.symbol_count||0)+' ranked stocks · one MarketAux batch request · '+(d.as_of?new Date(d.as_of).toLocaleString():'');
+  }catch(e){
+    if(status)status.textContent='Automatic news unavailable.';
+    if(body)body.innerHTML='<tr><td colspan="7" style="padding:12px;color:#f85149">'+earlySignalEscape(e.message||e)+'</td></tr>';
+  }finally{earlyNewsBusy=false;}
 }
 
 function earlyResearchPopulate(){
