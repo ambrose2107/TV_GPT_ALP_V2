@@ -10,3 +10,5 @@ from .base import STRATEGY_REGISTRY, list_strategies, get_strategy  # noqa: F401
 from . import trend_pullback   # noqa: F401
 from . import ema_crossover    # noqa: F401
 from . import rsi_meanreversion  # noqa: F401
+
+from . import gold_aroon_money_flow_v2  # noqa: F401
