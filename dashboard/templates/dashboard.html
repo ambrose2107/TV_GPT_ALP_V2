@@ -1445,9 +1445,26 @@ function earlySignalRender(){
   if(!rows.length){body.innerHTML='<tr><td colspan="13" style="padding:18px;color:#8b949e;text-align:center">No stocks meet this score filter. Choose All or refresh later.</td></tr>';return;}
   body.innerHTML=rows.map(r=>{
     const scoreColor=r.score>=75?'#3fb950':(r.score>=60?'#e3c778':'#8b949e');
-    const ns=Number(r.news_sentiment_score); const nc=Number(r.news_count||0); const newsColor=!Number.isFinite(ns)?'#8b949e':(ns>=0.15?'#3fb950':(ns<=-0.15?'#f85149':'#e3c778')); return '<tr><td>'+r.rank+'</td><td><b>'+earlySignalEscape(r.symbol)+'</b></td><td style="color:'+scoreColor+';font-weight:700">'+Number(r.score).toFixed(1)+'</td><td>
-  }).join('');
-}
+    const ns=Number(r.news_sentiment_score);
+    const nc=Number(r.news_count||0);
+    const newsColor=!Number.isFinite(ns)?'#8b949e':(ns>=0.15?'#3fb950':(ns<=-0.15?'#f85149':'#e3c778'));
+    const newsText=earlySignalEscape(r.news_sentiment||'No signal')+(Number.isFinite(ns)?' ('+ns.toFixed(2)+')':'');
+    return '<tr>'+
+      '<td>'+r.rank+'</td>'+
+      '<td><b>'+earlySignalEscape(r.symbol)+'</b></td>'+
+      '<td style="color:'+scoreColor+';font-weight:700">'+Number(r.score).toFixed(1)+'</td>'+
+      '<td>$'+Number(r.price).toFixed(2)+'</td>'+
+      '<td style="color:'+earlySignalColor(r.day_change_pct)+'">'+earlySignalPct(r.day_change_pct)+'</td>'+
+      '<td style="color:'+earlySignalColor(r.return_5d_pct)+'">'+earlySignalPct(r.return_5d_pct)+'</td>'+
+      '<td style="color:'+earlySignalColor(r.return_20d_pct)+'">'+earlySignalPct(r.return_20d_pct)+'</td>'+
+      '<td>'+Number(r.relative_volume).toFixed(2)+'×</td>'+
+      '<td style="color:'+earlySignalColor(r.relative_strength_vs_spy_pct)+'">'+earlySignalPct(r.relative_strength_vs_spy_pct)+'</td>'+
+      '<td>'+earlySignalEscape(r.trend)+'</td>'+
+      '<td>'+nc+'</td>'+
+      '<td style="color:'+newsColor+';font-weight:700">'+newsText+'</td>'+
+      '<td>'+earlySignalMoney(r.avg_dollar_volume)+'</td>'+
+      '</tr>';
+  }).join('');}
 function earlySignalExport(){
   if(!earlySignalRows.length){if($('early-signal-status'))$('early-signal-status').textContent='No data to export yet. Load the scanner first.';return;}
   const fields=['rank','symbol','score','price','day_change_pct','return_5d_pct','return_20d_pct','relative_volume','relative_strength_vs_spy_pct','trend','avg_dollar_volume','volume_score','momentum_score','trend_score','relative_strength_score','news_sentiment_score','news_sentiment','news_count'];
