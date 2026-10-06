@@ -288,7 +288,7 @@ def early_signal_scan():
         data = response.json()
         bars_by_symbol = data.get("bars") or {}
         rows, meta = _score_rows(bars_by_symbol)
-        news_map = _marketaux_batch_news([r["symbol"] for r in rows[:40]], force=force)
+        news_map = _marketaux_batch_news([r["symbol"] for r in rows[:40]], force=discover)
         for row in rows:
             news = news_map.get(row["symbol"]) or {}
             row["news_sentiment_score"] = news.get("sentiment_score")
