@@ -1423,7 +1423,6 @@ async function earlySignalLoad(force){
     marketNewsPopulateSymbols();
     earlySignalLastLoaded=new Date().toISOString();
     earlySignalRender();
-    if(earlySignalRows.length){ const top=earlySignalRows[0].symbol; const sel=$('market-news-symbol'); if(sel){sel.value=top; marketNewsLoad(false);} }
     if(status)status.textContent='Loaded '+earlySignalRows.length+' ranked candidates from '+data.symbols_received+' symbols. '+(data.news_enabled?'News attached automatically · ':'News unavailable · ')+(data.cached?'Cached market data':'Fresh market request')+' · news cache 30 min.';
     if($('early-signal-asof'))$('early-signal-asof').textContent='Data timestamp: '+new Date(data.as_of).toLocaleString()+' · '+data.provider;
   }catch(e){
