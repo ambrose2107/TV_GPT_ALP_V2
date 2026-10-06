@@ -1420,7 +1420,7 @@ async function earlySignalLoad(force){
     if(!response.ok)throw new Error(data.error||('Market-data request failed ('+response.status+').'));
     earlySignalRows=Array.isArray(data.rows)?data.rows:[];
     earlySignalMeta=data;
-    marketNewsPopulateSymbols();
+    marketNewsPopulateSymbols(); earlyResearchPopulate();
     earlySignalLastLoaded=new Date().toISOString();
     earlySignalRender();
     if(status)status.textContent='Loaded '+earlySignalRows.length+' ranked candidates from '+data.symbols_received+' symbols. '+(data.news_enabled?'News attached automatically · ':'News unavailable · ')+(data.cached?'Cached market data':'Fresh market request')+' · news cache 30 min.';
@@ -1497,6 +1497,31 @@ async function earlySignalFindNew(){
     if(error){error.textContent=e.message||String(e);error.style.display='block';}
     if(body)body.innerHTML='<tr><td colspan="13" style="padding:18px;color:#f85149;text-align:center">Discovery failed. Existing scanner data was not changed.</td></tr>';
   }finally{earlySignalBusy=false;}
+}
+function earlyResearchPopulate(){
+  const el=$('early-research-symbol'); if(!el)return;
+  const syms=(earlySignalRows||[]).slice(0,40).map(r=>r.symbol).filter(Boolean);
+  el.innerHTML=[...new Set(syms)].map(s=>'<option value="'+earlySignalEscape(s)+'">'+earlySignalEscape(s)+'</option>').join('');
+}
+async function runEarlyResearch(){
+  const el=$('early-research-symbol'), result=$('early-research-result'), status=$('early-research-status'), summary=$('early-research-summary');
+  const sym=(el&&el.value)||((earlySignalRows[0]||{}).symbol);
+  if(!sym)return;
+  status.textContent='⏳ Combining technicals + MarketAux news + AI interpretation…';
+  result.textContent=''; summary.innerHTML='';
+  try{
+    const r=await (await fetch('/api/early-signal/research/'+encodeURIComponent(sym),{credentials:'same-origin',headers:{'Accept':'application/json'}})).json();
+    if(r.error)throw new Error(r.error);
+    const n=r.news||{}, ns=n.sentiment_score;
+    summary.innerHTML=[
+      ['Technical',r.technical_label||'—'],
+      ['News',n.sentiment_label||'No signal'],
+      ['News score',ns==null?'—':Number(ns).toFixed(3)],
+      ['Articles',n.article_count||0]
+    ].map(x=>'<div class="card"><div class="lbl">'+earlySignalEscape(x[0])+'</div><div class="val">'+earlySignalEscape(x[1])+'</div></div>').join('');
+    result.textContent=r.analysis||'No synthesis returned.';
+    status.textContent='Model: '+(r.ai_model||'configured AI')+' · '+new Date().toLocaleString();
+  }catch(e){status.textContent='Analysis failed';result.textContent='⚠️ '+(e.message||String(e));}
 }
 function marketNewsPopulateSymbols(){
   const el=$('market-news-symbol'); if(!el)return;
