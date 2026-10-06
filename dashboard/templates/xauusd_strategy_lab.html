@@ -40,7 +40,7 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
     <label>Days <input id="days" type="number" min="1" max="770" value="200"></label>
     <label>5m bars <input id="bars" type="number" min="100" max="60000" value="15600"></label>
     <label>Risk % <input id="risk" type="number" min=".01" step=".05" value=".50"></label>
-    <button id="runAll" class="primary">▶ Run All 6</button>
+    <button id="runAll" class="primary">▶ Run All 7</button>
     <button id="downloadCsv" disabled>📥 Download Results CSV</button>\n    <button id="downloadJson" disabled>🧠 Download Master AI JSON</button>
     <button id="clear">Clear Results</button>
     <span id="globalStatus" class="muted">Ready</span>
@@ -101,7 +101,12 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
 <div class="body"><div class="muted">CCI(16) crosses back above -180; buy next open; exit when CCI &gt; +150. Long only.</div>
 <p><button class="primary" onclick="runOne('cci')">▶ Run CCI</button> <a class="detail-link" href="/xauusd-research-v2/cci">📊 Open Detailed Chart</a></p>
 <div id="metrics-cci" class="empty">No result yet.</div><div id="pnl-cci" class="empty">P&amp;L trend will appear after the run.</div><div id="trades-cci"></div></div></details>
-<details class="card" open><summary><span>6. Trend Target Ribbon V2</span><span class="badge">ALMA + ATR + Deviation + Targets</span><span class="status" id="status-trend_ribbon">Ready</span></summary>
+<details class="card" open><summary><span>6. Aroon + Money Flow Confluence V2</span><span class="badge">Aroon + CMF + ATR</span><span class="status" id="status-aroon_money_flow">Ready</span></summary>
+<div class="body"><div class="muted">Aroon oscillator zero-line flip confirmed by Chaikin Money Flow, with ATR stop/target and optional ADX strength filter.</div>
+<p><button class="primary" onclick="runOne('aroon_money_flow')">▶ Run Aroon + Money Flow V2</button> <a class="detail-link" href="/xauusd-research-v2/aroon_money_flow">📊 Open Detailed Chart</a></p>
+<div id="metrics-aroon_money_flow" class="empty">No result yet.</div><div id="pnl-aroon_money_flow" class="empty">P&amp;L trend will appear after the run.</div><div id="trades-aroon_money_flow"></div></div></details>
+
+<details class="card" open><summary><span>7. Trend Target Ribbon V2</span><span class="badge">ALMA + ATR + Deviation + Targets</span><span class="status" id="status-trend_ribbon">Ready</span></summary>
 <div class="body"><div class="muted">BOSWaves-derived ALMA trend flip with slope/deviation confirmation, structure/ATR stop and 1R–4R target diagnostics. P&L is plotted against time below.</div>
 <p><button class="primary" onclick="runOne('trend_ribbon')">▶ Run Trend Target Ribbon V2</button> <a class="detail-link" href="/xauusd-research-v2/trend_ribbon">📊 Open Detailed Chart</a></p>
 <div id="metrics-trend_ribbon" class="empty">No result yet.</div>
@@ -118,6 +123,7 @@ const defs={
  triple:{name:'Triple RSI — Multi-Horizon',url:'/api/xauusd-research-v2/triple'},
  williams:{name:'Williams %R Mean Reversion',url:'/api/xauusd-research-v2/williams'},
  cci:{name:'CCI Oversold Recovery',url:'/api/xauusd-research-v2/cci'},
+ aroon_money_flow:{name:'Aroon + Money Flow Confluence V2',url:'/api/xauusd-research-v2/aroon_money_flow'},
  trend_ribbon:{name:'Trend Target Ribbon V2',url:'/api/xauusd-research-v2/trend_ribbon'}
 };
 function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
@@ -171,9 +177,9 @@ async function runOne(k){
  }
 }
 async function runAll(){
- $('runAll').disabled=true;$('globalStatus').textContent='Running all 6 new strategies…';
- for(const k of ['pullback','ema','triple','williams','cci','trend_ribbon']) await runOne(k);
- $('runAll').disabled=false;$('globalStatus').innerHTML='<span class="ok">All 5 new strategy runs finished.</span>';
+ $('runAll').disabled=true;$('globalStatus').textContent='Running all 7 new strategies…';
+ for(const k of ['pullback','ema','triple','williams','cci','aroon_money_flow','trend_ribbon']) await runOne(k);
+ $('runAll').disabled=false;$('globalStatus').innerHTML='<span class="ok">All 7 new strategy runs finished.</span>';
 }
 function csvCell(v){if(v==null)return '';let s=typeof v==='object'?JSON.stringify(v):String(v);return '"'+s.replace(/"/g,'""')+'"';}
 async function downloadResultsJson(){
