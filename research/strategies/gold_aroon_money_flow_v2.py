@@ -20,6 +20,8 @@ because the current V2 backtest engine owns execution, stop/target and trade
 accounting.  The strategy exposes the signal-side parameters that can be
 tested without turning the model into an overfit parameter grid.
 """
+import pandas as pd
+
 from .base import register
 from .indicators import atr
 
@@ -68,8 +70,6 @@ def _adx(df, length):
 
 
 def _generate_signals(df, params):
-    import pandas as pd
-
     d = df.copy()
     aroon_len = int(params["aroon_len"])
     cmf_len = int(params["cmf_len"])
