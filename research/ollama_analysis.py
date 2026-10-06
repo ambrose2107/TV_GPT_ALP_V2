@@ -190,3 +190,36 @@ def get_local_ai_analysis(symbol: str, timeframes: list = None) -> dict:
         "indicators": analysis,       # raw grounded numbers, for the UI
         "analysis": text,             # LLM's plain-English interpretation
     }
+
+
+def get_research_confluence_analysis(symbol: str, technical: dict, news: dict) -> dict:
+    """Interpret technical indicators together with supplied MarketAux news context."""
+    indicator_block = _format_indicators_for_prompt(technical)
+    articles = news.get("articles") or []
+    news_lines = [
+        f"MarketAux sentiment: {news.get('sentiment_label', 'No signal')} "
+        f"(score {news.get('sentiment_score')})",
+        f"Recent article count: {news.get('article_count', 0)}",
+    ]
+    for a in articles[:3]:
+        news_lines.append(
+            f"- {a.get('title', 'Untitled')} | {a.get('source', '')} | "
+            f"sentiment {a.get('sentiment_score')}"
+        )
+    system = (
+        "You are a disciplined institutional-style research assistant. "
+        "Use only the supplied real technical indicators and MarketAux news. "
+        "Do not invent facts, catalysts, prices, or sentiment. Distinguish "
+        "technical confirmation from news confirmation. Explicitly flag "
+        "divergence such as price momentum without volume confirmation. "
+        "Do not give a buy/sell instruction."
+    )
+    prompt = (
+        f"{indicator_block}\n\nRECENT NEWS CONTEXT:\n" + "\n".join(news_lines) +
+        "\n\nWrite a concise 120-180 word research synthesis with exactly these headings:\n"
+        "TECHNICAL PICTURE\nNEWS / CATALYST\nCONFIRMATION OR DIVERGENCE\nRISK TO WATCH\n"
+        "Finish with one line: Overall research state: BULLISH / NEUTRAL / BEARISH / MIXED."
+    )
+    text = _call_llm(prompt, system=system, max_tokens=450)
+    return {"symbol": symbol.upper(), "generated_at": datetime.utcnow().isoformat()+"Z",
+            "model": _current_model_name(), "analysis": text}
