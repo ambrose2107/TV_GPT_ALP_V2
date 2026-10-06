@@ -18,8 +18,11 @@ early_signal_bp = Blueprint("early_signal", __name__)
 logger = get_logger(__name__)
 _CACHE = {"at": 0.0, "payload": None}
 _NEWS_CACHE = {}
+_NEWS_BATCH_CACHE = {"at": 0.0, "payload": {}}
+_DISCOVERY_CACHE = {"at": 0.0, "symbols": []}
 CACHE_SECONDS = 900
 NEWS_CACHE_SECONDS = 1800
+DISCOVERY_CACHE_SECONDS = 1800
 TIMEOUT_SECONDS = 18
 
 # Curated liquid names across broad market, technology, semiconductors, AI
@@ -137,6 +140,61 @@ def _marketaux_news(symbol):
         return {"configured": True, "symbol": symbol, "articles": [],
                 "error": "News/sentiment processing failed."}
 
+def _marketaux_batch_news(symbols, force=False):
+    """Fetch news/sentiment for the whole ranked list in one MarketAux request."""
+    symbols = [str(s).strip().upper() for s in (symbols or []) if str(s).strip()]
+    symbols = list(dict.fromkeys(symbols))[:50]
+    if not symbols: return {}
+    token = _marketaux_token()
+    if not token: return {}
+    now = time.time()
+    cached = _NEWS_BATCH_CACHE.get("payload") or {}
+    if cached and not force and now - _NEWS_BATCH_CACHE.get("at", 0.0) < NEWS_CACHE_SECONDS: return cached
+    params = {"api_token": token, "symbols": ",".join(symbols), "filter_entities": "true", "must_have_entities": "true", "language": "en", "limit": 50, "published_after": (datetime.now(timezone.utc) - timedelta(hours=36)).strftime("%Y-%m-%dT%H:%M"), "group_similar": "true"}
+    try:
+        response = requests.get("https://api.marketaux.com/v1/news/all", params=params, timeout=12)
+        response.raise_for_status()
+        by_symbol = {s: {"articles": [], "sentiments": []} for s in symbols}
+        for item in (response.json().get("data") or []):
+            for entity in (item.get("entities") or []):
+                symbol = str(entity.get("symbol", "")).upper()
+                if symbol not in by_symbol: continue
+                score = entity.get("sentiment_score")
+                try: score = float(score) if score is not None else None
+                except (TypeError, ValueError): score = None
+                by_symbol[symbol]["articles"].append({"title": item.get("title") or "Untitled", "source": item.get("source") or "", "published_at": item.get("published_at"), "url": item.get("url"), "snippet": item.get("snippet") or item.get("description") or "", "sentiment_score": round(score, 3) if score is not None else None})
+                if score is not None: by_symbol[symbol]["sentiments"].append(score)
+        result = {}
+        for symbol, bucket in by_symbol.items():
+            articles = bucket["articles"][:3]; scores = bucket["sentiments"]
+            avg = sum(scores) / len(scores) if scores else None
+            result[symbol] = {"configured": True, "symbol": symbol, "articles": articles, "article_count": len(articles), "sentiment_score": round(avg, 3) if avg is not None else None, "sentiment_label": ("Bullish" if avg is not None and avg >= 0.15 else "Bearish" if avg is not None and avg <= -0.15 else "Neutral" if avg is not None else "No signal"), "provider": "MarketAux", "cached": False, "as_of": datetime.now(timezone.utc).isoformat()}
+        _NEWS_BATCH_CACHE.update({"at": now, "payload": result})
+        return result
+    except Exception:
+        logger.exception("MarketAux batch news processing failed")
+        return {}
+
+def _discover_new_symbols():
+    """Discover additional equity symbols from recent financial news."""
+    token = _marketaux_token()
+    if not token: return []
+    now = time.time()
+    if _DISCOVERY_CACHE["symbols"] and now - _DISCOVERY_CACHE["at"] < DISCOVERY_CACHE_SECONDS: return list(_DISCOVERY_CACHE["symbols"])
+    params = {"api_token": token, "filter_entities": "true", "must_have_entities": "true", "language": "en", "limit": 50, "published_after": (datetime.now(timezone.utc) - timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M"), "group_similar": "true"}
+    try:
+        response = requests.get("https://api.marketaux.com/v1/news/all", params=params, timeout=12)
+        response.raise_for_status(); found=[]; existing=set(UNIVERSE)
+        for item in (response.json().get("data") or []):
+            for entity in (item.get("entities") or []):
+                symbol=str(entity.get("symbol","")).upper()
+                if not symbol or symbol in existing or symbol in found or str(entity.get("type","")).lower()!="equity": continue
+                if symbol.replace(".","").replace("-","").isalnum() and len(symbol)<=6: found.append(symbol)
+                if len(found)>=25: break
+            if len(found)>=25: break
+        _DISCOVERY_CACHE.update({"at":now,"symbols":found}); return found
+    except Exception:
+        logger.exception("MarketAux stock discovery failed"); return []
 @early_signal_bp.route("/api/market-news")
 def market_news():
     if not session.get("logged_in"):
@@ -202,7 +260,9 @@ def _score_rows(bars_by_symbol):
 def early_signal_scan():
     if not session.get("logged_in"):
         return jsonify({"error": "Unauthorized"}), 401
-    force = __import__("flask").request.args.get("refresh") == "1"
+    request_obj = __import__("flask").request
+    force = request_obj.args.get("refresh") == "1"
+    discover = request_obj.args.get("discover") == "1"
     now = time.time()
     if not force and _CACHE["payload"] is not None and now - _CACHE["at"] < CACHE_SECONDS:
         payload = dict(_CACHE["payload"])
@@ -213,8 +273,12 @@ def early_signal_scan():
         return jsonify({"error": "Automatic scanner needs the existing Alpaca API key and secret configured on the server."}), 503
     headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
     start = (datetime.now(timezone.utc) - timedelta(days=100)).isoformat().replace("+00:00", "Z")
+    scan_universe = list(UNIVERSE)
+    discovered_symbols = _discover_new_symbols() if discover else []
+    for symbol in discovered_symbols:
+        if symbol not in scan_universe: scan_universe.append(symbol)
     params = {
-        "symbols": ",".join(UNIVERSE), "timeframe": "1Day", "start": start,
+        "symbols": ",".join(scan_universe), "timeframe": "1Day", "start": start,
         "limit": 10000, "adjustment": "split", "feed": "iex", "sort": "asc",
     }
     try:
@@ -224,15 +288,22 @@ def early_signal_scan():
         data = response.json()
         bars_by_symbol = data.get("bars") or {}
         rows, meta = _score_rows(bars_by_symbol)
+        news_map = _marketaux_batch_news([r["symbol"] for r in rows[:40]], force=force)
+        for row in rows:
+            news = news_map.get(row["symbol"]) or {}
+            row["news_sentiment_score"] = news.get("sentiment_score")
+            row["news_sentiment"] = news.get("sentiment_label", "No signal")
+            row["news_count"] = news.get("article_count", 0)
+            row["news_headlines"] = news.get("articles", [])
         if not rows:
             return jsonify({"error": "Alpaca returned no usable daily bars. Check API access and market-data permissions.",
                             "symbols_received": len(bars_by_symbol)}), 502
         payload = {
             "as_of": datetime.now(timezone.utc).isoformat(), "provider": "Alpaca daily bars (IEX feed)",
-            "cached": False, "cache_seconds": CACHE_SECONDS, "universe_count": len(UNIVERSE),
-            "symbols_received": len(bars_by_symbol), "candidate_count": len(rows),
+            "cached": False, "cache_seconds": CACHE_SECONDS, "universe_count": len(scan_universe),
+            "symbols_received": len(bars_by_symbol), "candidate_count": len(rows), "discovered_symbols": discovered_symbols, "news_enabled": bool(_marketaux_token()),
             "rows": rows[:40], "meta": meta,
-            "methodology": "Score = equal-weight volume expansion, 5-day momentum, moving-average trend, and 5-day relative strength versus SPY. MarketAux news/sentiment is available on demand; it is intentionally not included in the automatic rank because the free plan is quota-limited. Research ranking only; not a forecast or trade instruction.",
+            "methodology": "Technical rank = equal-weight volume expansion, 5-day momentum, moving-average trend, and 5-day relative strength versus SPY. MarketAux news/sentiment is automatically attached to the ranked list in one batched request and cached for 30 minutes. Research context only; not a forecast or trade instruction.",
         }
         _CACHE.update({"at": now, "payload": payload})
         return jsonify(payload)
