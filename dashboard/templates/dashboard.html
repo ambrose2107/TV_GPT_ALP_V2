@@ -1247,9 +1247,21 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
       <div class="sec-hdr"><h3>Ranked stock candidates</h3><span class="sub" id="early-signal-asof">Waiting for market data</span></div>
       <div style="overflow-x:auto">
         <table id="early-signal-table" style="width:100%;min-width:880px">
-          <thead><tr><th>Rank</th><th>Symbol</th><th>Score / 100</th><th>Price</th><th>Day %</th><th>5D %</th><th>20D %</th><th>Rel. volume</th><th>vs SPY (5D)</th><th>Trend</th><th>Avg $ volume</th></tr></thead>
-          <tbody id="early-signal-results"><tr><td colspan="11" style="padding:18px;color:#8b949e;text-align:center">Loading candidates when the tab opens…</td></tr></tbody>
+          <thead><tr><th>Rank</th><th>Symbol</th><th>Score / 100</th><th>Price</th><th>Day %</th><th>5D %</th><th>20D %</th><th>Rel. volume</th><th>vs SPY (5D)</th><th>Trend</th><th>Volume confirmation</th><th>Avg $ volume</th></tr></thead>
+          <tbody id="early-signal-results"><tr><td colspan="12" style="padding:18px;color:#8b949e;text-align:center">Loading candidates when the tab opens…</td></tr></tbody>
         </table>
+      </div>
+    </div>
+
+    <div class="sec" style="margin-top:12px">
+      <div class="sec-hdr"><h3>🧠 Unified Research Signal</h3><span class="sub">Technical + price/volume + MarketAux sentiment</span></div>
+      <div style="padding:12px">
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px">
+          <select id="early-research-symbol" style="min-width:105px"></select>
+          <button class="btn btn-b btn-s" onclick="earlyResearchLoad()">Analyze</button>
+        </div>
+        <div id="early-research-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:8px"></div>
+        <div id="early-research-rationale" class="sub" style="padding:10px 0"></div>
       </div>
     </div>
     <div class="sub" style="padding:10px 2px;line-height:1.6">Market data: Alpaca daily bars (IEX feed), cached for 15 minutes. News/sentiment: MarketAux, loaded on demand and cached for 30 minutes to protect the free API quota. News sentiment is research context, not a forecast or trade instruction.</div>
@@ -1421,6 +1433,7 @@ async function earlySignalLoad(force){
     earlySignalRows=Array.isArray(data.rows)?data.rows:[];
     earlySignalMeta=data;
     marketNewsPopulateSymbols();
+    earlyResearchPopulate();
     earlySignalLastLoaded=new Date().toISOString();
     earlySignalRender();
     if(status)status.textContent='Loaded '+earlySignalRows.length+' ranked candidates from '+data.symbols_received+' symbols. '+(data.cached?'Cached data':'Fresh request')+' · cache '+Math.round((data.cache_seconds||900)/60)+' min.';
@@ -1444,7 +1457,7 @@ function earlySignalRender(){
   if(!rows.length){body.innerHTML='<tr><td colspan="11" style="padding:18px;color:#8b949e;text-align:center">No stocks meet this score filter. Choose All or refresh later.</td></tr>';return;}
   body.innerHTML=rows.map(r=>{
     const scoreColor=r.score>=75?'#3fb950':(r.score>=60?'#e3c778':'#8b949e');
-    return '<tr><td>'+r.rank+'</td><td><b>'+earlySignalEscape(r.symbol)+'</b></td><td style="color:'+scoreColor+';font-weight:700">'+Number(r.score).toFixed(1)+'</td><td>$'+Number(r.price).toFixed(2)+'</td><td style="color:'+earlySignalColor(r.day_change_pct)+'">'+earlySignalPct(r.day_change_pct)+'</td><td style="color:'+earlySignalColor(r.return_5d_pct)+'">'+earlySignalPct(r.return_5d_pct)+'</td><td style="color:'+earlySignalColor(r.return_20d_pct)+'">'+earlySignalPct(r.return_20d_pct)+'</td><td>'+Number(r.relative_volume).toFixed(2)+'×</td><td style="color:'+earlySignalColor(r.relative_strength_vs_spy_pct)+'">'+earlySignalPct(r.relative_strength_vs_spy_pct)+'</td><td>'+earlySignalEscape(r.trend)+'</td><td>'+earlySignalMoney(r.avg_dollar_volume)+'</td></tr>';
+    return '<tr><td>'+r.rank+'</td><td><b>'+earlySignalEscape(r.symbol)+'</b></td><td style="color:'+scoreColor+';font-weight:700">'+Number(r.score).toFixed(1)+'</td><td>$'+Number(r.price).toFixed(2)+'</td><td style="color:'+earlySignalColor(r.day_change_pct)+'">'+earlySignalPct(r.day_change_pct)+'</td><td style="color:'+earlySignalColor(r.return_5d_pct)+'">'+earlySignalPct(r.return_5d_pct)+'</td><td style="color:'+earlySignalColor(r.return_20d_pct)+'">'+earlySignalPct(r.return_20d_pct)+'</td><td>'+Number(r.relative_volume).toFixed(2)+'×</td><td style="color:'+earlySignalColor(r.relative_strength_vs_spy_pct)+'">'+earlySignalPct(r.relative_strength_vs_spy_pct)+'</td><td>'+earlySignalEscape(r.trend)+'</td><td style="font-size:11px">'+earlySignalEscape(r.volume_confirmation||"Neutral")+(r.volume_warning?'<div style="color:#e3c778">'+earlySignalEscape(r.volume_warning)+'</div>':'')+'</td><td>'+earlySignalMoney(r.avg_dollar_volume)+'</td></tr>';
   }).join('');
 }
 function earlySignalExport(){
@@ -1454,6 +1467,30 @@ function earlySignalExport(){
   const lines=[fields.join(',')].concat(earlySignalRows.map(r=>fields.map(k=>quote(r[k])).join(',')));
   const blob=new Blob([lines.join('\r\n')+'\r\n'],{type:'text/csv;charset=utf-8;'});
   const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='automatic_early_signal_scan.csv';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+}
+
+function earlyResearchPopulate(){
+  const el=$('early-research-symbol'); if(!el)return;
+  const symbols=(earlySignalRows||[]).slice(0,40).map(r=>r.symbol).filter(Boolean);
+  const defaults=['TSM','NVDA','MU','AMD','AVGO','MSFT','AAPL'];
+  const merged=[...new Set([...symbols,...defaults])], cur=el.value;
+  el.innerHTML=merged.map(x=>'<option value="'+earlySignalEscape(x)+'">'+earlySignalEscape(x)+'</option>').join('');
+  if(cur&&merged.includes(cur))el.value=cur;
+}
+async function earlyResearchLoad(){
+  const sym=($('early-research-symbol')||{}).value||'TSM';
+  const box=$('early-research-summary'), rat=$('early-research-rationale');
+  if(!box||!rat)return;
+  rat.textContent='Running unified research…';
+  try{
+    const rr=await fetch('/api/early-signal/research/'+encodeURIComponent(sym),{credentials:'same-origin',headers:{'Accept':'application/json'}});
+    const d=await rr.json(); if(!rr.ok)throw new Error(d.error||'Research request failed');
+    const n=d.news||{}, t=d.technical||{}, state=d.overall_state||'NEUTRAL';
+    const sc=state.indexOf('BULLISH')>=0?'#3fb950':(state==='BEARISH'?'#f85149':'#e3c778');
+    const vals=[['Overall',state],['Technical',(Number(t.score)||0).toFixed(1)+'/100'],['News sentiment',n.sentiment_label||'No signal'],['News score',n.sentiment_score==null?'—':Number(n.sentiment_score).toFixed(3)],['News intensity',d.news_intensity||'None'],['Volume confirmation',d.volume_confirmation||'Neutral']];
+    box.innerHTML=vals.map(x=>'<div class="card"><div class="lbl">'+earlySignalEscape(x[0])+'</div><div class="val" style="color:'+(x[0]==='Overall'?sc:'')+'">'+earlySignalEscape(x[1])+'</div></div>').join('');
+    rat.innerHTML='<b>Research interpretation:</b> '+earlySignalEscape(d.rationale||'')+(d.volume_warning?'<br><span style="color:#e3c778">⚠ '+earlySignalEscape(d.volume_warning)+'</span>':'');
+  }catch(e){rat.textContent=e.message||String(e);}
 }
 function marketNewsPopulateSymbols(){
   const el=$('market-news-symbol'); if(!el)return;
