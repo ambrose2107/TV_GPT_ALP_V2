@@ -19,6 +19,7 @@ from core.market_data import alpaca_get_bars, get_bars
 from research.xauusd_pullback_v2 import PullbackV2Config, backtest as pullback_v2_backtest
 from research.xauusd_ema_retest_v2 import EMARetestV2Config, backtest as ema_v2_backtest
 from research.xauusd_trend_target_ribbon_v2 import TrendTargetRibbonConfig, backtest as trend_ribbon_backtest
+from research.xauusd_aroon_money_flow_v2 import AroonMoneyFlowV2Config, backtest as aroon_money_flow_backtest
 from research.xauusd_daily_research_v2 import (
     WilliamsRConfig, CCIConfig, MultiHorizonRSIConfig,
     backtest_williams_r, backtest_cci, backtest_multi_rsi,
@@ -194,6 +195,7 @@ _STRATEGY_META = {
     "triple": {"name":"Triple RSI — Multi-Horizon","subtitle":"RSI(5) + RSI(14) + RSI(50)","description":"Daily long-only mean reversion using RSI(5) < 45, RSI(14) < 65, RSI(50) < 55, with RSI-based exits.","default_symbol":"SPY","chart_tf":"1d","kind":"daily"},
     "williams": {"name":"Williams %R Mean Reversion","subtitle":"Extreme oversold recovery","description":"Daily long-only mean reversion using Williams %R(2) < -98, price above the 175-day moving average, next-session entry and Williams %R recovery exit.","default_symbol":"SPY","chart_tf":"1d","kind":"daily"},
     "cci": {"name":"CCI Oversold Recovery","subtitle":"CCI(16) extreme oversold recovery","description":"Daily long-only recovery strategy: CCI(16) crosses back above -180, buy next session open, exit when CCI > +150.","default_symbol":"SPY","chart_tf":"1d","kind":"daily"},
+    "aroon_money_flow": {"name":"Aroon + Money Flow Confluence V2","subtitle":"Aroon trend flip + CMF confirmation","description":"Aroon oscillator zero-line flip confirmed by Chaikin Money Flow with ATR risk management.","default_symbol":"GLD","chart_tf":"15m","kind":"intraday"},
     "trend_ribbon": {"name":"Trend Target Ribbon V2","subtitle":"ALMA trend + deviation confirmation + ATR targets","description":"BOSWaves-derived ALMA trend-flip strategy with ATR-normalized slope, deviation confirmation, structure/ATR stop and 1R–4R target diagnostics.","default_symbol":"SPY","chart_tf":"5m","kind":"intraday"},
 }
 
@@ -213,12 +215,14 @@ _STRATEGY_PARAMS = {
     "trend_ribbon": [("alma_len","ALMA length",34,"int",5,100),("alma_offset","ALMA offset",0.85,"float",0.1,0.99),("alma_sigma","ALMA sigma",6.0,"float",1,15),("dev_len","Deviation length",34,"int",5,100),("dev_mult","Deviation multiplier",0.65,"float",0,3),("slope_len","Slope length",3,"int",1,20),("slope_min","Minimum slope",0.08,"float",0,1),("stop_lookback","Stop lookback",12,"int",2,50),("min_stop_atr","Min stop ATR",0.75,"float",0.1,5),("max_stop_atr","Max stop ATR",3.0,"float",0.5,8),("max_entry_body_atr","Max entry body ATR",1.0,"float",0.25,4),("target_count","Target count",4,"int",2,4),("max_hold_bars","Max hold bars (0=off)",0,"int",0,500),("cooldown_bars","Cooldown bars",0,"int",0,50)],
     "triple": [("rsi_fast","RSI fast",5,"int",2,20),("rsi_mid","RSI mid",14,"int",5,50),("rsi_slow","RSI slow",50,"int",20,100),("entry_fast_max","Fast RSI max",45,"float",1,99),("entry_mid_max","Mid RSI max",65,"float",1,99),("entry_slow_max","Slow RSI max",55,"float",1,99),("exit_fast","Fast RSI exit",90,"float",1,99),("exit_mid","Mid RSI exit",65,"float",1,99)],
     "williams": [("length","Williams length",2,"int",2,20),("entry_level","Entry level",-98,"float",-100,-50),("ma_len","MA length",175,"int",20,500),("exit_level","Exit level",-50,"float",-99,0)],
+    "aroon_money_flow": [("aroon_len","Aroon length",14,"int",5,50),("cmf_len","CMF length",20,"int",5,60),("flow_buffer","Flow buffer",0.05,"float",0,0.20),("confirm_bars","Confirm bars",5,"int",0,20),("atr_len","ATR length",14,"int",5,50),("atr_stop","ATR stop",1.5,"float",0.5,4),("rr","Reward / risk",2.0,"float",0.5,5),("use_adx","Use ADX",False,"bool",0,1),("adx_len","ADX length",14,"int",5,50),("adx_min","ADX minimum",20.0,"float",5,50),("cooldown_bars","Cooldown bars",0,"int",0,50)],
     "cci": [("length","CCI length",16,"int",5,50),("entry_level","Entry level",-180,"float",-400,0),("exit_level","Exit level",150,"float",0,400)],
 };
 
 @bp.route("/xauusd-research-v2/<strategy>", methods=["GET"])
 @bp.route("/xauusd-pullback-v2", defaults={"strategy":"pullback"}, methods=["GET"])
 @bp.route("/xauusd-ema-retest-v2", defaults={"strategy":"ema"}, methods=["GET"])
+@bp.route("/xauusd-aroon-money-flow-v2", defaults={"strategy":"aroon_money_flow"}, methods=["GET"])
 @bp.route("/xauusd-trend-ribbon-v2", defaults={"strategy":"trend_ribbon"}, methods=["GET"])
 @bp.route("/xauusd-triple-rsi-v2", defaults={"strategy":"triple"}, methods=["GET"])
 @bp.route("/xauusd-williams-v2", defaults={"strategy":"williams"}, methods=["GET"])
@@ -869,6 +873,11 @@ def run(strategy):
             df, source = _intraday(symbol, bars)
             cfg = _cfg(EMARetestV2Config, body.get("config"))
             result = ema_v2_backtest(df, cfg)
+        elif strategy == "aroon_money_flow":
+            bars = int(body.get("n_bars", 15600))
+            df, source = _intraday(symbol, bars)
+            cfg = _cfg(AroonMoneyFlowV2Config, body.get("config"))
+            result = aroon_money_flow_backtest(df, cfg)
         elif strategy in ("trend_ribbon", "trend-target-ribbon", "trend_target_ribbon"):
             bars = int(body.get("n_bars", 15600))
             df, source = _intraday(symbol, bars)
