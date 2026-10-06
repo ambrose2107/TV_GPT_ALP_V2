@@ -139,6 +139,126 @@ def _marketaux_news(symbol):
                 "error": "News/sentiment processing failed."}
 
 
+_NEWS_BATCH_CACHE = {"at": 0.0, "payload": None}
+
+def _marketaux_news_batch(symbols):
+    """Fetch news for the current ranked candidates in one MarketAux request.
+
+    This is intentionally a single batched request rather than one request per
+    ticker, which keeps the free-tier API usage predictable. Results are cached
+    for 30 minutes and also populate the per-symbol news cache used by the
+    selected-ticker research panel.
+    """
+    symbols = [str(s or "").strip().upper() for s in (symbols or [])]
+    symbols = list(dict.fromkeys(s for s in symbols if s and s.replace(".", "").replace("-", "").isalnum()))
+    symbols = symbols[:40]
+    if not symbols:
+        return {"configured": False, "symbols": [], "results": {}, "message": "No ranked symbols to research."}
+
+    token = _marketaux_token()
+    if not token:
+        return {"configured": False, "symbols": symbols, "results": {},
+                "message": "Set MARKETAUX_API_TOKEN in Render to enable automatic news and sentiment."}
+
+    now = time.time()
+    cached = _NEWS_BATCH_CACHE.get("payload")
+    if cached and now - _NEWS_BATCH_CACHE.get("at", 0.0) < NEWS_CACHE_SECONDS:
+        return dict(cached, cached=True)
+
+    params = {
+        "api_token": token,
+        "symbols": ",".join(symbols),
+        "filter_entities": "true",
+        "language": "en",
+        "limit": min(100, max(3, len(symbols) * 3)),
+        "published_after": (datetime.now(timezone.utc) - timedelta(hours=36)).strftime("%Y-%m-%dT%H:%M"),
+        "group_similar": "true",
+    }
+    try:
+        response = requests.get("https://api.marketaux.com/v1/news/all", params=params, timeout=15)
+        response.raise_for_status()
+        raw = response.json()
+        grouped = {s: [] for s in symbols}
+
+        for item in (raw.get("data") or []):
+            title = item.get("title") or "Untitled"
+            base = {
+                "title": title,
+                "source": item.get("source") or "",
+                "published_at": item.get("published_at"),
+                "url": item.get("url"),
+                "snippet": item.get("snippet") or item.get("description") or "",
+            }
+            for entity in (item.get("entities") or []):
+                sym = str(entity.get("symbol") or "").upper()
+                if sym not in grouped:
+                    continue
+                score = entity.get("sentiment_score")
+                article = dict(base)
+                try:
+                    article["sentiment_score"] = round(float(score), 3) if score is not None else None
+                except (TypeError, ValueError):
+                    article["sentiment_score"] = None
+                # One article/entity pair per ticker; ignore duplicate entity rows.
+                if not any(a.get("url") == article.get("url") and a.get("title") == title for a in grouped[sym]):
+                    grouped[sym].append(article)
+
+        results = {}
+        for sym in symbols:
+            articles = grouped[sym][:3]
+            scores = [float(a["sentiment_score"]) for a in articles if a.get("sentiment_score") is not None]
+            avg = sum(scores) / len(scores) if scores else 0.0
+            payload = {
+                "configured": True,
+                "symbol": sym,
+                "articles": articles,
+                "article_count": len(articles),
+                "news_intensity": _news_intensity(len(articles)),
+                "sentiment_score": round(avg, 3) if scores else None,
+                "sentiment_label": (
+                    "Bullish" if avg >= 0.15 else
+                    "Bearish" if avg <= -0.15 else
+                    "Neutral"
+                ) if scores else "No signal",
+                "provider": "MarketAux",
+                "cached": False,
+                "cache_seconds": NEWS_CACHE_SECONDS,
+                "as_of": datetime.now(timezone.utc).isoformat(),
+            }
+            results[sym] = payload
+            _NEWS_CACHE[sym] = {"at": now, "payload": payload}
+
+        payload = {
+            "configured": True,
+            "symbols": symbols,
+            "results": results,
+            "symbol_count": len(symbols),
+            "provider": "MarketAux",
+            "cached": False,
+            "cache_seconds": NEWS_CACHE_SECONDS,
+            "as_of": datetime.now(timezone.utc).isoformat(),
+            "request_mode": "single batched request",
+        }
+        _NEWS_BATCH_CACHE.update({"at": now, "payload": payload})
+        return payload
+    except requests.HTTPError as ex:
+        status = ex.response.status_code if ex.response is not None else 502
+        if status == 402:
+            return {"configured": True, "symbols": symbols, "results": {},
+                    "error": "MarketAux daily free quota has been reached. Try again tomorrow."}
+        logger.warning("MarketAux batch request rejected: HTTP %s", status)
+        return {"configured": True, "symbols": symbols, "results": {},
+                "error": "MarketAux rejected the batched news request (HTTP %s)." % status}
+    except requests.RequestException as ex:
+        logger.warning("MarketAux batch news unavailable: %s", ex)
+        return {"configured": True, "symbols": symbols, "results": {},
+                "error": "MarketAux news is temporarily unavailable."}
+    except Exception:
+        logger.exception("MarketAux batch news processing failed")
+        return {"configured": True, "symbols": symbols, "results": {},
+                "error": "Automatic news/sentiment processing failed."}
+
+
 @early_signal_bp.route("/api/early-signal/research/<symbol>")
 def early_signal_research(symbol):
     if not session.get("logged_in"):
@@ -167,6 +287,20 @@ def early_signal_research(symbol):
         "rationale": rationale,
         "methodology": "Research confluence combines technical score, MarketAux news sentiment/intensity, and deterministic price-volume confirmation. It is not a forecast or trade instruction."
     })
+
+@early_signal_bp.route("/api/early-signal/news-all")
+def early_signal_news_all():
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+    scan = early_signal_scan().get_json()
+    if not scan or not scan.get("rows"):
+        return jsonify({"error": "Technical scanner data is unavailable."}), 503
+    symbols = [r.get("symbol") for r in scan["rows"] if r.get("symbol")]
+    payload = _marketaux_news_batch(symbols)
+    payload["ranked_count"] = len(symbols)
+    payload["scanner_as_of"] = scan.get("as_of")
+    return jsonify(payload)
+
 
 @early_signal_bp.route("/api/market-news")
 def market_news():
@@ -298,7 +432,7 @@ def early_signal_scan():
             "cached": False, "cache_seconds": CACHE_SECONDS, "universe_count": len(UNIVERSE),
             "symbols_received": len(bars_by_symbol), "candidate_count": len(rows),
             "rows": rows[:40], "meta": meta,
-            "methodology": "Score = equal-weight volume expansion, 5-day momentum, moving-average trend, and 5-day relative strength versus SPY. MarketAux news/sentiment is available on demand; it is intentionally not included in the automatic rank because the free plan is quota-limited. Research ranking only; not a forecast or trade instruction.",
+            "methodology": "Score = equal-weight volume expansion, 5-day momentum, moving-average trend, and 5-day relative strength versus SPY. MarketAux news/sentiment is automatically fetched for the ranked candidates in one batched request and cached for 30 minutes. News does not change the technical ranking; it is a separate research confirmation layer. Research ranking only; not a forecast or trade instruction.",
         }
         _CACHE.update({"at": now, "payload": payload})
         return jsonify(payload)
