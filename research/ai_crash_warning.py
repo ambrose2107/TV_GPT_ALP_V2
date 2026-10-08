@@ -18,6 +18,11 @@ CACHE_TTL=6*60*60
 FUND_CACHE_TTL=24*60*60
 _HIST_CACHE={"payload":None,"ts":0.0}
 HIST_CACHE_TTL=24*60*60
+# Production replay is deliberately isolated from the live dashboard path.
+_PROD_CACHE={"payload":None,"ts":0.0}
+_PROD_JOB={"status":"idle","result":None,"error":None,"started_at":None,"finished_at":None}
+_PROD_LOCK=threading.Lock()
+_PROD_THREAD=None
 FRED={"hy_oas":"BAMLH0A0HYM2","nfci":"NFCI","dfii10":"DFII10","unrate":"UNRATE"}
 MARKET=["SPY","QQQ","RSP","IWM","SOXX","^VIX"]
 HYPERSCALERS=["MSFT","GOOGL","AMZN","META","ORCL"]
@@ -444,6 +449,281 @@ def _historical_crash_replay(f):
           "method":"Requires long-run SPY, QQQ, VIX and historical macro series."}
     _HIST_CACHE["payload"]=payload; _HIST_CACHE["ts"]=now
     return payload
+
+
+def _historical_production_replay(f):
+    """Replay the production crash score day-by-day when all production inputs are historically available.
+
+    Uses the same component formulas and weights as _score(). Historical AI Fundamental /
+    AI Financing inputs are reconstructed from SEC XBRL quarterly/annual facts where possible.
+    This is a period-end financial replay, not yet a filing-date point-in-time backtest.
+    """
+    now=time.time()
+    cached=_PROD_CACHE["payload"]
+    cache_ttl=HIST_CACHE_TTL if cached and cached.get("available") else 15*60
+    if cached is not None and now-_PROD_CACHE["ts"]<cache_ttl:
+        return cached
+    try:
+        from concurrent.futures import ThreadPoolExecutor
+        source_map={}
+        market_symbols=("SPY","QQQ","RSP","IWM","SOXX","^VIX")
+        cik_map={"MSFT":"0000789019","GOOGL":"0001652044","AMZN":"0001018724","META":"0001326801","ORCL":"0001341439"}
+
+        def _load_long(sym):
+            try:
+                chart=yahoo_get_chart(sym,interval="1d",period="max")
+                if chart and chart.get("timestamps") and chart.get("close"):
+                    ix=pd.to_datetime(chart["timestamps"],unit="s",utc=True,errors="coerce").tz_localize(None).normalize()
+                    q=pd.Series(pd.to_numeric(chart["close"],errors="coerce"),index=ix).dropna()
+                    q=q[~q.index.isna()]
+                    q=q[~q.index.duplicated(keep="last")].sort_index()
+                    if len(q)>=250:
+                        source_map[sym]="Yahoo Finance max history"
+                        return sym,q
+            except Exception as exc:
+                logger.warning("Yahoo long history failed for %s: %s",sym,exc)
+            if sym in ("SPY","QQQ"):
+                try:
+                    response=requests.get("https://stooq.com/q/d/l/",params={"s":sym.lower()+".us","i":"d"},
+                        headers={"User-Agent":"Mozilla/5.0"},timeout=18)
+                    response.raise_for_status()
+                    d=pd.read_csv(io.StringIO(response.text))
+                    if {"Date","Close"}.issubset(d.columns):
+                        ix=pd.to_datetime(d["Date"],errors="coerce").dt.normalize()
+                        q=pd.Series(pd.to_numeric(d["Close"],errors="coerce").to_numpy(),index=ix).dropna()
+                        q=q[~q.index.isna()]
+                        q=q[~q.index.duplicated(keep="last")].sort_index()
+                        if len(q)>=250:
+                            source_map[sym]="Stooq daily history fallback"
+                            return sym,q
+                except Exception as exc:
+                    logger.warning("Stooq long-history fallback failed for %s: %s",sym,exc)
+            if sym=="^VIX":
+                try:
+                    response=requests.get("https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
+                        headers={"User-Agent":"Mozilla/5.0"},timeout=18)
+                    response.raise_for_status()
+                    d=pd.read_csv(io.StringIO(response.text))
+                    dc=next((c for c in d.columns if c.strip().lower()=="date"),None)
+                    cc=next((c for c in d.columns if c.strip().lower() in ("close","vix close")),None)
+                    if dc and cc:
+                        ix=pd.to_datetime(d[dc],errors="coerce").dt.normalize()
+                        q=pd.Series(pd.to_numeric(d[cc],errors="coerce").to_numpy(),index=ix).dropna()
+                        q=q[~q.index.isna()]
+                        q=q[~q.index.duplicated(keep="last")].sort_index()
+                        if len(q)>=250:
+                            source_map[sym]="CBOE official VIX history fallback"
+                            return sym,q
+                except Exception as exc:
+                    logger.warning("CBOE VIX fallback failed: %s",exc)
+            raise RuntimeError("Long-run history unavailable for "+sym)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            series=dict(pool.map(_load_long,market_symbols))
+        p=pd.concat(series,axis=1).sort_index()
+        p=p[~p.index.duplicated(keep="last")]
+
+        for key in ("hy_oas","nfci","dfii10","unrate"):
+            z=f.get(key,pd.Series(dtype=float)).copy()
+            z.index=pd.to_datetime(z.index,errors="coerce").tz_localize(None).normalize()
+            p[key]=pd.to_numeric(z.reindex(p.index).ffill(),errors="coerce")
+
+        def _sec_fact_payload(ticker):
+            url=f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik_map[ticker]}.json"
+            r=requests.get(url,headers={"User-Agent":"TV-GPT-ALP-V2 research contact"},timeout=20)
+            r.raise_for_status()
+            return r.json()
+
+        def _pick_fact(facts,candidates):
+            for tag in candidates:
+                node=facts.get("us-gaap",{}).get(tag)
+                if node and "USD" in node.get("units",{}):
+                    return node["units"]["USD"],tag
+            return None,None
+
+        def _flow_quarters(rows):
+            q={}; annual={}
+            for x in rows or []:
+                try:
+                    if not x.get("start") or not x.get("end"): continue
+                    st=pd.Timestamp(x["start"]).normalize(); en=pd.Timestamp(x["end"]).normalize()
+                    dur=(en-st).days; val=float(x["val"]); filed=pd.Timestamp(x.get("filed","1900-01-01"))
+                    if 70<=dur<=110:
+                        old=q.get(en)
+                        if old is None or filed>old[1]: q[en]=(val,filed)
+                    elif 300<=dur<=380 and x.get("form") in ("10-K","20-F"):
+                        old=annual.get(en)
+                        if old is None or filed>old[1]: annual[en]=(val,filed)
+                except Exception: continue
+            qv={d:v[0] for d,v in q.items()}
+            for yend,(av,_) in annual.items():
+                qs=sorted([d for d in qv if d<yend])
+                if len(qs)>=3: qv[yend]=av-sum(qv[d] for d in qs[-3:])
+            return pd.Series(qv,dtype=float).sort_index()
+
+        def _instant_series(rows):
+            out={}
+            for x in rows or []:
+                try:
+                    en=pd.Timestamp(x["end"]).normalize(); val=float(x["val"]); filed=pd.Timestamp(x.get("filed","1900-01-01"))
+                    old=out.get(en)
+                    if old is None or filed>old[1]: out[en]=(val,filed)
+                except Exception: continue
+            return pd.Series({d:v[0] for d,v in out.items()},dtype=float).sort_index()
+
+        def _company_snapshot(ticker):
+            facts=_sec_fact_payload(ticker)["facts"]
+            rev_rows,_=_pick_fact(facts,["RevenueFromContractWithCustomerExcludingAssessedTax","Revenues","SalesRevenueNet"])
+            cap_rows,_=_pick_fact(facts,["PaymentsToAcquirePropertyPlantAndEquipment","PaymentsToAcquirePropertyPlantAndEquipmentGross"])
+            if rev_rows is None or cap_rows is None: return pd.DataFrame()
+            rev=_flow_quarters(rev_rows); cap=_flow_quarters(cap_rows).abs()
+            pieces=[]
+            for tag in ("LongTermDebtAndFinanceLeaseObligations","LongTermDebtAndFinanceLeaseObligationsCurrent",
+                        "LongTermDebtCurrent","LongTermDebtAndFinanceLeaseObligationsNoncurrent","LongTermDebtNoncurrent"):
+                node=facts.get("us-gaap",{}).get(tag)
+                if node and "USD" in node.get("units",{}): pieces.append(_instant_series(node["units"]["USD"]).rename(tag))
+            debt=pd.concat(pieces,axis=1).sum(axis=1,min_count=1) if pieces else pd.Series(dtype=float)
+            rows=[]
+            for d in sorted(set(rev.index)|set(cap.index)):
+                r=rev.loc[:d].tail(4); c=cap.loc[:d].tail(4)
+                if len(r)<4 or len(c)<4: continue
+                prev_r=rev.loc[:d].iloc[:-4].tail(4); prev_c=cap.loc[:d].iloc[:-4].tail(4)
+                if len(prev_r)<4 or len(prev_c)<4: continue
+                dn=debt.loc[:d].dropna()
+                if len(dn)<5: continue
+                rt=float(r.sum()); ct=float(c.sum()); rp=float(prev_r.sum()); cp=float(prev_c.sum())
+                dn_now=float(dn.iloc[-1]); dn_prev=float(dn.iloc[-5])
+                rows.append({"date":d,"capex_revenue":ct/rt*100 if rt>0 else None,
+                    "capex_growth_gap":((ct/cp)-1)*100-((rt/rp)-1)*100 if cp>0 and rp>0 else None,
+                    "debt_growth_gap":((dn_now/dn_prev)-1)*100-((rt/rp)-1)*100 if dn_prev>0 and rp>0 else None})
+            return pd.DataFrame(rows).set_index("date") if rows else pd.DataFrame()
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            fund_results=dict(zip(cik_map.keys(),pool.map(_company_snapshot,cik_map.keys())))
+        fund_parts={k:v for k,v in fund_results.items() if v is not None and not v.empty}
+        if not fund_parts: raise RuntimeError("SEC historical hyperscaler fundamentals unavailable")
+        fund=pd.concat(fund_parts,axis=1)
+        fund.columns=pd.MultiIndex.from_tuples(fund.columns)
+        fund_agg=pd.DataFrame(index=fund.index)
+        for metric in ("capex_revenue","capex_growth_gap","debt_growth_gap"):
+            cols=[c for c in fund.columns if c[1]==metric]
+            fund_agg[metric]=fund[cols].mean(axis=1,min_count=3)
+        fund_agg=fund_agg.sort_index().ffill()
+
+        hy=p["hy_oas"]; hy_med=hy.rolling(252,min_periods=60).median(); hy_chg=hy.diff(20)
+        credit=(0.65*((hy/hy_med.clip(lower=.5)-.85)*100)+0.35*(hy_chg.fillna(0)*35)).clip(0,100)
+        nf=p["nfci"]; nf_mean=nf.rolling(104,min_periods=26).mean(); nf_std=nf.rolling(104,min_periods=26).std()
+        liquidity=(((nf-nf_mean)/nf_std.clip(lower=.15)+.5)*35).clip(0,100)
+        real=p["dfii10"]; real_score=(((real-1)*22)+real.diff(60).clip(lower=0)*10).clip(0,100)
+        vol=((p["^VIX"]-16)*4).clip(0,100)
+        breadth=pd.concat([(50-(p[sym]/p["SPY"]).pct_change(63)*2.5).clip(0,100) for sym in ("RSP","IWM","SOXX")],axis=1).mean(axis=1)
+        un=p["unrate"]; m=un.rolling(3).mean(); sahm=m-m.rolling(12).min()
+        recession=(sahm*120).clip(0,100)
+        recession=(recession+un.diff(3)*18).clip(0,100)
+
+        cgap=fund_agg["capex_growth_gap"].reindex(p.index).ffill()
+        dgap=fund_agg["debt_growth_gap"].reindex(p.index).ffill()
+        ratio=fund_agg["capex_revenue"].reindex(p.index).ffill()
+        ai=(35+cgap.mul(2).clip(-20,35)+(ratio.sub(15)*1.5).clip(-15,25)).clip(0,100)
+        afin=(35+dgap.mul(2.5).clip(-15,45)).clip(0,100)
+        ai_fund=(0.65*ai+0.35*afin).clip(0,100)
+
+        production=(.18*ai_fund+.14*afin+.20*credit+.10*liquidity+.14*breadth+
+                    .10*real_score+.05*vol+.09*recession).clip(0,100)
+        p["production_score"]=production
+        p=p.dropna(subset=["SPY","QQQ","RSP","IWM","SOXX","^VIX","hy_oas","nfci","dfii10","unrate","production_score"])
+
+        episodes=[
+          {"name":"Dot-com bust","symbol":"QQQ","peak":"2000-03-10"},
+          {"name":"Global financial crisis","symbol":"SPY","peak":"2007-10-09"},
+          {"name":"COVID shock","symbol":"SPY","peak":"2020-02-19"},
+          {"name":"2022 bear market","symbol":"SPY","peak":"2022-01-03"},
+        ]
+        results=[]
+        for e in episodes:
+            s=e["symbol"]; peak_date=pd.Timestamp(e["peak"]); q=p[s].dropna()
+            if q.empty or q.index.min()>peak_date or q.index.max()<peak_date:
+                results.append({"episode":e["name"],"peak_date":e["peak"],"status":"Insufficient exact-production coverage",
+                    "coverage_start":p.index.min().strftime("%Y-%m-%d") if not p.empty else None})
+                continue
+            peak_ix=q.index[q.index.get_indexer([peak_date],method="nearest")[0]]; peak_price=float(q.loc[peak_ix])
+            future=q.loc[peak_ix:].iloc[1:253]; breach=future[future<=peak_price*.80]
+            if breach.empty:
+                results.append({"episode":e["name"],"peak_date":peak_ix.strftime("%Y-%m-%d"),"status":"20% threshold not found in 12M"})
+                continue
+            breach_date=breach.index[0]
+            pre=p.loc[(p.index>=breach_date-pd.Timedelta(days=90))&(p.index<breach_date)]
+            crossed=pre[pre["production_score"]>=60]; first=crossed.index[0] if not crossed.empty else None
+            results.append({"episode":e["name"],"peak_date":peak_ix.strftime("%Y-%m-%d"),
+              "20pct_date":breach_date.strftime("%Y-%m-%d"),"days_to_20pct":int((breach_date-peak_ix).days),
+              "score_at_peak":round(float(p.loc[peak_ix,"production_score"]),1),
+              "max_score_pre_breach":round(float(pre["production_score"].max()),1) if not pre.empty else None,
+              "first_signal_date":first.strftime("%Y-%m-%d") if first is not None else None,
+              "lead_days":int((breach_date-first).days) if first is not None else None,
+              "status":"Signal before -20% threshold" if first is not None else "No 60+ signal in 90D pre-breach window"})
+
+        payload={"available":True,"episodes":results,"threshold":60,"exact_production":True,
+          "method":"Production crash score replay: identical _score() formulas and weights evaluated day-by-day; SEC XBRL period-end financial reconstruction for AI Fundamental/AI Financing.",
+          "production_formula":"AI Fundamental 18% + AI Financing 14% + Credit 20% + Liquidity 10% + Market Breadth 14% + Real Rates 10% + Volatility 5% + Recession 9%",
+          "coverage_start":p.index.min().strftime("%Y-%m-%d") if not p.empty else None,
+          "coverage_end":p.index.max().strftime("%Y-%m-%d") if not p.empty else None,
+          "observations":int(len(p)),"data_sources":source_map,
+          "fundamental_source":"SEC EDGAR XBRL companyfacts; period-end financial facts; aggregate requires at least 3 hyperscalers",
+          "point_in_time":False,
+          "warning":"Production-formula replay, not calibrated probability. Financial facts use reporting period end rather than filing/publication date, so this is not yet a strict point-in-time backtest."}
+    except Exception as exc:
+        logger.warning("Historical production-score replay unavailable: %s",exc)
+        payload={"available":False,"episodes":[],"warning":"Historical production-score replay unavailable: "+str(exc)[:260],
+          "method":"Requires historical SPY/QQQ/RSP/IWM/SOXX/VIX, macro series and SEC XBRL hyperscaler financial facts."}
+    _PROD_CACHE["payload"]=payload; _PROD_CACHE["ts"]=now
+    return payload
+
+
+def start_production_replay(f):
+    """Run the expensive production replay only from an explicit background job."""
+    global _PROD_THREAD
+    with _PROD_LOCK:
+        if _PROD_JOB.get("status") == "running":
+            return False, "already_running"
+        if _PROD_CACHE.get("payload") is not None:
+            _PROD_JOB["status"] = "complete"
+            _PROD_JOB["result"] = _PROD_CACHE["payload"]
+            return False, "cached"
+        _PROD_JOB.update({
+            "status":"running","result":None,"error":None,
+            "started_at":datetime.now(timezone.utc).isoformat(),"finished_at":None
+        })
+        def _worker():
+            try:
+                result=_historical_production_replay(f)
+                with _PROD_LOCK:
+                    _PROD_JOB["result"]=result
+                    _PROD_JOB["status"]="complete" if result.get("available") else "failed"
+                    _PROD_JOB["error"]=None if result.get("available") else result.get("warning")
+                    _PROD_JOB["finished_at"]=datetime.now(timezone.utc).isoformat()
+            except Exception as exc:
+                logger.exception("Production crash replay worker failed")
+                with _PROD_LOCK:
+                    _PROD_JOB["status"]="failed"
+                    _PROD_JOB["error"]=str(exc)[:260]
+                    _PROD_JOB["finished_at"]=datetime.now(timezone.utc).isoformat()
+        _PROD_THREAD=threading.Thread(target=_worker,name="ai-crash-production-replay",daemon=True)
+        _PROD_THREAD.start()
+        return True, "started"
+
+
+def production_replay_status():
+    with _PROD_LOCK:
+        result=_PROD_JOB.get("result")
+        if result is None and _PROD_CACHE.get("payload") is not None:
+            result=_PROD_CACHE["payload"]
+        return {
+            "status":_PROD_JOB.get("status","idle"),
+            "started_at":_PROD_JOB.get("started_at"),
+            "finished_at":_PROD_JOB.get("finished_at"),
+            "error":_PROD_JOB.get("error"),
+            "result":result,
+        }
 
 def build_dashboard(force=False):
     now=time.time()
