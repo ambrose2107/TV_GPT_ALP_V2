@@ -679,7 +679,7 @@ def _historical_production_replay(f):
     return payload
 
 
-def start_production_replay(f):
+def start_production_replay(f=None):
     """Run the expensive production replay only from an explicit background job."""
     global _PROD_THREAD
     with _PROD_LOCK:
@@ -695,6 +695,8 @@ def start_production_replay(f):
         })
         def _worker():
             try:
+                if f is None:
+                    f={k:_fred(v) for k,v in FRED.items()}
                 result=_historical_production_replay(f)
                 with _PROD_LOCK:
                     _PROD_JOB["result"]=result
