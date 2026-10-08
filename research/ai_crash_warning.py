@@ -451,7 +451,7 @@ def _historical_crash_replay(f):
     return payload
 
 
-def _historical_production_replay(f):
+def _historical_production_replay(fred_data):
     """Replay the production crash score day-by-day when all production inputs are historically available.
 
     Uses the same component formulas and weights as _score(). Historical AI Fundamental /
@@ -524,7 +524,7 @@ def _historical_production_replay(f):
         p=p[~p.index.duplicated(keep="last")]
 
         for key in ("hy_oas","nfci","dfii10","unrate"):
-            z=f.get(key,pd.Series(dtype=float)).copy()
+            z=fred_data.get(key,pd.Series(dtype=float)).copy()
             z.index=pd.to_datetime(z.index,errors="coerce").tz_localize(None).normalize()
             p[key]=pd.to_numeric(z.reindex(p.index).ffill(),errors="coerce")
 
@@ -679,7 +679,7 @@ def _historical_production_replay(f):
     return payload
 
 
-def start_production_replay(f=None):
+def start_production_replay(fred_data=None):
     """Run the expensive production replay only from an explicit background job."""
     global _PROD_THREAD
     with _PROD_LOCK:
@@ -695,9 +695,10 @@ def start_production_replay(f=None):
         })
         def _worker():
             try:
-                if f is None:
-                    f={k:_fred(v) for k,v in FRED.items()}
-                result=_historical_production_replay(f)
+                replay_fred=fred_data
+                if replay_fred is None:
+                    replay_fred={k:_fred(v) for k,v in FRED.items()}
+                result=_historical_production_replay(replay_fred)
                 with _PROD_LOCK:
                     _PROD_JOB["result"]=result
                     _PROD_JOB["status"]="complete" if result.get("available") else "failed"
