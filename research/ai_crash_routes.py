@@ -20,9 +20,7 @@ def ai_crash_production_replay_start():
     if not session.get("logged_in"): return jsonify({"error":"Unauthorized"}),401
     try:
         from research.ai_crash_warning import start_production_replay
-        from research.ai_crash_warning import _fred, FRED
-        f={k:_fred(v) for k,v in FRED.items()}
-        started,state=start_production_replay(f)
+        started,state=start_production_replay()
         return jsonify({"started":started,"state":state})
     except Exception as ex:
         logger.warning("AI crash production replay start failed: %s",ex)
