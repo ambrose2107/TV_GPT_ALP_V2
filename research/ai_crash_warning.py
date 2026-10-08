@@ -752,6 +752,17 @@ def build_dashboard(force=False):
         volatility_source = core["details"].get("volatility_source", "unknown")
         if "VIXY ETF proxy" in volatility_source:
             quality_warnings.append("Official VIX index unavailable; using Alpaca VIXY ETF proxy. VIXY is not the VIX index.")
+        # Reliability is separate from the risk score: a high score with weak/stale inputs
+        # must not be presented as equally trustworthy. This is a data-confidence measure,
+        # not a probability of a crash.
+        market_conf=100.0 if market_age_days<=1 else 90.0 if market_age_days<=3 else 70.0 if market_age_days<=5 else 35.0
+        macro_conf=100.0*(len(f)-len(missing_macro))/max(len(FRED),1)
+        fund_conf={0:0.0,1:30.0,2:50.0,3:70.0,4:85.0,5:100.0}.get(min(fundamental_count,5),100.0)
+        vol_conf=100.0 if "VIXY ETF proxy" not in volatility_source else 60.0
+        data_reliability=round(_clip(.35*market_conf+.25*macro_conf+.25*fund_conf+.15*vol_conf),1)
+        v2=_v2_overlay(s,comps,hist)
+        signal_confidence=round(_clip(.60*float(v2["persistence_20d"])+.40*float(v2["confirmation_score"])),1)
+        reliability_label="HIGH" if data_reliability>=80 else "MEDIUM" if data_reliability>=60 else "LOW"
         data_quality={"market_latest_date":market_date.strftime("%Y-%m-%d"),"market_age_days":market_age_days,
           "volatility_source":volatility_source,
           "fundamental_companies_covered":fundamental_count,"fundamental_companies_expected":len(HYPERSCALERS),
@@ -768,7 +779,9 @@ def build_dashboard(force=False):
           "components":factors,"confirmations":{"credit":comps["Credit"]>=70,"recession":comps["Recession"]>=70,
           "breadth":comps["Market Breadth"]>=70,"liquidity":comps["Liquidity"]>=70},
           "details":core["details"],"fundamentals":fund,"data_quality":data_quality,"history":hist,
-          "v2":_v2_overlay(s,comps,hist),
+          "reliability":{"data_score":data_reliability,"data_label":reliability_label,"signal_confidence":signal_confidence,
+            "note":"Data score measures input quality; signal confidence requires persistent or multi-block stress. Neither is a calibrated crash probability."},
+          "v2":v2,
           "historical_replay":_historical_crash_replay(f),
           "methodology":{"weights":{"AI Fundamental":18,"AI Financing":14,"Credit":20,"Liquidity":10,"Market Breadth":14,"Real Rates":10,"Volatility":5,"Recession":9},
           "note":"Early-warning monitor, not a crash-date predictor. Hyperscaler capex is a proxy, not AI-only capex."}}
