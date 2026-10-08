@@ -513,6 +513,35 @@ def _historical_production_replay(fred_data):
                         return sym,q
             except Exception as exc:
                 logger.warning("Yahoo long history failed for %s: %s",sym,exc)
+
+            # Same explicit-range Yahoo fallback used by the lightweight replay.
+            # Keep production validation resilient to Render/Yahoo max-range failures.
+            try:
+                import calendar
+                period1=calendar.timegm((1990,1,1,0,0,0))
+                period2=calendar.timegm(time.gmtime())
+                for host in ("query1.finance.yahoo.com","query2.finance.yahoo.com"):
+                    url="https://%s/v8/finance/chart/%s" % (host,sym.upper())
+                    response=requests.get(url,params={
+                        "period1":period1,"period2":period2,"interval":"1d",
+                        "events":"history","includeAdjustedClose":"true"
+                    },headers={"User-Agent":"Mozilla/5.0"},timeout=20)
+                    response.raise_for_status()
+                    result=(response.json().get("chart",{}).get("result") or [None])[0]
+                    if not result: continue
+                    ts=result.get("timestamp") or []
+                    quote=(result.get("indicators",{}).get("quote") or [{}])[0]
+                    closes=quote.get("close") or []
+                    if not ts or not closes or len(ts)!=len(closes): continue
+                    ix=pd.to_datetime(ts,unit="s",utc=True,errors="coerce").tz_localize(None).normalize()
+                    q=pd.Series(pd.to_numeric(closes,errors="coerce"),index=ix).dropna()
+                    q=q[~q.index.isna()]
+                    q=q[~q.index.duplicated(keep="last")].sort_index()
+                    if len(q)>=250:
+                        source_map[sym]="Yahoo Finance explicit date-range fallback"
+                        return sym,q
+            except Exception as exc:
+                logger.warning("Yahoo explicit date-range fallback failed for %s: %s",sym,exc)
             if sym in ("SPY","QQQ"):
                 try:
                     response=requests.get("https://stooq.com/q/d/l/",params={"s":sym.lower()+".us","i":"d"},
