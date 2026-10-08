@@ -1142,6 +1142,15 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
    <div id="ai-crash-replay-note" class="ac-note">Checking whether a broad-market risk proxy crossed its warning threshold before historical 20% drawdowns. This is not an AI-specific model or a calibrated probability.</div>
  </div>
  <div class="ac-section" style="margin:12px 0 0">
+   <div class="sec-hdr"><h3 style="font-size:13px">📊 Production-Score Validation</h3><span class="sub">Manual background replay · same production formula</span></div>
+   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 0">
+     <button class="btn btn-b" id="ai-crash-prod-btn" onclick="startAICrashProductionReplay()">▶ Run Production Replay</button>
+     <span id="ai-crash-prod-status" style="font-size:11px;color:#8b949e">Not run — this heavy validation is never started automatically.</span>
+   </div>
+   <div id="ai-crash-prod-table" class="ac-table-wrap"></div>
+   <div id="ai-crash-prod-note" class="ac-note" style="margin-top:8px">Uses the same production component formulas and weights, with historical market/macro inputs and SEC XBRL financial reconstruction where coverage permits. It is period-end financial replay, not a filing-date point-in-time backtest.</div>
+ </div>
+ <div class="ac-section" style="margin:12px 0 0">
    <div class="sec-hdr"><h3 style="font-size:13px">Institutional Risk Sheet</h3><span class="sub">Transparent proxies · not a crash-date predictor</span></div>
    <div id="ai-crash-sheet" class="ac-table-wrap"></div>
  </div>
@@ -4458,6 +4467,49 @@ function exportAICrashCSV(){
   a.href=url;a.download='ai_crash_monitor_'+stamp+'.csv';
   document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
 }
+async function renderAICrashProductionStatus(d){
+  const st=$('ai-crash-prod-status'),btn=$('ai-crash-prod-btn'),table=$('ai-crash-prod-table'),note=$('ai-crash-prod-note');
+  if(!st)return;
+  const state=d.status||'idle';
+  if(state==='running'){
+    st.textContent='⏳ Production replay running in background — live Crash monitor remains independent.';
+    st.style.color='#d29922'; if(btn)btn.disabled=true;
+    return;
+  }
+  if(btn)btn.disabled=false;
+  if(state==='failed'){
+    st.textContent='⚠️ Production replay failed; live Crash monitor was not affected.'; st.style.color='#f85149';
+    if(note&&d.error)note.textContent='Replay error: '+String(d.error); return;
+  }
+  if(state!=='complete' || !d.result){st.textContent='Not run — this heavy validation is never started automatically.';return;}
+  const r=d.result||{}; st.textContent='✅ Production replay complete · '+(r.observations||0)+' daily observations'; st.style.color='#3fb950';
+  if(table){
+    table.innerHTML='<table class="ac-table"><thead><tr><th>Episode</th><th>Peak</th><th>−20%</th><th>Score @ Peak</th><th>Max Pre-breach</th><th>First ≥60</th><th>Lead days</th><th>Result</th></tr></thead><tbody>'+
+      (r.episodes||[]).map(x=>'<tr><td><strong>'+String(x.episode||'—')+'</strong></td><td>'+String(x.peak_date||'—')+'</td><td>'+String(x['20pct_date']||'—')+'</td><td>'+(x.score_at_peak==null?'—':Number(x.score_at_peak).toFixed(1))+'</td><td>'+(x.max_score_pre_breach==null?'—':Number(x.max_score_pre_breach).toFixed(1))+'</td><td>'+String(x.first_signal_date||'—')+'</td><td>'+(x.lead_days==null?'—':x.lead_days)+'</td><td>'+String(x.status||'—')+'</td></tr>').join('')+
+      '</tbody></table>';
+  }
+  if(note){
+    note.textContent='Coverage '+(r.coverage_start||'—')+' → '+(r.coverage_end||'—')+' · '+(r.method||'Production replay')+' '+(r.warning||'');
+  }
+}
+let aiCrashProdPoll=null;
+async function pollAICrashProductionReplay(){
+  try{
+    const d=await aiApiFetch('/api/ai-crash/production-replay/status');
+    await renderAICrashProductionStatus(d);
+    if(d.status==='running'){clearTimeout(aiCrashProdPoll);aiCrashProdPoll=setTimeout(pollAICrashProductionReplay,2500);}
+  }catch(e){const st=$('ai-crash-prod-status');if(st){st.textContent='Status unavailable: '+e.message;st.style.color='#f85149';}}
+}
+async function startAICrashProductionReplay(){
+  const btn=$('ai-crash-prod-btn'),st=$('ai-crash-prod-status');
+  if(btn)btn.disabled=true;if(st){st.textContent='Starting isolated background replay…';st.style.color='#d29922';}
+  try{
+    const r=await fetch('/api/ai-crash/production-replay/start',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'}});
+    const d=await r.json(); if(!r.ok||d.error)throw new Error(d.error||'Failed to start replay');
+    await pollAICrashProductionReplay();
+  }catch(e){if(btn)btn.disabled=false;if(st){st.textContent='⚠️ '+e.message;st.style.color='#f85149';}}
+}
+
 async function loadAICrashDashboard(force){
   const load=$('ai-crash-loading'),body=$('ai-crash-body'); if(!load||!body)return;
   load.style.display='block';load.textContent=force?'Refreshing risk monitor…':'Loading risk monitor…';
