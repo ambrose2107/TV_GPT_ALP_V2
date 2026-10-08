@@ -4546,7 +4546,7 @@ async function loadAICrashDashboard(force){
     const replayEl=$('ai-crash-replay'), replayNote=$('ai-crash-replay-note');
     if(replayEl){
       if(!replay.available){
-        replayEl.innerHTML='<div style="padding:12px;color:#d29922">Historical replay unavailable: '+String(replay.warning||'long-run data unavailable').replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]))+'</div>';
+        replayEl.innerHTML='<div style="padding:12px;color:#d29922">String(replay.warning||'long-run data unavailable').replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]))+'</div>';
       } else {
         replayEl.innerHTML='<table class="ac-table"><thead><tr><th>Episode</th><th>Peak</th><th>−20% date</th><th>Score at peak</th><th>Max pre-breach</th><th>First ≥60</th><th>Lead days</th><th>Result</th></tr></thead><tbody>'+
           replayRows.map(r=>'<tr><td><strong>'+String(r.episode||'—')+'</strong></td><td>'+(r.peak_date||'—')+'</td><td>'+(r['20pct_date']||'—')+'</td><td>'+(r.score_at_peak==null?'—':Number(r.score_at_peak).toFixed(1))+'</td><td>'+(r.max_score_pre_breach==null?'—':Number(r.max_score_pre_breach).toFixed(1))+'</td><td>'+(r.first_signal_date||'—')+'</td><td>'+(r.lead_days==null?'—':r.lead_days)+'</td><td>'+String(r.status||'—')+'</td></tr>').join('')+
