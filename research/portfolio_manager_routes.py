@@ -172,6 +172,7 @@ def portfolio_data():
                     break
             import pandas as pd
             close_data = {}
+            high_data = {}
             for sym, rows in bars.items():
                 if not isinstance(rows, list):
                     continue
@@ -182,12 +183,53 @@ def portfolio_data():
                         close_px = float(row.get("c"))
                         if ts and math.isfinite(close_px):
                             vals[ts] = close_px
+                            try:
+                                high_px = float(row.get("h"))
+                                if math.isfinite(high_px):
+                                    high_data.setdefault(sym, {})[ts] = high_px
+                            except (TypeError, ValueError):
+                                pass
                     except (TypeError, ValueError):
                         continue
                 if vals:
                     close_data[sym] = pd.Series(vals, dtype="float64")
             close = pd.DataFrame(close_data).sort_index()
             close = close.dropna(axis=1, how="all")
+
+            # Separate long-history weekly batch for the all-time-high research field.
+            # This is one request for the whole portfolio, not one request per stock.
+            ath_highs = {}
+            try:
+                ath_start = (datetime.now(timezone.utc) - timedelta(days=365 * 20)).date().isoformat()
+                ath_params = {
+                    "symbols": ",".join(data_symbols),
+                    "timeframe": "1Week",
+                    "start": ath_start,
+                    "limit": 10000,
+                    "adjustment": "all",
+                    "feed": "iex",
+                    "sort": "asc",
+                }
+                ath_resp = requests.get(
+                    data_url, params=ath_params,
+                    headers={"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret},
+                    timeout=15,
+                )
+                ath_resp.raise_for_status()
+                ath_body = ath_resp.json()
+                for sym, rows in (ath_body.get("bars") or {}).items():
+                    vals = []
+                    for row in rows or []:
+                        try:
+                            hv = float(row.get("h"))
+                            if math.isfinite(hv):
+                                vals.append(hv)
+                        except (TypeError, ValueError):
+                            pass
+                    if vals:
+                        ath_highs[sym] = max(vals)
+            except Exception as ath_ex:
+                logger.warning("Portfolio all-time-high batch unavailable: %s", ath_ex)
             rets = close.pct_change(fill_method=None).dropna(how="all")
             for sym in symbols:
                 if sym in close.columns:
@@ -210,7 +252,14 @@ def portfolio_data():
                         if ma20 < ma50: score += 2; flags.append("20D mean below 50D")
                         if dd < -7: score += 1; flags.append("drawdown from 3M high")
                         if vol > 55: score += 1; flags.append("high realized volatility")
+                        highs = pd.Series(high_data.get(sym, {}), dtype="float64").sort_index()
+                        high_52w = float(highs.tail(252).max()) if len(highs) else float(s.tail(252).max())
+                        all_time_high = ath_highs.get(sym)
+                        if all_time_high is None:
+                            # Fall back to the longest daily history already loaded.
+                            all_time_high = float(highs.max()) if len(highs) else float(s.max())
                         market[sym] = {"last":last,"ma20":ma20,"ma50":ma50,"ret20_pct":ret20,
+                                       "high_52w":high_52w,"all_time_high":float(all_time_high),
                                        "ret60_pct":ret60,"volatility_pct":vol,"drawdown_from_3m_high_pct":dd,
                                        "pullback_watch_score":min(score,10),"flags":flags}
             # Use daily adjusted closes for consistent return/correlation windows.
