@@ -471,6 +471,10 @@ def _historical_crash_replay(f):
                 if len(q)>=250 and q.index.min()<=expected_start+pd.Timedelta(days=400):
                     # Fetch only a recent tail, merge by date, and preserve baseline
                     # values where no recent provider observation is available.
+                    # Refresh the recent tail using independent providers. Yahoo is
+                    # frequently rate-limited on Render; do not let a Yahoo 429 alone
+                    # leave the replay silently stuck on an old baseline.
+                    refreshed=False
                     try:
                         chart=yahoo_get_chart(sym,interval="1d",period="2y")
                         if chart and chart.get("timestamps") and chart.get("close"):
@@ -481,9 +485,49 @@ def _historical_crash_replay(f):
                             if not rq.empty:
                                 q=pd.concat([q.loc[q.index<rq.index.min()],rq]).sort_index()
                                 q=q[~q.index.duplicated(keep="last")]
+                                refreshed=True
                     except Exception as exc:
-                        logger.warning("Recent-tail refresh failed for %s; using repository baseline tail: %s",sym,exc)
-                    source_map[sym]="Repository historical baseline + recent Yahoo tail"
+                        logger.warning("Yahoo recent-tail refresh failed for %s: %s",sym,exc)
+                    if not refreshed and sym in ("SPY","QQQ"):
+                        try:
+                            bars=alpaca_get_bars(sym,timeframe="1Day",limit=800)
+                            if bars:
+                                z=pd.DataFrame(bars)
+                                if not z.empty and "t" in z.columns and "c" in z.columns:
+                                    rx=pd.to_datetime(z["t"],utc=True,errors="coerce").tz_localize(None).normalize()
+                                    rq=pd.Series(pd.to_numeric(z["c"],errors="coerce").to_numpy(),index=rx).dropna()
+                                    rq=rq[~rq.index.isna()]
+                                    rq=rq[~rq.index.duplicated(keep="last")]
+                                    if not rq.empty:
+                                        q=pd.concat([q.loc[q.index<rq.index.min()],rq]).sort_index()
+                                        q=q[~q.index.duplicated(keep="last")]
+                                        refreshed=True
+                        except Exception as exc:
+                            logger.warning("Alpaca recent-tail refresh failed for %s: %s",sym,exc)
+                    if not refreshed and sym=="^VIX":
+                        try:
+                            response=requests.get("https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
+                                headers={"User-Agent":"Mozilla/5.0"},timeout=18)
+                            response.raise_for_status()
+                            d=pd.read_csv(io.StringIO(response.text))
+                            dc=next((c for c in d.columns if c.strip().lower()=="date"),None)
+                            cc=next((c for c in d.columns if c.strip().lower() in ("close","vix close")),None)
+                            if dc and cc:
+                                rx=pd.to_datetime(d[dc],errors="coerce").dt.normalize()
+                                rq=pd.Series(pd.to_numeric(d[cc],errors="coerce").to_numpy(),index=rx).dropna()
+                                rq=rq[~rq.index.isna()]
+                                rq=rq[~rq.index.duplicated(keep="last")]
+                                if not rq.empty:
+                                    q=pd.concat([q.loc[q.index<rq.index.min()],rq]).sort_index()
+                                    q=q[~q.index.duplicated(keep="last")]
+                                    refreshed=True
+                        except Exception as exc:
+                            logger.warning("CBOE recent-tail refresh failed for VIX: %s",exc)
+                    latest=q.index.max() if not q.empty else None
+                    fresh=latest is not None and latest>=pd.Timestamp.now().normalize()-pd.Timedelta(days=10)
+                    source_map[sym]="Repository baseline + refreshed recent tail" if refreshed and fresh else "Repository historical baseline (stale tail)"
+                    if not fresh:
+                        logger.warning("Historical baseline for %s ends %s; recent refresh unavailable",sym,latest)
                     return sym,q
             except Exception as exc:
                 logger.warning("Repository historical baseline unavailable for %s: %s",sym,exc)
