@@ -400,7 +400,7 @@ def _historical_crash_replay(f):
                     if chunks:
                         q=pd.concat(chunks).sort_index()
                         q=q[~q.index.duplicated(keep="last")]
-                        expected_start=pd.Timestamp("1993-01-01") if sym=="SPY" else pd.Timestamp("1999-03-01") if sym=="QQQ" else pd.Timestamp("1990-01-01")
+                        expected_start=pd.Timestamp("2000-01-01") if sym=="SPY" else pd.Timestamp("1999-03-01") if sym=="QQQ" else pd.Timestamp("1990-01-01")
                         # Permit modest listing/provider gaps, but reject recent-only data.
                         if len(q)>=250 and q.index.min()<=expected_start+pd.Timedelta(days=400):
                             source_map[sym]=f"Yahoo Finance chunked history ({host})"
@@ -418,7 +418,7 @@ def _historical_crash_replay(f):
                     q=pd.Series(pd.to_numeric(chart["close"],errors="coerce"),index=ix).dropna()
                     q=q[~q.index.isna()]
                     q=q[~q.index.duplicated(keep="last")].sort_index()
-                    expected_start=pd.Timestamp("1993-01-01") if sym=="SPY" else pd.Timestamp("1999-03-01") if sym=="QQQ" else pd.Timestamp("1990-01-01")
+                    expected_start=pd.Timestamp("2000-01-01") if sym=="SPY" else pd.Timestamp("1999-03-01") if sym=="QQQ" else pd.Timestamp("1990-01-01")
                     if len(q)>=250 and q.index.min()<=expected_start+pd.Timedelta(days=400):
                         source_map[sym]="Yahoo Finance max history"
                         return sym,q
@@ -436,9 +436,11 @@ def _historical_crash_replay(f):
                         q=pd.Series(pd.to_numeric(d["Close"],errors="coerce").to_numpy(),index=ix).dropna()
                         q=q[~q.index.isna()]
                         q=q[~q.index.duplicated(keep="last")].sort_index()
-                        if len(q)>=250:
+                        expected_start=pd.Timestamp("2000-01-01") if sym=="SPY" else pd.Timestamp("1999-03-01")
+                        if len(q)>=250 and q.index.min()<=expected_start+pd.Timedelta(days=400):
                             source_map[sym]="Stooq daily history fallback"
                             return sym,q
+                        logger.warning("Stooq history for %s is recent-only or incomplete: %s to %s (%d rows)",sym,q.index.min() if len(q) else None,q.index.max() if len(q) else None,len(q))
                 else:
                     response=requests.get("https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
                         headers={"User-Agent":"Mozilla/5.0"},timeout=18)
@@ -467,7 +469,7 @@ def _historical_crash_replay(f):
                 q=pd.Series(pd.to_numeric(base[col],errors="coerce").to_numpy(),index=ix).dropna()
                 q=q[~q.index.isna()]
                 q=q[~q.index.duplicated(keep="last")].sort_index()
-                expected_start=pd.Timestamp("1993-01-01") if sym=="SPY" else pd.Timestamp("1999-03-01") if sym=="QQQ" else pd.Timestamp("1990-01-01")
+                expected_start=pd.Timestamp("2000-01-01") if sym=="SPY" else pd.Timestamp("1999-03-01") if sym=="QQQ" else pd.Timestamp("1990-01-01")
                 if len(q)>=250 and q.index.min()<=expected_start+pd.Timedelta(days=400):
                     # Fetch only a recent tail, merge by date, and preserve baseline
                     # values where no recent provider observation is available.
@@ -564,7 +566,13 @@ def _historical_crash_replay(f):
         nf_mean=p["nfci"].rolling(104,min_periods=26).mean()
         nf_std=p["nfci"].rolling(104,min_periods=26).std().clip(lower=.15)
         liquidity=(40+(p["nfci"]-nf_mean)/nf_std*25).clip(0,100)
-        p["replay_score"]=.30*credit+.20*vol+.25*momentum+.15*drawdown+.10*liquidity
+        # FRED macro series can be missing on hosted deployments even when market history is complete.
+        # Renormalize weights over the components available on each date instead of dropping decades.
+        score_parts=pd.DataFrame({"credit":credit,"volatility":vol,"momentum":momentum,"drawdown":drawdown,"liquidity":liquidity},index=p.index)
+        score_weights=pd.Series({"credit":.30,"volatility":.20,"momentum":.25,"drawdown":.15,"liquidity":.10})
+        weighted=score_parts.mul(score_weights,axis=1)
+        available_weights=score_parts.notna().mul(score_weights,axis=1).sum(axis=1)
+        p["replay_score"]=weighted.sum(axis=1,min_count=1).div(available_weights.replace(0,np.nan))
         p=p.dropna(subset=["SPY","QQQ","^VIX","replay_score"])
         episodes=[
           {"name":"Dot-com bust","symbol":"QQQ","peak":"2000-03-10"},
