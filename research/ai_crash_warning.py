@@ -1,6 +1,6 @@
 """Lightweight AI crash early-warning model for the Backtest tab."""
 from __future__ import annotations
-import io, threading, time
+import io, os, threading, time
 from datetime import datetime, timedelta, timezone
 import numpy as np
 import pandas as pd
@@ -18,6 +18,9 @@ CACHE_TTL=6*60*60
 FUND_CACHE_TTL=24*60*60
 _HIST_CACHE={"payload":None,"ts":0.0}
 HIST_CACHE_TTL=24*60*60
+# Historical validation data is deliberately separate from live market inputs.
+# Render Free has ephemeral disk; this cache avoids repeated downloads within a running instance.
+_VALIDATION_CACHE_PATH=os.path.join(os.path.dirname(os.path.dirname(__file__)), "instance", "ai_crash_validation_history.csv")
 # Production replay is deliberately isolated from the live dashboard path.
 _PROD_CACHE={"payload":None,"ts":0.0}
 _PROD_JOB={"status":"idle","result":None,"error":None,"started_at":None,"finished_at":None}
@@ -330,6 +333,31 @@ def _historical_crash_replay(f):
     try:
         from concurrent.futures import ThreadPoolExecutor
         source_map={}
+        # Prefer previously verified validation history so every page refresh does not
+        # re-download decades of prices. Cache is validation-only; live scoring still
+        # uses the current market-data pipeline. Require all crash eras before reuse.
+        cache_path=_VALIDATION_CACHE_PATH
+        required_start=pd.Timestamp("2000-01-01")
+        if os.path.isfile(cache_path):
+            try:
+                cached_history=pd.read_csv(cache_path,parse_dates=["date"]).set_index("date").sort_index()
+                cached_history.index=pd.to_datetime(cached_history.index,errors="coerce").tz_localize(None).normalize()
+                needed={"SPY","QQQ","^VIX"}
+                if needed.issubset(cached_history.columns) and not cached_history.empty and cached_history.index.min()<=pd.Timestamp("2000-06-01") and cached_history.index.max()>=pd.Timestamp.now().normalize()-pd.Timedelta(days=10):
+                    source_map.update({sym:"Local cached validation history" for sym in needed})
+                    p=cached_history[list(needed)].apply(pd.to_numeric,errors="coerce")
+                    p=p[~p.index.isna()].sort_index()
+                    p=p[~p.index.duplicated(keep="last")]
+                    # Jump to shared scoring block below with verified cached series.
+                    series=None
+                else:
+                    p=None
+                    logger.warning("Ignoring incomplete local validation cache; it must cover 2000 through recent sessions")
+            except Exception as exc:
+                p=None
+                logger.warning("Could not read local validation cache: %s",exc)
+        else:
+            p=None
         def _load_long(sym):
             # Yahoo can silently return only recent rows for a long period request
             # on hosted workers. Fetch bounded 5-year chunks, validate coverage, then
@@ -428,10 +456,19 @@ def _historical_crash_replay(f):
             except Exception as exc:
                 logger.warning("Independent long-history fallback failed for %s: %s",sym,exc)
             raise RuntimeError("Long-run history unavailable for "+sym+" (Yahoo and independent fallback failed)")
-        with ThreadPoolExecutor(max_workers=3) as pool:
-            series=dict(pool.map(_load_long,("SPY","QQQ","^VIX")))
-        p=pd.concat(series,axis=1).sort_index()
-        p=p[~p.index.duplicated(keep="last")]
+        if p is None:
+            with ThreadPoolExecutor(max_workers=3) as pool:
+                series=dict(pool.map(_load_long,("SPY","QQQ","^VIX")))
+            p=pd.concat(series,axis=1).sort_index()
+            p=p[~p.index.duplicated(keep="last")]
+            # Persist only after source coverage is verified across all crash eras.
+            if not p.empty and p.index.min()<=required_start+pd.Timedelta(days=400) and p.index.max()>=pd.Timestamp.now().normalize()-pd.Timedelta(days=10):
+                try:
+                    os.makedirs(os.path.dirname(cache_path),exist_ok=True)
+                    p[["SPY","QQQ","^VIX"]].rename_axis("date").to_csv(cache_path,float_format="%.8g")
+                    logger.info("Saved verified historical validation cache: %s (%s to %s; %d rows)",cache_path,p.index.min(),p.index.max(),len(p))
+                except Exception as exc:
+                    logger.warning("Could not persist historical validation cache: %s",exc)
         hy=f.get("hy_oas",pd.Series(dtype=float)).copy()
         nf=f.get("nfci",pd.Series(dtype=float)).copy()
         hy.index=pd.to_datetime(hy.index,errors="coerce").tz_localize(None).normalize()
