@@ -1,7 +1,7 @@
 """Lightweight AI crash early-warning model for the Backtest tab."""
 from __future__ import annotations
 import io, threading, time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import numpy as np
 import pandas as pd
 import requests
