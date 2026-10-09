@@ -6,6 +6,8 @@ started by this test.
 """
 import os
 import re
+import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -70,14 +72,29 @@ def test_deployed_dashboard_and_ai_crash_smoke():
         # The replay button may intentionally be hidden by a nested panel state;\n        # confirm it exists without requiring visibility or triggering the replay.\n        page.locator("#ai-crash-prod-btn").wait_for(state="attached")
 
         # Verify the real authenticated API payload as well as the rendered page.
-        api_result = page.evaluate("""async () => {
-          const response = await fetch('/api/ai-crash/dashboard', {
-            credentials: 'same-origin'
-          });
-          let body = {};
-          try { body = await response.json(); } catch (_) {}
-          return {status: response.status, body};
-        }""")
+        # Render may still be deploying the commit that triggered this workflow.
+        # Retry while the deployed replay is stale, but never treat a stale HTTP 200 as success.
+        api_result = None
+        for attempt in range(4):
+            api_result = page.evaluate("""async () => {
+              const response = await fetch('/api/ai-crash/dashboard', {
+                credentials: 'same-origin'
+              });
+              let body = {};
+              try { body = await response.json(); } catch (_) {}
+              return {status: response.status, body};
+            }""")
+            body = api_result.get("body") or {}
+            replay_check = body.get("historical_replay") or {}
+            try:
+                end_date = datetime.strptime(replay_check.get("coverage_end", ""), "%Y-%m-%d").date()
+                fresh_enough = end_date >= datetime.now(timezone.utc).date() - timedelta(days=10)
+            except (TypeError, ValueError):
+                fresh_enough = False
+            if api_result.get("status") == 200 and fresh_enough:
+                break
+            if attempt < 3:
+                time.sleep(15)
         assert api_result["status"] == 200, (
             "AI Crash dashboard API failed: "
             + str(api_result["status"])
@@ -89,6 +106,15 @@ def test_deployed_dashboard_and_ai_crash_smoke():
         assert "us_market" in payload, "AI Crash payload is missing US-market risk."
         assert "reliability" in payload, "AI Crash payload is missing reliability metrics."
         replay = payload.get("historical_replay") or {}
+        assert replay.get("coverage_start") and replay["coverage_start"] <= "2000-06-01", (
+            "Historical replay does not cover the expected 2000 crash era: "
+            + str(replay.get("coverage_start"))
+        )
+        assert replay.get("coverage_end") and replay["coverage_end"] >= (
+            datetime.now(timezone.utc).date() - timedelta(days=10)
+        ).isoformat(), (
+            "Historical replay tail is stale: coverage ends " + str(replay.get("coverage_end"))
+        )
         assert replay.get("available") is True, (
             "Historical crash replay is unavailable: " + str(replay.get("warning", "no warning returned"))
         )
