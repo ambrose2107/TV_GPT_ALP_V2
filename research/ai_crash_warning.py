@@ -461,8 +461,8 @@ def _historical_crash_replay(f):
             # with the complete historical baseline.
             baseline_path=os.path.join(os.path.dirname(__file__),"data","ai_crash_validation_history.csv")
             try:
-                base=pd.read_csv(baseline_path,usecols=["date",sym+"_close"] if sym!="^VIX" else ["date","VIX_close"])
-                col="VIX_close" if sym=="^VIX" else sym+"_close"
+                col="VIX_close" if sym=="^VIX" else "QQQ_adj_close" if sym=="QQQ" else "SPY_close"
+                base=pd.read_csv(baseline_path,usecols=["date",col])
                 ix=pd.to_datetime(base["date"],errors="coerce").dt.normalize()
                 q=pd.Series(pd.to_numeric(base[col],errors="coerce").to_numpy(),index=ix).dropna()
                 q=q[~q.index.isna()]
