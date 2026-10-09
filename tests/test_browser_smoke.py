@@ -88,6 +88,25 @@ def test_deployed_dashboard_and_ai_crash_smoke():
         assert "score" in payload, "AI Crash payload is missing its risk score."
         assert "us_market" in payload, "AI Crash payload is missing US-market risk."
         assert "reliability" in payload, "AI Crash payload is missing reliability metrics."
+        replay = payload.get("historical_replay") or {}
+        assert replay.get("available") is True, (
+            "Historical crash replay is unavailable: " + str(replay.get("warning", "no warning returned"))
+        )
+        episodes = replay.get("episodes") or []
+        episode_text = " ".join(str(e.get("episode", "")) for e in episodes).lower()
+        expected_episodes = ("dot-com", "global financial crisis", "covid", "2022")
+        missing_episodes = [name for name in expected_episodes if name not in episode_text]
+        assert not missing_episodes, (
+            "Historical replay missing expected crash episodes " + str(missing_episodes)
+            + "; received " + str([e.get("episode") for e in episodes])
+        )
+        print("Historical replay coverage:", replay.get("coverage_start"), "to", replay.get("coverage_end"))
+        print("Historical replay sources:", replay.get("data_sources"))
+        print("Historical episode results:", [
+            {k: e.get(k) for k in ("episode", "peak_date", "20pct_date", "score_at_peak",
+                                    "max_score_pre_breach", "first_60_date", "lead_days", "status")}
+            for e in episodes
+        ])
 
         page.wait_for_function(
             """() => {
