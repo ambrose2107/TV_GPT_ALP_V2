@@ -331,19 +331,44 @@ def _historical_crash_replay(f):
         from concurrent.futures import ThreadPoolExecutor
         source_map={}
         def _load_long(sym):
-            # Yahoo max-range history can fail on hosted workers despite live quotes.
+            # Try both Yahoo chart hosts with an explicit date range; some hosted
+            # workers fail on range=max while explicit periods still work.
+            start=int(datetime(1990,1,1,tzinfo=timezone.utc).timestamp())
+            end=int(time.time())+86400
+            for host in ("query1.finance.yahoo.com","query2.finance.yahoo.com"):
+                try:
+                    url=f"https://{host}/v8/finance/chart/{requests.utils.quote(sym,safe='')}"
+                    response=requests.get(url,params={"period1":start,"period2":end,"interval":"1d","events":"div,splits"},headers={"User-Agent":"Mozilla/5.0 (compatible; CrashReplay/1.0)"},timeout=18)
+                    response.raise_for_status()
+                    obj=response.json().get("chart",{})
+                    result=(obj.get("result") or [None])[0]
+                    if result:
+                        stamps=result.get("timestamp") or []
+                        quote=(result.get("indicators",{}).get("adjclose") or result.get("indicators",{}).get("quote") or [{}])[0]
+                        closes=quote.get("adjclose") or quote.get("close") or []
+                        ix=pd.to_datetime(stamps,unit="s",utc=True,errors="coerce").tz_localize(None).normalize()
+                        q=pd.Series(pd.to_numeric(closes,errors="coerce"),index=ix).dropna()
+                        q=q[~q.index.isna()]
+                        q=q[~q.index.duplicated(keep="last")].sort_index()
+                        if len(q)>=250:
+                            source_map[sym]=f"Yahoo Finance explicit-range ({host})"
+                            return sym,q
+                    logger.warning("Yahoo explicit-range returned insufficient history for %s via %s",sym,host)
+                except Exception as exc:
+                    logger.warning("Yahoo explicit-range failed for %s via %s: %s",sym,host,exc)
+            # Try the existing shared Yahoo loader as a final Yahoo-specific path.
             try:
                 chart=yahoo_get_chart(sym,interval="1d",period="max")
                 if chart and chart.get("timestamps") and chart.get("close"):
                     ix=pd.to_datetime(chart["timestamps"],unit="s",utc=True,errors="coerce").tz_localize(None).normalize()
                     q=pd.Series(pd.to_numeric(chart["close"],errors="coerce"),index=ix).dropna()
                     q=q[~q.index.isna()]
-                    q=q[~q.index.duplicated(keep="last")]
+                    q=q[~q.index.duplicated(keep="last")].sort_index()
                     if len(q)>=250:
                         source_map[sym]="Yahoo Finance max history"
                         return sym,q
             except Exception as exc:
-                logger.warning("Yahoo long history failed for %s: %s",sym,exc)
+                logger.warning("Yahoo max-history fallback failed for %s: %s",sym,exc)
             # Independent fallbacks: Stooq daily history for SPY/QQQ, CBOE official VIX CSV.
             try:
                 if sym in ("SPY","QQQ"):
