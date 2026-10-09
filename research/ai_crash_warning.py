@@ -359,6 +359,82 @@ def _historical_crash_replay(f):
         else:
             p=None
         def _load_long(sym):
+            # Repository baseline is the durable historical source for validation.
+            # Refresh the recent tail separately; never confuse a short live window
+            # with the complete historical baseline.
+            baseline_path=os.path.join(os.path.dirname(__file__),"data","ai_crash_validation_history.csv")
+            try:
+                col="VIX_close" if sym=="^VIX" else "QQQ_adj_close" if sym=="QQQ" else "SPY_close"
+                base=pd.read_csv(baseline_path,usecols=["date",col])
+                ix=pd.to_datetime(base["date"],errors="coerce").dt.normalize()
+                q=pd.Series(pd.to_numeric(base[col],errors="coerce").to_numpy(),index=ix).dropna()
+                q=q[~q.index.isna()]
+                q=q[~q.index.duplicated(keep="last")].sort_index()
+                expected_start=pd.Timestamp("2000-01-01") if sym=="SPY" else pd.Timestamp("1999-03-01") if sym=="QQQ" else pd.Timestamp("1990-01-01")
+                if len(q)>=250 and q.index.min()<=expected_start+pd.Timedelta(days=400):
+                    # Fetch only a recent tail, merge by date, and preserve baseline
+                    # values where no recent provider observation is available.
+                    # Refresh the recent tail using independent providers. Yahoo is
+                    # frequently rate-limited on Render; do not let a Yahoo 429 alone
+                    # leave the replay silently stuck on an old baseline.
+                    refreshed=False
+                    try:
+                        chart=yahoo_get_chart(sym,interval="1d",period="2y")
+                        if chart and chart.get("timestamps") and chart.get("close"):
+                            rx=pd.to_datetime(chart["timestamps"],unit="s",utc=True,errors="coerce").tz_localize(None).normalize()
+                            rq=pd.Series(pd.to_numeric(chart["close"],errors="coerce"),index=rx).dropna()
+                            rq=rq[~rq.index.isna()]
+                            rq=rq[~rq.index.duplicated(keep="last")]
+                            if not rq.empty:
+                                q=pd.concat([q.loc[q.index<rq.index.min()],rq]).sort_index()
+                                q=q[~q.index.duplicated(keep="last")]
+                                refreshed=True
+                    except Exception as exc:
+                        logger.warning("Yahoo recent-tail refresh failed for %s: %s",sym,exc)
+                    if not refreshed and sym in ("SPY","QQQ"):
+                        try:
+                            bars=alpaca_get_bars(sym,timeframe="1Day",limit=800)
+                            if bars:
+                                z=pd.DataFrame(bars)
+                                if not z.empty and "t" in z.columns and "c" in z.columns:
+                                    rx=pd.to_datetime(z["t"],utc=True,errors="coerce").tz_localize(None).normalize()
+                                    rq=pd.Series(pd.to_numeric(z["c"],errors="coerce").to_numpy(),index=rx).dropna()
+                                    rq=rq[~rq.index.isna()]
+                                    rq=rq[~rq.index.duplicated(keep="last")]
+                                    if not rq.empty:
+                                        q=pd.concat([q.loc[q.index<rq.index.min()],rq]).sort_index()
+                                        q=q[~q.index.duplicated(keep="last")]
+                                        refreshed=True
+                        except Exception as exc:
+                            logger.warning("Alpaca recent-tail refresh failed for %s: %s",sym,exc)
+                    if not refreshed and sym=="^VIX":
+                        try:
+                            response=requests.get("https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
+                                headers={"User-Agent":"Mozilla/5.0"},timeout=18)
+                            response.raise_for_status()
+                            d=pd.read_csv(io.StringIO(response.text))
+                            dc=next((c for c in d.columns if c.strip().lower()=="date"),None)
+                            cc=next((c for c in d.columns if c.strip().lower() in ("close","vix close")),None)
+                            if dc and cc:
+                                rx=pd.to_datetime(d[dc],errors="coerce").dt.normalize()
+                                rq=pd.Series(pd.to_numeric(d[cc],errors="coerce").to_numpy(),index=rx).dropna()
+                                rq=rq[~rq.index.isna()]
+                                rq=rq[~rq.index.duplicated(keep="last")]
+                                if not rq.empty:
+                                    q=pd.concat([q.loc[q.index<rq.index.min()],rq]).sort_index()
+                                    q=q[~q.index.duplicated(keep="last")]
+                                    refreshed=True
+                        except Exception as exc:
+                            logger.warning("CBOE recent-tail refresh failed for VIX: %s",exc)
+                    latest=q.index.max() if not q.empty else None
+                    fresh=latest is not None and latest>=pd.Timestamp.now().normalize()-pd.Timedelta(days=10)
+                    source_map[sym]="Repository baseline + refreshed recent tail" if refreshed and fresh else "Repository historical baseline (stale tail)"
+                    if not fresh:
+                        logger.warning("Historical baseline for %s ends %s; recent refresh unavailable",sym,latest)
+                    return sym,q
+            except Exception as exc:
+                logger.warning("Repository historical baseline unavailable for %s: %s",sym,exc)
+
             # Yahoo can silently return only recent rows for a long period request
             # on hosted workers. Fetch bounded 5-year chunks, validate coverage, then
             # combine. Never treat a short recent window as long-run crash history.
@@ -458,81 +534,6 @@ def _historical_crash_replay(f):
                             return sym,q
             except Exception as exc:
                 logger.warning("Independent long-history fallback failed for %s: %s",sym,exc)
-            # Repository baseline is the durable historical source for validation.
-            # Refresh the recent tail separately; never confuse a short live window
-            # with the complete historical baseline.
-            baseline_path=os.path.join(os.path.dirname(__file__),"data","ai_crash_validation_history.csv")
-            try:
-                col="VIX_close" if sym=="^VIX" else "QQQ_adj_close" if sym=="QQQ" else "SPY_close"
-                base=pd.read_csv(baseline_path,usecols=["date",col])
-                ix=pd.to_datetime(base["date"],errors="coerce").dt.normalize()
-                q=pd.Series(pd.to_numeric(base[col],errors="coerce").to_numpy(),index=ix).dropna()
-                q=q[~q.index.isna()]
-                q=q[~q.index.duplicated(keep="last")].sort_index()
-                expected_start=pd.Timestamp("2000-01-01") if sym=="SPY" else pd.Timestamp("1999-03-01") if sym=="QQQ" else pd.Timestamp("1990-01-01")
-                if len(q)>=250 and q.index.min()<=expected_start+pd.Timedelta(days=400):
-                    # Fetch only a recent tail, merge by date, and preserve baseline
-                    # values where no recent provider observation is available.
-                    # Refresh the recent tail using independent providers. Yahoo is
-                    # frequently rate-limited on Render; do not let a Yahoo 429 alone
-                    # leave the replay silently stuck on an old baseline.
-                    refreshed=False
-                    try:
-                        chart=yahoo_get_chart(sym,interval="1d",period="2y")
-                        if chart and chart.get("timestamps") and chart.get("close"):
-                            rx=pd.to_datetime(chart["timestamps"],unit="s",utc=True,errors="coerce").tz_localize(None).normalize()
-                            rq=pd.Series(pd.to_numeric(chart["close"],errors="coerce"),index=rx).dropna()
-                            rq=rq[~rq.index.isna()]
-                            rq=rq[~rq.index.duplicated(keep="last")]
-                            if not rq.empty:
-                                q=pd.concat([q.loc[q.index<rq.index.min()],rq]).sort_index()
-                                q=q[~q.index.duplicated(keep="last")]
-                                refreshed=True
-                    except Exception as exc:
-                        logger.warning("Yahoo recent-tail refresh failed for %s: %s",sym,exc)
-                    if not refreshed and sym in ("SPY","QQQ"):
-                        try:
-                            bars=alpaca_get_bars(sym,timeframe="1Day",limit=800)
-                            if bars:
-                                z=pd.DataFrame(bars)
-                                if not z.empty and "t" in z.columns and "c" in z.columns:
-                                    rx=pd.to_datetime(z["t"],utc=True,errors="coerce").tz_localize(None).normalize()
-                                    rq=pd.Series(pd.to_numeric(z["c"],errors="coerce").to_numpy(),index=rx).dropna()
-                                    rq=rq[~rq.index.isna()]
-                                    rq=rq[~rq.index.duplicated(keep="last")]
-                                    if not rq.empty:
-                                        q=pd.concat([q.loc[q.index<rq.index.min()],rq]).sort_index()
-                                        q=q[~q.index.duplicated(keep="last")]
-                                        refreshed=True
-                        except Exception as exc:
-                            logger.warning("Alpaca recent-tail refresh failed for %s: %s",sym,exc)
-                    if not refreshed and sym=="^VIX":
-                        try:
-                            response=requests.get("https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
-                                headers={"User-Agent":"Mozilla/5.0"},timeout=18)
-                            response.raise_for_status()
-                            d=pd.read_csv(io.StringIO(response.text))
-                            dc=next((c for c in d.columns if c.strip().lower()=="date"),None)
-                            cc=next((c for c in d.columns if c.strip().lower() in ("close","vix close")),None)
-                            if dc and cc:
-                                rx=pd.to_datetime(d[dc],errors="coerce").dt.normalize()
-                                rq=pd.Series(pd.to_numeric(d[cc],errors="coerce").to_numpy(),index=rx).dropna()
-                                rq=rq[~rq.index.isna()]
-                                rq=rq[~rq.index.duplicated(keep="last")]
-                                if not rq.empty:
-                                    q=pd.concat([q.loc[q.index<rq.index.min()],rq]).sort_index()
-                                    q=q[~q.index.duplicated(keep="last")]
-                                    refreshed=True
-                        except Exception as exc:
-                            logger.warning("CBOE recent-tail refresh failed for VIX: %s",exc)
-                    latest=q.index.max() if not q.empty else None
-                    fresh=latest is not None and latest>=pd.Timestamp.now().normalize()-pd.Timedelta(days=10)
-                    source_map[sym]="Repository baseline + refreshed recent tail" if refreshed and fresh else "Repository historical baseline (stale tail)"
-                    if not fresh:
-                        logger.warning("Historical baseline for %s ends %s; recent refresh unavailable",sym,latest)
-                    return sym,q
-            except Exception as exc:
-                logger.warning("Repository historical baseline unavailable for %s: %s",sym,exc)
             raise RuntimeError("Long-run history unavailable for "+sym+" (providers and repository baseline failed)")
         if p is None:
             with ThreadPoolExecutor(max_workers=3) as pool:
