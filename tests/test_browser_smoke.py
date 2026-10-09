@@ -100,6 +100,18 @@ def test_deployed_dashboard_and_ai_crash_smoke():
             "Historical replay missing expected crash episodes " + str(missing_episodes)
             + "; received " + str([e.get("episode") for e in episodes])
         )
+        invalid = [
+            e.get("episode") for e in episodes
+            if e.get("status") == "Insufficient history"
+            or not e.get("20pct_date")
+            or e.get("score_at_peak") is None
+            or e.get("max_score_pre_breach") is None
+        ]
+        assert not invalid, (
+            "Historical crash validation is not complete for: " + str(invalid)
+            + ". Coverage=" + str(replay.get("coverage_start")) + " to "
+            + str(replay.get("coverage_end"))
+        )
         print("Historical replay coverage:", replay.get("coverage_start"), "to", replay.get("coverage_end"))
         print("Historical replay sources:", replay.get("data_sources"))
         print("Historical episode results:", [
