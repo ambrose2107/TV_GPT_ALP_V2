@@ -418,7 +418,8 @@ def _historical_crash_replay(f):
                     q=pd.Series(pd.to_numeric(chart["close"],errors="coerce"),index=ix).dropna()
                     q=q[~q.index.isna()]
                     q=q[~q.index.duplicated(keep="last")].sort_index()
-                    if len(q)>=250:
+                    expected_start=pd.Timestamp("1993-01-01") if sym=="SPY" else pd.Timestamp("1999-03-01") if sym=="QQQ" else pd.Timestamp("1990-01-01")
+                    if len(q)>=250 and q.index.min()<=expected_start+pd.Timedelta(days=400):
                         source_map[sym]="Yahoo Finance max history"
                         return sym,q
             except Exception as exc:
@@ -455,7 +456,38 @@ def _historical_crash_replay(f):
                             return sym,q
             except Exception as exc:
                 logger.warning("Independent long-history fallback failed for %s: %s",sym,exc)
-            raise RuntimeError("Long-run history unavailable for "+sym+" (Yahoo and independent fallback failed)")
+            # Repository baseline is the durable historical source for validation.
+            # Refresh the recent tail separately; never confuse a short live window
+            # with the complete historical baseline.
+            baseline_path=os.path.join(os.path.dirname(__file__),"data","ai_crash_validation_history.csv")
+            try:
+                base=pd.read_csv(baseline_path,usecols=["date",sym+"_close"] if sym!="^VIX" else ["date","VIX_close"])
+                col="VIX_close" if sym=="^VIX" else sym+"_close"
+                ix=pd.to_datetime(base["date"],errors="coerce").dt.normalize()
+                q=pd.Series(pd.to_numeric(base[col],errors="coerce").to_numpy(),index=ix).dropna()
+                q=q[~q.index.isna()]
+                q=q[~q.index.duplicated(keep="last")].sort_index()
+                expected_start=pd.Timestamp("1993-01-01") if sym=="SPY" else pd.Timestamp("1999-03-01") if sym=="QQQ" else pd.Timestamp("1990-01-01")
+                if len(q)>=250 and q.index.min()<=expected_start+pd.Timedelta(days=400):
+                    # Fetch only a recent tail, merge by date, and preserve baseline
+                    # values where no recent provider observation is available.
+                    try:
+                        chart=yahoo_get_chart(sym,interval="1d",period="2y")
+                        if chart and chart.get("timestamps") and chart.get("close"):
+                            rx=pd.to_datetime(chart["timestamps"],unit="s",utc=True,errors="coerce").tz_localize(None).normalize()
+                            rq=pd.Series(pd.to_numeric(chart["close"],errors="coerce"),index=rx).dropna()
+                            rq=rq[~rq.index.isna()]
+                            rq=rq[~rq.index.duplicated(keep="last")]
+                            if not rq.empty:
+                                q=pd.concat([q.loc[q.index<rq.index.min()],rq]).sort_index()
+                                q=q[~q.index.duplicated(keep="last")]
+                    except Exception as exc:
+                        logger.warning("Recent-tail refresh failed for %s; using repository baseline tail: %s",sym,exc)
+                    source_map[sym]="Repository historical baseline + recent Yahoo tail"
+                    return sym,q
+            except Exception as exc:
+                logger.warning("Repository historical baseline unavailable for %s: %s",sym,exc)
+            raise RuntimeError("Long-run history unavailable for "+sym+" (providers and repository baseline failed)")
         if p is None:
             with ThreadPoolExecutor(max_workers=3) as pool:
                 series=dict(pool.map(_load_long,("SPY","QQQ","^VIX")))
