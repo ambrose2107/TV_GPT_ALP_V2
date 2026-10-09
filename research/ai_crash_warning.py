@@ -385,7 +385,7 @@ def _historical_crash_replay(f):
                             rq=pd.Series(pd.to_numeric(chart["close"],errors="coerce"),index=rx).dropna()
                             rq=rq[~rq.index.isna()]
                             rq=rq[~rq.index.duplicated(keep="last")]
-                            if not rq.empty:
+                            if not rq.empty and rq.index.max()>=pd.Timestamp.now().normalize()-pd.Timedelta(days=10):
                                 q=pd.concat([q.loc[q.index<rq.index.min()],rq]).sort_index()
                                 q=q[~q.index.duplicated(keep="last")]
                                 refreshed=True
@@ -401,7 +401,7 @@ def _historical_crash_replay(f):
                                     rq=pd.Series(pd.to_numeric(z["c"],errors="coerce").to_numpy(),index=rx).dropna()
                                     rq=rq[~rq.index.isna()]
                                     rq=rq[~rq.index.duplicated(keep="last")]
-                                    if not rq.empty:
+                                    if not rq.empty and rq.index.max()>=pd.Timestamp.now().normalize()-pd.Timedelta(days=10):
                                         q=pd.concat([q.loc[q.index<rq.index.min()],rq]).sort_index()
                                         q=q[~q.index.duplicated(keep="last")]
                                         refreshed=True
@@ -420,7 +420,7 @@ def _historical_crash_replay(f):
                                 rq=pd.Series(pd.to_numeric(d[cc],errors="coerce").to_numpy(),index=rx).dropna()
                                 rq=rq[~rq.index.isna()]
                                 rq=rq[~rq.index.duplicated(keep="last")]
-                                if not rq.empty:
+                                if not rq.empty and rq.index.max()>=pd.Timestamp.now().normalize()-pd.Timedelta(days=10):
                                     q=pd.concat([q.loc[q.index<rq.index.min()],rq]).sort_index()
                                     q=q[~q.index.duplicated(keep="last")]
                                     refreshed=True
