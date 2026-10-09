@@ -331,31 +331,57 @@ def _historical_crash_replay(f):
         from concurrent.futures import ThreadPoolExecutor
         source_map={}
         def _load_long(sym):
-            # Try both Yahoo chart hosts with an explicit date range; some hosted
-            # workers fail on range=max while explicit periods still work.
-            start=int(datetime(1990,1,1,tzinfo=timezone.utc).timestamp())
-            end=int(time.time())+86400
+            # Yahoo can silently return only recent rows for a long period request
+            # on hosted workers. Fetch bounded 5-year chunks, validate coverage, then
+            # combine. Never treat a short recent window as long-run crash history.
+            start_dt=datetime(1990,1,1,tzinfo=timezone.utc)
+            end_dt=datetime.now(timezone.utc)+timedelta(days=1)
             for host in ("query1.finance.yahoo.com","query2.finance.yahoo.com"):
                 try:
-                    url=f"https://{host}/v8/finance/chart/{requests.utils.quote(sym,safe='')}"
-                    response=requests.get(url,params={"period1":start,"period2":end,"interval":"1d","events":"div,splits"},headers={"User-Agent":"Mozilla/5.0 (compatible; CrashReplay/1.0)"},timeout=18)
-                    response.raise_for_status()
-                    obj=response.json().get("chart",{})
-                    result=(obj.get("result") or [None])[0]
-                    if result:
-                        stamps=result.get("timestamp") or []
-                        quote=(result.get("indicators",{}).get("adjclose") or result.get("indicators",{}).get("quote") or [{}])[0]
-                        closes=quote.get("adjclose") or quote.get("close") or []
-                        ix=pd.to_datetime(stamps,unit="s",utc=True,errors="coerce").tz_localize(None).normalize()
-                        q=pd.Series(pd.to_numeric(closes,errors="coerce"),index=ix).dropna()
-                        q=q[~q.index.isna()]
-                        q=q[~q.index.duplicated(keep="last")].sort_index()
-                        if len(q)>=250:
-                            source_map[sym]=f"Yahoo Finance explicit-range ({host})"
+                    chunks=[]
+                    chunk_start=start_dt
+                    while chunk_start < end_dt:
+                        chunk_end=min(chunk_start+timedelta(days=365*5+2),end_dt)
+                        url=f"https://{host}/v8/finance/chart/{requests.utils.quote(sym,safe='')}"
+                        response=requests.get(
+                            url,
+                            params={"period1":int(chunk_start.timestamp()),"period2":int(chunk_end.timestamp()),
+                                    "interval":"1d","events":"div,splits"},
+                            headers={"User-Agent":"Mozilla/5.0 (compatible; CrashReplay/1.0)"},
+                            timeout=15,
+                        )
+                        response.raise_for_status()
+                        obj=response.json().get("chart",{})
+                        if obj.get("error"):
+                            raise RuntimeError(str(obj["error"]))
+                        result=(obj.get("result") or [None])[0]
+                        if result:
+                            stamps=result.get("timestamp") or []
+                            indicators=result.get("indicators",{})
+                            adj=(indicators.get("adjclose") or [{}])[0]
+                            quote=(indicators.get("quote") or [{}])[0]
+                            closes=adj.get("adjclose") or quote.get("close") or []
+                            if stamps and closes and len(stamps)==len(closes):
+                                ix=pd.to_datetime(stamps,unit="s",utc=True,errors="coerce").tz_localize(None).normalize()
+                                q=pd.Series(pd.to_numeric(closes,errors="coerce"),index=ix).dropna()
+                                q=q[~q.index.isna()]
+                                q=q[~q.index.duplicated(keep="last")].sort_index()
+                                if not q.empty:
+                                    chunks.append(q)
+                        chunk_start=chunk_end
+                    if chunks:
+                        q=pd.concat(chunks).sort_index()
+                        q=q[~q.index.duplicated(keep="last")]
+                        expected_start=pd.Timestamp("1993-01-01") if sym=="SPY" else pd.Timestamp("1999-03-01") if sym=="QQQ" else pd.Timestamp("1990-01-01")
+                        # Permit modest listing/provider gaps, but reject recent-only data.
+                        if len(q)>=250 and q.index.min()<=expected_start+pd.Timedelta(days=400):
+                            source_map[sym]=f"Yahoo Finance chunked history ({host})"
                             return sym,q
-                    logger.warning("Yahoo explicit-range returned insufficient history for %s via %s",sym,host)
+                        logger.warning("Yahoo chunks for %s did not cover expected history: %s to %s (%d rows)",sym,q.index.min() if len(q) else None,q.index.max() if len(q) else None,len(q))
+                    else:
+                        logger.warning("Yahoo chunked history returned no data for %s via %s",sym,host)
                 except Exception as exc:
-                    logger.warning("Yahoo explicit-range failed for %s via %s: %s",sym,host,exc)
+                    logger.warning("Yahoo chunked history failed for %s via %s: %s",sym,host,exc)
             # Try the existing shared Yahoo loader as a final Yahoo-specific path.
             try:
                 chart=yahoo_get_chart(sym,interval="1d",period="max")
