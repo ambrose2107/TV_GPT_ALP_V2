@@ -1088,6 +1088,16 @@ def _cross_asset_charts(px, fred):
     spy_source="SPY history (market feed + Yahoo/Stooq where available)" if spy_points else "Unavailable"
     out["spy"]={"source":spy_source,"unit":"USD","points":spy_points}
 
+    # QQQ is shown alongside SPY so users can compare the Nasdaq-100 growth-stock
+    # proxy with the broad market on exactly the same calendar axis.
+    qqq_series=px.get("QQQ") if hasattr(px,"get") else None
+    qqq_live=series_points(qqq_series)
+    qqq_yahoo=yahoo_points("QQQ")
+    qqq_stooq=stooq_points("qqq.us") if len(qqq_yahoo)<1500 else []
+    qqq_points=merge_points(qqq_live,qqq_yahoo,qqq_stooq)
+    qqq_source="QQQ history (market feed + Yahoo/Stooq where available)" if qqq_points else "Unavailable"
+    out["qqq"]={"source":qqq_source,"unit":"USD","points":qqq_points}
+
     vix_series=px.get("^VIX") if hasattr(px,"get") else None
     vix_live=series_points(vix_series)
     vix_fred=series_points(fred.get("vixcls"))
@@ -1123,16 +1133,27 @@ def _cross_asset_charts(px, fred):
         if dxy_points:dxy_source="UUP dollar ETF proxy (not DXY)";dxy_unit="ETF price"
     out["dxy"]={"source":dxy_source,"unit":dxy_unit,"points":dxy_points}
 
-    gold_yahoo=yahoo_points("GC=F") or yahoo_points("XAUUSD=X")
+    # Gold data providers are intermittently blocked on hosted workers. Try spot/futures
+    # first, then use GLD only as an explicitly labelled ETF proxy rather than leaving
+    # the entire gold panel empty.
+    gold_yahoo=[]
+    gold_source="Unavailable"
+    for symbol,label in [("GC=F","Yahoo COMEX gold futures"),("XAUUSD=X","Yahoo spot gold (XAU/USD)")]:
+        gold_yahoo=yahoo_points(symbol)
+        if gold_yahoo:
+            gold_source=label
+            break
     gold_stooq=stooq_points("gc.f") if len(gold_yahoo)<1500 else []
     gold_points=merge_points(gold_yahoo,gold_stooq)
-    gold_source="Yahoo gold history with Stooq futures fallback" if gold_points else "Unavailable"
-    if len(gold_points)<100:
-        gold_fred=series_points(fred.get("gold_fix"))
-        if gold_fred:
-            gold_points=merge_points(gold_points,gold_fred)
-            gold_source="Gold history includes FRED London fixing; check source/coverage dates"
-    out["gold"]={"source":gold_source,"unit":"USD/oz","points":gold_points}
+    if gold_points and not gold_yahoo:
+        gold_source="Stooq COMEX gold futures"
+    if not gold_points:
+        gld_points=yahoo_points("GLD")
+        if not gld_points:gld_points=stooq_points("gld.us")
+        if gld_points:
+            gold_points=gld_points
+            gold_source="GLD ETF proxy (not spot gold; USD/oz comparison is approximate)"
+    out["gold"]={"source":gold_source,"unit":"USD/oz (GLD proxy if labelled)","points":gold_points}
 
     hy=fred.get("hy_oas")
     out["credit"]={"source":"FRED: ICE BofA US High Yield Index Option-Adjusted Spread","unit":"percent","points":series_points(hy)}
