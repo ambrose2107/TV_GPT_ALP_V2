@@ -407,7 +407,7 @@ def _historical_crash_replay(f):
                         logger.warning("Yahoo recent-tail refresh failed for %s: %s",sym,exc)
                     if not refreshed and sym in ("SPY","QQQ"):
                         try:
-                            bars=alpaca_get_bars(sym,timeframe="1Day",limit=800,adjustment="all")
+                            bars=alpaca_get_bars(sym,timeframe="1Day",limit=800,start=(datetime.now(timezone.utc)-timedelta(days=900)).strftime("%Y-%m-%dT%H:%M:%SZ"),adjustment="all")
                             if bars:
                                 z=pd.DataFrame(bars)
                                 if not z.empty and "t" in z.columns and "c" in z.columns:
