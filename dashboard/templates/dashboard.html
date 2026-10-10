@@ -1128,6 +1128,9 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
       <div class="sec" style="margin:0"><div class="sec-hdr"><h3 style="font-size:13px">Confirmation Matrix</h3></div><div id="ai-crash-confirm" style="padding:8px 12px;font-size:11px"></div></div>
     </div>
     <div id="ai-crash-quality" class="ac-note" style="margin:0 0 12px;border:1px solid #30363d;border-radius:8px">Checking source coverage…</div>
+    <div id="ai-crash-interpretation" class="ac-note" style="margin:0 0 12px;border:1px solid #30363d;border-radius:8px;line-height:1.6">
+      <strong style="color:#c9d1d9">Decision guide:</strong> the 0–100 readings are risk indices, not probabilities. Waiting for the live score and data coverage…
+    </div>
     <div class="sec" style="margin:0 0 12px">
       <div class="sec-hdr"><h3 style="font-size:13px">V2 Regime Confirmation</h3><span class="sub">Persistence · acceleration · multi-block confirmation</span></div>
       <div id="ai-crash-v2" style="padding:10px 12px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:11px"></div>
@@ -4533,6 +4536,20 @@ async function loadAICrashDashboard(force){
         (qw.length?'<div style="color:#d29922;margin-top:4px">'+qw.map(x=>String(x).replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]))).join(' · ')+'</div>':'<div style="color:#3fb950;margin-top:4px">No coverage warnings reported by the current checks.</div>');
     }
 
+    const interp=$('ai-crash-interpretation');
+    if(interp){
+      const aiScore=Number(d.score), marketScore=Number((d.us_market||{}).score);
+      const covered=Number(dq.fundamental_companies_covered||0), expected=Number(dq.fundamental_companies_expected||5);
+      const episodes=((d.historical_replay||{}).episodes||[]);
+      const early=episodes.filter(e=>String(e.result||'').toLowerCase().includes('signal before')).length;
+      const missed=episodes.filter(e=>String(e.result||'').toLowerCase().includes('no 60+ signal')).length;
+      const aiState=aiScore>=70?'DEFENSIVE / high stress':aiScore>=50?'ELEVATED stress':aiScore>=25?'WATCH / monitor':'NORMAL / lower observed stress';
+      const marketState=marketScore>=70?'high stress':marketScore>=50?'elevated stress':marketScore>=25?'watch / monitor':'lower observed stress';
+      interp.innerHTML='<strong style="color:#c9d1d9">Current interpretation</strong><div style="margin-top:5px"><strong>AI composite '+(Number.isFinite(aiScore)?aiScore.toFixed(1):'—')+'/100:</strong> '+aiState+'. <strong>US market '+(Number.isFinite(marketScore)?marketScore.toFixed(1):'—')+'/100:</strong> '+marketState+'. These numbers are not percentages or crash odds.</div>'+
+        '<div style="margin-top:5px"><strong>Coverage verdict:</strong> '+(covered===0?'AI-specific fundamentals are missing; neutral fallback values are used, so treat the AI composite as provisional.':covered<expected?'AI fundamentals are only partially covered ('+covered+'/'+expected+'); treat AI capex/financing attribution as provisional.':'AI fundamentals are covered for '+covered+'/'+expected+' companies, but company capex remains only a proxy for AI spending.')+'</div>'+
+        '<div style="margin-top:5px"><strong>Historical check:</strong> '+(episodes.length?early+'/'+episodes.length+' episodes had a ≥60 warning before the −20% threshold'+(missed?'; '+missed+' episodes had no ≥60 warning in the 90-day pre-breach window':'')+'.':'Historical replay results are unavailable.')+' This small retrospective sample is not a calibrated forecast.</div>'+
+        '<div style="margin-top:5px"><strong>Practical read:</strong> current scores alone do not confirm a crash. Watch for sustained deterioration across credit spreads, market breadth, volatility and AI financing together; verify data coverage before changing exposure.</div>';
+    }
     $('ai-crash-drivers').innerHTML=(d.drivers||[]).map(x=>'<span class="tag ty" style="margin:3px;display:inline-block">'+x+'</span>').join('')||'<span style="color:#8b949e">No dominant driver above threshold.</span>';
     const cm=d.confirmations||{}, rel=d.reliability||{};
     const relColor=Number(rel.data_score)>=80?'#3fb950':Number(rel.data_score)>=60?'#d29922':'#f85149';
