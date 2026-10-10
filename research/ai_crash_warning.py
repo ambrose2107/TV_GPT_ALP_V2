@@ -421,6 +421,24 @@ def _historical_crash_replay(f):
                                         refreshed=True
                         except Exception as exc:
                             logger.warning("Alpaca recent-tail refresh failed for %s: %s",sym,exc)
+                    if not refreshed and sym in ("SPY","QQQ"):
+                        try:
+                            response=requests.get("https://stooq.com/q/d/l/",
+                                params={"s":sym.lower()+".us","i":"d"},
+                                headers={"User-Agent":"Mozilla/5.0"},timeout=18)
+                            response.raise_for_status()
+                            d=pd.read_csv(io.StringIO(response.text))
+                            if {"Date","Close"}.issubset(d.columns):
+                                rx=pd.to_datetime(d["Date"],errors="coerce").dt.normalize()
+                                rq=pd.Series(pd.to_numeric(d["Close"],errors="coerce").to_numpy(),index=rx).dropna()
+                                rq=rq[~rq.index.isna()]
+                                rq=rq[~rq.index.duplicated(keep="last")]
+                                if not rq.empty and rq.index.max()>=pd.Timestamp.now().normalize()-pd.Timedelta(days=10):
+                                    q=pd.concat([q.loc[q.index<rq.index.min()],rq]).sort_index()
+                                    q=q[~q.index.duplicated(keep="last")]
+                                    refreshed=True
+                        except Exception as exc:
+                            logger.warning("Stooq recent-tail refresh failed for %s: %s",sym,exc)
                     if not refreshed and sym=="^VIX":
                         try:
                             response=requests.get("https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
@@ -509,9 +527,10 @@ def _historical_crash_replay(f):
                     q=q[~q.index.isna()]
                     q=q[~q.index.duplicated(keep="last")].sort_index()
                     expected_start=pd.Timestamp("2000-01-01") if sym=="SPY" else pd.Timestamp("1999-03-01") if sym=="QQQ" else pd.Timestamp("1990-01-01")
-                    if len(q)>=250 and q.index.min()<=expected_start+pd.Timedelta(days=400):
+                    if len(q)>=250 and q.index.min()<=expected_start+pd.Timedelta(days=400) and q.index.max()>=pd.Timestamp.now().normalize()-pd.Timedelta(days=10):
                         source_map[sym]="Yahoo Finance max history"
                         return sym,q
+                    logger.warning("Yahoo max history for %s has incomplete or stale coverage: %s to %s",sym,q.index.min() if len(q) else None,q.index.max() if len(q) else None)
             except Exception as exc:
                 logger.warning("Yahoo max-history fallback failed for %s: %s",sym,exc)
             # Independent fallbacks: Stooq daily history for SPY/QQQ, CBOE official VIX CSV.
@@ -527,9 +546,10 @@ def _historical_crash_replay(f):
                         q=q[~q.index.isna()]
                         q=q[~q.index.duplicated(keep="last")].sort_index()
                         expected_start=pd.Timestamp("2000-01-01") if sym=="SPY" else pd.Timestamp("1999-03-01")
-                        if len(q)>=250 and q.index.min()<=expected_start+pd.Timedelta(days=400):
+                        if len(q)>=250 and q.index.min()<=expected_start+pd.Timedelta(days=400) and q.index.max()>=pd.Timestamp.now().normalize()-pd.Timedelta(days=10):
                             source_map[sym]="Stooq daily history fallback"
                             return sym,q
+                        logger.warning("Stooq long history for %s has incomplete or stale coverage: %s to %s",sym,q.index.min() if len(q) else None,q.index.max() if len(q) else None)
                         logger.warning("Stooq history for %s is recent-only or incomplete: %s to %s (%d rows)",sym,q.index.min() if len(q) else None,q.index.max() if len(q) else None,len(q))
                 else:
                     response=requests.get("https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv",
