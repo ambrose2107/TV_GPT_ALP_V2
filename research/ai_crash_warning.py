@@ -150,33 +150,69 @@ def _market():
     return px
 
 def _fundamental_proxy_uncached():
+    """Build a company-level quarterly capex/debt proxy with explicit period coverage.
+
+    yfinance statement column dates are fiscal period ends, not SEC filing dates.
+    They are labelled as period ends so the dashboard does not imply point-in-time
+    availability that this live snapshot source cannot guarantee.
+    """
     rows=[]
     for ticker in HYPERSCALERS:
+        row={"ticker":ticker,"source":"Yahoo Finance quarterly statements",
+             "revenue_ttm":None,"capex_ttm":None,"debt":None,
+             "revenue_growth":None,"capex_growth":None,"debt_growth":None,
+             "revenue_period_end":None,"capex_period_end":None,"debt_period_end":None,
+             "coverage_status":"MISSING"}
         try:
             t=yf.Ticker(ticker); inc=t.quarterly_income_stmt; cf=t.quarterly_cashflow; bs=t.quarterly_balance_sheet
-            if inc is None or inc.empty: continue
-            rk=next((k for k in ["Total Revenue","Operating Revenue"] if k in inc.index),None)
-            ck=next((k for k in ["Capital Expenditure","Capital Ex Expenditures"] if k in cf.index),None)
-            dk=next((k for k in ["Total Debt","Long Term Debt And Capital Lease Obligation","Long Term Debt"] if k in bs.index),None)
-            if not rk: continue
-            rev=pd.to_numeric(inc.loc[rk],errors="coerce").dropna().sort_index()
+            rk=next((k for k in ["Total Revenue","Operating Revenue"] if inc is not None and not inc.empty and k in inc.index),None)
+            ck=next((k for k in ["Capital Expenditure","Capital Ex Expenditures"] if cf is not None and not cf.empty and k in cf.index),None)
+            dk=next((k for k in ["Total Debt","Long Term Debt And Capital Lease Obligation","Long Term Debt"] if bs is not None and not bs.empty and k in bs.index),None)
+            rev=pd.to_numeric(inc.loc[rk],errors="coerce").dropna().sort_index() if rk else pd.Series(dtype=float)
             cap=pd.to_numeric(cf.loc[ck],errors="coerce").dropna().sort_index() if ck else pd.Series(dtype=float)
             debt=pd.to_numeric(bs.loc[dk],errors="coerce").dropna().sort_index() if dk else pd.Series(dtype=float)
-            if len(rev)<4: continue
-            rt=float(rev.tail(4).sum()); ct=float(abs(cap.tail(4).sum())) if len(cap) else None
-            dn=float(debt.iloc[-1]) if len(debt) else None; dp=float(debt.iloc[-5]) if len(debt)>=5 else None
-            rp=float(rev.iloc[-8:-4].sum()) if len(rev)>=8 else None
-            cp=float(abs(cap.iloc[-8:-4].sum())) if len(cap)>=8 else None
-            rows.append({"ticker":ticker,"revenue_ttm":rt,"capex_ttm":ct,"debt":dn,
-              "revenue_growth":((rt/rp)-1)*100 if rp and rp>0 else None,
-              "capex_growth":((ct/cp)-1)*100 if ct is not None and cp and cp>0 else None,
-              "debt_growth":((dn/dp)-1)*100 if dn is not None and dp and dp>0 else None})
-        except Exception: continue
-    if not rows:return {"available":False,"rows":[],"capex_revenue":None,"capex_growth_gap":None,"debt_growth_gap":None}
-    d=pd.DataFrame(rows); cr=(d.capex_ttm/d.revenue_ttm*100).replace([np.inf,-np.inf],np.nan).dropna()
-    cg=(d.capex_growth-d.revenue_growth).dropna(); dg=(d.debt_growth-d.revenue_growth).dropna()
-    return {"available":True,"rows":rows,"capex_revenue":float(cr.mean()) if len(cr) else None,
-            "capex_growth_gap":float(cg.mean()) if len(cg) else None,"debt_growth_gap":float(dg.mean()) if len(dg) else None}
+            if len(rev)>=4:
+                rt=float(rev.tail(4).sum()); row["revenue_ttm"]=rt
+                row["revenue_period_end"]=pd.Timestamp(rev.index[-1]).strftime("%Y-%m-%d")
+                rp=float(rev.iloc[-8:-4].sum()) if len(rev)>=8 else None
+                row["revenue_growth"]=((rt/rp)-1)*100 if rp and rp>0 else None
+            if len(cap)>=1:
+                ct=float(abs(cap.tail(4).sum())); row["capex_ttm"]=ct
+                row["capex_period_end"]=pd.Timestamp(cap.index[-1]).strftime("%Y-%m-%d")
+                cp=float(abs(cap.iloc[-8:-4].sum())) if len(cap)>=8 else None
+                row["capex_growth"]=((ct/cp)-1)*100 if cp and cp>0 else None
+            if len(debt)>=1:
+                dn=float(debt.iloc[-1]); row["debt"]=dn
+                row["debt_period_end"]=pd.Timestamp(debt.index[-1]).strftime("%Y-%m-%d")
+                dp=float(debt.iloc[-5]) if len(debt)>=5 else None
+                row["debt_growth"]=((dn/dp)-1)*100 if dp and dp>0 else None
+            required=[row["revenue_ttm"] is not None,row["capex_ttm"] is not None,row["debt"] is not None]
+            row["coverage_status"]="COMPLETE" if all(required) else "PARTIAL" if any(required) else "MISSING"
+        except Exception as exc:
+            row["error"]=str(exc)[:180]
+        rows.append(row)
+    d=pd.DataFrame(rows)
+    valid=d[d["revenue_ttm"].notna()]
+    cr=(valid.capex_ttm/valid.revenue_ttm*100).replace([np.inf,-np.inf],np.nan).dropna() if len(valid) else pd.Series(dtype=float)
+    cg=(valid.capex_growth-valid.revenue_growth).dropna() if len(valid) else pd.Series(dtype=float)
+    dg=(valid.debt_growth-valid.revenue_growth).dropna() if len(valid) else pd.Series(dtype=float)
+    metric_counts={
+        "revenue":int(d.revenue_ttm.notna().sum()),
+        "capex":int(d.capex_ttm.notna().sum()),
+        "debt":int(d.debt.notna().sum()),
+        "capex_growth_gap":int(cg.size),
+        "debt_growth_gap":int(dg.size),
+    }
+    return {"available":bool(len(valid)),"rows":rows,
+        "companies_expected":len(HYPERSCALERS),
+        "companies_with_revenue":metric_counts["revenue"],
+        "companies_with_complete_statements":int((d.coverage_status=="COMPLETE").sum()),
+        "metric_coverage":metric_counts,
+        "capex_revenue":float(cr.mean()) if len(cr) else None,
+        "capex_growth_gap":float(cg.mean()) if len(cg) else None,
+        "debt_growth_gap":float(dg.mean()) if len(dg) else None,
+        "source":"Yahoo Finance quarterly statements",
+        "date_semantics":"Fiscal period end; not filing/availability date"}
 
 def _fundamental_proxy():
     """Cache slow quarterly financial statements separately from market data."""
@@ -229,13 +265,13 @@ def _score(px,f,fund):
     rec=_clip((sahm or 0)*120)
     if len(un)>=6:rec=_clip(rec+(float(un.iloc[-1])-float(un.iloc[-4]))*18)
     cgap=fund.get("capex_growth_gap"); dgap=fund.get("debt_growth_gap"); ratio=fund.get("capex_revenue")
-    # Missing financial data must not be encoded as low risk. Use a neutral
-    # midpoint only when a metric is unavailable, and surface coverage in the UI.
-    ai=50 if cgap is None and ratio is None else 35
+    # Neutral midpoint for every unavailable AI metric. Missing observations are
+    # separately surfaced in coverage metadata and must never masquerade as evidence.
+    ai=50
     if cgap is not None: ai+=_clip(cgap*2,-20,35)
     if ratio is not None: ai+=_clip((ratio-15)*1.5,-15,25)
     ai=_clip(ai)
-    afin=_clip((50 if dgap is None else 35)+(_clip(dgap*2.5,-15,45) if dgap is not None else 0))
+    afin=_clip(50+(_clip(dgap*2.5,-15,45) if dgap is not None else 0))
     comps={"AI Fundamental":round(_clip(.65*ai+.35*afin),1),"AI Financing":round(afin,1),"Credit":round(credit,1),
       "Liquidity":round(liq,1),"Market Breadth":round(breadth,1),"Real Rates":round(real_score,1),"Volatility":round(vol,1),"Recession":round(rec,1)}
     w={"AI Fundamental":.18,"AI Financing":.14,"Credit":.20,"Liquidity":.10,"Market Breadth":.14,"Real Rates":.10,"Volatility":.05,"Recession":.09}
