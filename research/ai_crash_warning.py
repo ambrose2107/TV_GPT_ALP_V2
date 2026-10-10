@@ -1037,50 +1037,59 @@ def _chart_points(series, max_days=1100):
 
 
 def _cross_asset_charts(px, fred):
-    """Return source-labelled history for the AI Crash dashboard's cross-asset charts."""
+    """Return source-labelled 10-year histories for interactive crash and correlation charts."""
     out={}
-    vix_col="^VIX" if "^VIX" in px.columns else ("VIXY" if "VIXY" in px.columns else None)
-    if vix_col:
-        out["vix"]={"source":"Official VIX index (Yahoo/CBOE)" if vix_col=="^VIX" else "VIXY ETF proxy (not the VIX index)",
-                    "unit":"index points" if vix_col=="^VIX" else "ETF price","points":_chart_points(px[vix_col])}
-    else:
-        out["vix"]={"source":"Unavailable","unit":"index points","points":[]}
+
+    def yahoo_points(symbol, period="10y"):
+        try:
+            chart=yahoo_get_chart(symbol,interval="1d",period=period)
+            if chart and chart.get("timestamps") and chart.get("close") and len(chart["timestamps"])==len(chart["close"]):
+                idx=pd.to_datetime(chart["timestamps"],unit="s",utc=True,errors="coerce")
+                values=pd.to_numeric(chart["close"],errors="coerce")
+                q=pd.Series(values,index=idx).dropna()
+                q=q[~q.index.isna()]
+                return _chart_points(q,max_days=3700)
+        except Exception as exc:
+            logger.warning("Cross-asset chart fetch failed for %s: %s",symbol,exc)
+        return []
+
+    # Fetch independent histories so chart coverage is not limited by the live score's shorter lookback.
+    vix_points=yahoo_points("^VIX")
+    vix_source="Yahoo Finance / CBOE VIX index"
+    if not vix_points:
+        vix_points=yahoo_points("VIXY")
+        vix_source="VIXY ETF proxy (not the VIX index)" if vix_points else "Unavailable"
+    out["vix"]={"source":vix_source,"unit":"index points" if vix_source.startswith("Yahoo") else "ETF price","points":vix_points}
+
+    out["spy"]={"source":"SPY ETF (S&P 500 proxy), Yahoo Finance","unit":"USD","points":yahoo_points("SPY")}
 
     yield_specs=[("dgs10","10Y Treasury"),("dfii10","10Y real yield"),("dgs2","2Y Treasury"),("tb3ms","3M Treasury")]
     yield_series={}
     for key,label in yield_specs:
-        s=fred.get(key)
-        pts=_chart_points(s) if s is not None else []
+        series=fred.get(key)
+        pts=_chart_points(series,max_days=3700) if series is not None else []
         if pts:yield_series[label]=pts
     out["yields"]={"source":"FRED: U.S. Treasury / TIPS series","unit":"percent","series":yield_series}
 
-    for key,symbol,label in [("dxy","DX-Y.NYB","US Dollar Index (DXY)"),("gold","GC=F","Gold futures (GC=F)")]:
-        points=[];source=label
-        try:
-            chart=yahoo_get_chart(symbol,interval="1d",period="3y")
-            if chart and chart.get("timestamps") and chart.get("close") and len(chart["timestamps"])==len(chart["close"]):
-                q=pd.Series(pd.to_numeric(chart["close"],errors="coerce"),
-                    index=pd.to_datetime(chart["timestamps"],unit="s",utc=True,errors="coerce")).dropna()
-                q=q[~q.index.isna()]
-                points=_chart_points(q)
-        except Exception as exc:
-            logger.warning("Cross-asset chart fetch failed for %s: %s",symbol,exc)
-        if not points and key=="gold":
-            try:
-                chart=yahoo_get_chart("XAUUSD=X",interval="1d",period="3y")
-                if chart and chart.get("timestamps") and chart.get("close") and len(chart["timestamps"])==len(chart["close"]):
-                    q=pd.Series(pd.to_numeric(chart["close"],errors="coerce"),
-                        index=pd.to_datetime(chart["timestamps"],unit="s",utc=True,errors="coerce")).dropna()
-                    q=q[~q.index.isna()]
-                    points=_chart_points(q);source="Spot gold (XAUUSD=X)"
-            except Exception as exc:
-                logger.warning("Spot gold chart fallback failed: %s",exc)
-        if not points:source="Unavailable"
-        out[key]={"source":source,"unit":"index" if key=="dxy" else "USD/oz","points":points}
+    # Yahoo ticker coverage varies. Try the cash index, futures, then a clearly labelled ETF proxy.
+    dxy_points=[];dxy_source="Unavailable"
+    for symbol,label in [("DX-Y.NYB","US Dollar Index (DXY)"),("DX=F","US Dollar Index futures (DX=F)"),("UUP","UUP dollar ETF proxy (not DXY)"),("^DXY","Yahoo ^DXY index")]:
+        dxy_points=yahoo_points(symbol)
+        if dxy_points:
+            dxy_source=label
+            break
+    out["dxy"]={"source":dxy_source,"unit":"USD index" if "proxy" not in dxy_source.lower() else "ETF price","points":dxy_points}
+
+    gold_points=yahoo_points("GC=F")
+    gold_source="Gold futures (GC=F)"
+    if not gold_points:
+        gold_points=yahoo_points("XAUUSD=X")
+        gold_source="Spot gold (XAUUSD=X)" if gold_points else "Unavailable"
+    out["gold"]={"source":gold_source,"unit":"USD/oz","points":gold_points}
 
     hy=fred.get("hy_oas")
     out["credit"]={"source":"FRED: ICE BofA US High Yield Index Option-Adjusted Spread",
-                   "unit":"percent","points":_chart_points(hy) if hy is not None else []}
+                   "unit":"percent","points":_chart_points(hy,max_days=3700) if hy is not None else []}
     return out
 
 
