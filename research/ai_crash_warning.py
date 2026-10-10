@@ -26,7 +26,7 @@ _PROD_CACHE={"payload":None,"ts":0.0}
 _PROD_JOB={"status":"idle","result":None,"error":None,"started_at":None,"finished_at":None}
 _PROD_LOCK=threading.Lock()
 _PROD_THREAD=None
-FRED={"hy_oas":"BAMLH0A0HYM2","nfci":"NFCI","dfii10":"DFII10","unrate":"UNRATE","dgs10":"DGS10","dgs2":"DGS2","tb3ms":"TB3MS"}
+FRED={"hy_oas":"BAMLH0A0HYM2","nfci":"NFCI","dfii10":"DFII10","unrate":"UNRATE","dgs10":"DGS10","dgs2":"DGS2","tb3ms":"TB3MS","vixcls":"VIXCLS","usd_broad":"DTWEXBGS","gold_fix":"GOLDAMGBD228NLBM"}
 MARKET=["SPY","QQQ","RSP","IWM","SOXX","^VIX"]
 HYPERSCALERS=["MSFT","GOOGL","AMZN","META","ORCL"]
 
@@ -1037,8 +1037,12 @@ def _chart_points(series, max_days=1100):
 
 
 def _cross_asset_charts(px, fred):
-    """Return source-labelled 10-year histories for interactive crash and correlation charts."""
+    """Build chart histories using already-loaded market/FRED data first, with labelled external fallbacks."""
     out={}
+
+    def series_points(series, max_days=3700):
+        try:return _chart_points(series,max_days=max_days)
+        except Exception:return []
 
     def yahoo_points(symbol, period="10y"):
         try:
@@ -1048,48 +1052,74 @@ def _cross_asset_charts(px, fred):
                 values=pd.to_numeric(chart["close"],errors="coerce")
                 q=pd.Series(values,index=idx).dropna()
                 q=q[~q.index.isna()]
-                return _chart_points(q,max_days=3700)
-        except Exception as exc:
-            logger.warning("Cross-asset chart fetch failed for %s: %s",symbol,exc)
+                if not q.empty:return _chart_points(q,max_days=3700)
+        except Exception as exc:logger.warning("Cross-asset Yahoo history failed for %s: %s",symbol,exc)
         return []
 
-    # Fetch independent histories so chart coverage is not limited by the live score's shorter lookback.
-    vix_points=yahoo_points("^VIX")
-    vix_source="Yahoo Finance / CBOE VIX index"
-    if not vix_points:
-        vix_points=yahoo_points("VIXY")
-        vix_source="VIXY ETF proxy (not the VIX index)" if vix_points else "Unavailable"
-    out["vix"]={"source":vix_source,"unit":"index points" if vix_source.startswith("Yahoo") else "ETF price","points":vix_points}
+    def stooq_points(symbol):
+        try:
+            url="https://stooq.com/q/d/l/"
+            response=requests.get(url,params={"s":symbol,"i":"d"},timeout=12,headers={"User-Agent":"Mozilla/5.0"})
+            response.raise_for_status()
+            frame=pd.read_csv(io.StringIO(response.text))
+            if not {"Date","Close"}.issubset(frame.columns):return []
+            q=pd.Series(pd.to_numeric(frame["Close"],errors="coerce").to_numpy(),
+                        index=pd.to_datetime(frame["Date"],errors="coerce",utc=True)).dropna()
+            q=q[~q.index.isna()]
+            return _chart_points(q,max_days=3700) if not q.empty else []
+        except Exception as exc:
+            logger.warning("Cross-asset Stooq history failed for %s: %s",symbol,exc)
+            return []
 
-    out["spy"]={"source":"SPY ETF (S&P 500 proxy), Yahoo Finance","unit":"USD","points":yahoo_points("SPY")}
+    # Use the data already loaded by the working crash model before attempting new network calls.
+    spy_series=px.get("SPY") if hasattr(px,"get") else None
+    spy_points=series_points(spy_series)
+    if not spy_points:spy_points=yahoo_points("SPY") or stooq_points("spy.us")
+    out["spy"]={"source":"Existing market feed: SPY" if series_points(spy_series) else ("Yahoo Finance: SPY" if spy_points else "Stooq: SPY"),"unit":"USD","points":spy_points}
+
+    vix_series=px.get("^VIX") if hasattr(px,"get") else None
+    vix_points=series_points(vix_series)
+    vix_source="Existing market feed: official VIX" if vix_points else "Unavailable"
+    if not vix_points:
+        vix_points=series_points(fred.get("vixcls"))
+        if vix_points:vix_source="FRED: CBOE Volatility Index (VIXCLS)"
+    if not vix_points:
+        vix_points=yahoo_points("^VIX") or stooq_points("vix")
+        if vix_points:vix_source="Yahoo/Stooq: VIX index"
+    if not vix_points:
+        vix_points=yahoo_points("VIXY") or stooq_points("vixy.us")
+        if vix_points:vix_source="VIXY ETF proxy (not the VIX index)"
+    out["vix"]={"source":vix_source,"unit":"index points" if "proxy" not in vix_source.lower() else "ETF price","points":vix_points}
 
     yield_specs=[("dgs10","10Y Treasury"),("dfii10","10Y real yield"),("dgs2","2Y Treasury"),("tb3ms","3M Treasury")]
     yield_series={}
     for key,label in yield_specs:
-        series=fred.get(key)
-        pts=_chart_points(series,max_days=3700) if series is not None else []
+        pts=series_points(fred.get(key))
         if pts:yield_series[label]=pts
     out["yields"]={"source":"FRED: U.S. Treasury / TIPS series","unit":"percent","series":yield_series}
 
-    # Yahoo ticker coverage varies. Try the cash index, futures, then a clearly labelled ETF proxy.
-    dxy_points=[];dxy_source="Unavailable"
-    for symbol,label in [("DX-Y.NYB","US Dollar Index (DXY)"),("DX=F","US Dollar Index futures (DX=F)"),("UUP","UUP dollar ETF proxy (not DXY)"),("^DXY","Yahoo ^DXY index")]:
-        dxy_points=yahoo_points(symbol)
-        if dxy_points:
-            dxy_source=label
-            break
-    out["dxy"]={"source":dxy_source,"unit":"USD index" if "proxy" not in dxy_source.lower() else "ETF price","points":dxy_points}
+    # Prefer an actual DXY market ticker; if blocked, show a separately labelled broad USD proxy.
+    dxy_points=[];dxy_source="Unavailable";dxy_unit="index points"
+    for symbol,label in [("DX-Y.NYB","US Dollar Index (DXY)"),("DX=F","US Dollar Index futures (DX=F)"),("^DXY","Yahoo ^DXY index")]:
+        dxy_points=yahoo_points(symbol) or stooq_points("dx.f")
+        if dxy_points:dxy_source=label;break
+    if not dxy_points:
+        dxy_points=series_points(fred.get("usd_broad"))
+        if dxy_points:dxy_source="FRED trade-weighted broad US dollar index (proxy; not DXY)";dxy_unit="index"
+    if not dxy_points:
+        dxy_points=yahoo_points("UUP") or stooq_points("uup.us")
+        if dxy_points:dxy_source="UUP dollar ETF proxy (not DXY)";dxy_unit="ETF price"
+    out["dxy"]={"source":dxy_source,"unit":dxy_unit,"points":dxy_points}
 
-    gold_points=yahoo_points("GC=F")
-    gold_source="Gold futures (GC=F)"
+    gold_points=yahoo_points("GC=F") or yahoo_points("XAUUSD=X") or stooq_points("gc.f") or stooq_points("xauusd")
+    gold_source="Yahoo gold futures/spot or Stooq gold futures" if gold_points else "Unavailable"
     if not gold_points:
-        gold_points=yahoo_points("XAUUSD=X")
-        gold_source="Spot gold (XAUUSD=X)" if gold_points else "Unavailable"
+        gold_points=series_points(fred.get("gold_fix"))
+        if gold_points:gold_source="FRED London gold fixing (check last observation date)"
     out["gold"]={"source":gold_source,"unit":"USD/oz","points":gold_points}
 
     hy=fred.get("hy_oas")
-    out["credit"]={"source":"FRED: ICE BofA US High Yield Index Option-Adjusted Spread",
-                   "unit":"percent","points":_chart_points(hy,max_days=3700) if hy is not None else []}
+    out["credit"]={"source":"FRED: ICE BofA US High Yield Index Option-Adjusted Spread","unit":"percent","points":series_points(hy)}
     return out
 
 
