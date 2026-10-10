@@ -327,9 +327,23 @@ def _historical_crash_replay(f):
     """
     now=time.time()
     cached=_HIST_CACHE["payload"]
-    cache_ttl=HIST_CACHE_TTL if cached and cached.get("available") else 15*60
-    if cached is not None and now-_HIST_CACHE["ts"]<cache_ttl:
+    # Never reuse a superficially "available" replay if its history is only a
+    # recent provider window. This was masking the repository baseline fallback.
+    cached_start=pd.to_datetime((cached or {}).get("coverage_start"),errors="coerce")
+    cached_end=pd.to_datetime((cached or {}).get("coverage_end"),errors="coerce")
+    required_start=pd.Timestamp("2000-06-01")
+    required_end=pd.Timestamp.now().normalize()-pd.Timedelta(days=10)
+    cached_history_valid=bool(
+        cached and cached.get("available") is True
+        and pd.notna(cached_start) and cached_start<=required_start
+        and pd.notna(cached_end) and cached_end>=required_end
+    )
+    cache_ttl=HIST_CACHE_TTL if cached_history_valid else 0
+    if cached is not None and cached_history_valid and now-_HIST_CACHE["ts"]<cache_ttl:
         return cached
+    if cached is not None and not cached_history_valid:
+        logger.warning("Ignoring cached historical replay with incomplete/stale coverage: %s to %s",
+            (cached or {}).get("coverage_start"),(cached or {}).get("coverage_end"))
     try:
         from concurrent.futures import ThreadPoolExecutor
         source_map={}
