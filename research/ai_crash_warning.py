@@ -58,7 +58,7 @@ def _market():
     for sym in stocks:
         if sym in frames: continue
         try:
-            bars=alpaca_get_bars(sym,timeframe="1Day",limit=800)
+            bars=alpaca_get_bars(sym,timeframe="1Day",limit=800,adjustment="all")
             if bars:
                 z=pd.DataFrame(bars)
                 if not z.empty and "t" in z.columns and "c" in z.columns:
@@ -411,7 +411,7 @@ def _historical_crash_replay(f):
                             if bars:
                                 z=pd.DataFrame(bars)
                                 if not z.empty and "t" in z.columns and "c" in z.columns:
-                                    rx=pd.to_datetime(z["t"],utc=True,errors="coerce").tz_localize(None).normalize()
+                                    rx=pd.to_datetime(z["t"],utc=True,errors="coerce").dt.tz_localize(None).dt.normalize()
                                     rq=pd.Series(pd.to_numeric(z["c"],errors="coerce").to_numpy(),index=rx).dropna()
                                     rq=rq[~rq.index.isna()]
                                     rq=rq[~rq.index.duplicated(keep="last")]
