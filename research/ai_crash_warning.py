@@ -988,10 +988,17 @@ def build_dashboard(force=False):
         hist=_history(px,core)
         market_date=px.index.max()
         market_age_days=max(0,int((pd.Timestamp.now(tz="UTC")-market_date).total_seconds()/86400)) if getattr(market_date,"tzinfo",None) else max(0,int((datetime.now()-market_date).total_seconds()/86400))
-        fundamental_count=len(fund.get("rows",[]) or [])
+        fund_rows=fund.get("rows",[]) or []
+        fundamental_count=int(fund.get("companies_with_complete_statements",sum(1 for row in fund_rows if row.get("coverage_status")=="COMPLETE")))
+        revenue_count=int(fund.get("companies_with_revenue",sum(1 for row in fund_rows if row.get("revenue_ttm") is not None)))
+        metric_coverage=fund.get("metric_coverage",{})
+        period_dates=[pd.to_datetime(row.get("revenue_period_end"),errors="coerce") for row in fund_rows if row.get("revenue_period_end")]
+        latest_fund_period=max((d for d in period_dates if pd.notna(d)),default=None)
+        fundamental_period_age_days=max(0,int((pd.Timestamp.now().normalize()-latest_fund_period.normalize()).days)) if latest_fund_period is not None else None
         quality_warnings=[]
         if market_age_days>5: quality_warnings.append("Market prices may be stale.")
-        if fundamental_count<3: quality_warnings.append("Hyperscaler fundamental coverage is limited; AI capex/debt scores rely partly on neutral defaults.")
+        if fundamental_count<len(HYPERSCALERS): quality_warnings.append("Complete hyperscaler financial coverage is "+str(fundamental_count)+"/"+str(len(HYPERSCALERS))+"; missing metrics use neutral defaults.")
+        if fundamental_period_age_days is None or fundamental_period_age_days>180: quality_warnings.append("Hyperscaler financial period-end data is missing or older than 180 days; verify latest filings.")
         missing_macro=[k for k,v in f.items() if v is None or len(v.dropna())==0]
         if missing_macro: quality_warnings.append("Missing macro series: "+", ".join(missing_macro))
         volatility_source = core["details"].get("volatility_source", "unknown")
@@ -1003,6 +1010,9 @@ def build_dashboard(force=False):
         market_conf=100.0 if market_age_days<=1 else 90.0 if market_age_days<=3 else 70.0 if market_age_days<=5 else 35.0
         macro_conf=100.0*(len(f)-len(missing_macro))/max(len(FRED),1)
         fund_conf={0:0.0,1:30.0,2:50.0,3:70.0,4:85.0,5:100.0}.get(min(fundamental_count,5),100.0)
+        if fundamental_period_age_days is None: fund_conf=min(fund_conf,10.0)
+        elif fundamental_period_age_days>180: fund_conf=min(fund_conf,35.0)
+        elif fundamental_period_age_days>120: fund_conf=min(fund_conf,60.0)
         vol_conf=100.0 if "VIXY ETF proxy" not in volatility_source else 60.0
         data_reliability=round(_clip(.35*market_conf+.25*macro_conf+.25*fund_conf+.15*vol_conf),1)
         v2=_v2_overlay(s,comps,hist)
@@ -1010,7 +1020,9 @@ def build_dashboard(force=False):
         reliability_label="HIGH" if data_reliability>=80 else "MEDIUM" if data_reliability>=60 else "LOW"
         data_quality={"market_latest_date":market_date.strftime("%Y-%m-%d"),"market_age_days":market_age_days,
           "volatility_source":volatility_source,
-          "fundamental_companies_covered":fundamental_count,"fundamental_companies_expected":len(HYPERSCALERS),
+          "fundamental_companies_covered":fundamental_count,"fundamental_companies_with_revenue":revenue_count,
+          "fundamental_companies_expected":len(HYPERSCALERS),"fundamental_period_end_latest":latest_fund_period.strftime("%Y-%m-%d") if latest_fund_period is not None else None,
+          "fundamental_period_age_days":fundamental_period_age_days,"fundamental_metric_coverage":metric_coverage,
           "macro_series_covered":len(f)-len(missing_macro),"macro_series_expected":len(FRED),
           "warnings":quality_warnings}
         # Separate broad-US-market risk from AI-specific concentration/funding risk.
