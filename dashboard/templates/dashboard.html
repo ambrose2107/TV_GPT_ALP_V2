@@ -4486,7 +4486,7 @@ function drawAICrashCrossAssetCharts(payload){
     if(source)source.textContent=(series&&series.source?series.source:'Source unavailable')+' · '+pts.length+' observations';
     if(!canvas)return;
     destroy(spec.id);
-    if(!window.Chart||pts.length<2){const parent=canvas.parentElement;if(parent)parent.innerHTML='<div style="padding:30px 8px;color:#8b949e;text-align:center">Chart unavailable — source data missing</div>';return;}
+    if(!window.Chart||pts.length<2){canvas.style.display='none';if(source)source.textContent=(series&&series.source?series.source:'Source unavailable')+' · no observations in selected range';return;}canvas.style.display='';
     aiCrashCrossCharts[spec.id]=new Chart(canvas,{type:'line',data:{labels:pts.map(p=>p.t),datasets:[{label:spec.title,data:pts.map(p=>p.v),borderColor:spec.color,backgroundColor:spec.color+'18',fill:true,pointRadius:0,borderWidth:1.7,tension:.12,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>spec.title+': '+Number(c.parsed.y).toLocaleString(undefined,{maximumFractionDigits:2})}}},scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:6,maxRotation:0},grid:{color:'#21262d'}},y:{ticks:{color:'#8b949e',maxTicksLimit:5},grid:{color:'#21262d'}}}}});
   }
   specs.forEach(s=>lineChart(s,payload[s.key]||{}));
@@ -4499,9 +4499,10 @@ function drawAICrashCrossAssetCharts(payload){
     destroy('ai-ca-yields');
     const names=Object.keys(ys.series||{}).filter(name=>filtered(ys.series[name]).length>1);
     if(window.Chart&&labels.length>1&&names.length){
+      canvas.style.display='';
       const palette=['#58a6ff','#d29922','#bc8cff','#3fb950'];
       aiCrashCrossCharts['ai-ca-yields']=new Chart(canvas,{type:'line',data:{labels,datasets:names.map((name,i)=>({label:name,data:labels.map(d=>all[d]&&all[d][name]!=null?all[d][name]:null),borderColor:palette[i%palette.length],backgroundColor:'transparent',pointRadius:0,borderWidth:1.6,tension:.12,spanGaps:true}))},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:true,labels:{color:'#c9d1d9',boxWidth:10,font:{size:10}}}},scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:6,maxRotation:0},grid:{color:'#21262d'}},y:{title:{display:true,text:'Yield (%)',color:'#8b949e'},ticks:{color:'#8b949e',maxTicksLimit:5},grid:{color:'#21262d'}}}}});
-    }else{const parent=canvas.parentElement;if(parent)parent.innerHTML='<div style="padding:30px 8px;color:#8b949e;text-align:center">Yield history unavailable</div>';}
+    }else{canvas.style.display='none';if(source)source.textContent=(ys.source||'Yield data source unavailable')+' · no observations in selected range';}
   }
 }
 function drawAICrashHistory(rows){
