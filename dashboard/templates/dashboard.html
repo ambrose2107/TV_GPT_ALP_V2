@@ -1151,17 +1151,28 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
         <div id="ai-ca-range-controls" style="display:flex;gap:4px;flex-wrap:wrap">
           <button class="btn btn-n btn-s" data-ca-range="1m" onclick="setAICrashChartRange('1m')">1M</button>
           <button class="btn btn-n btn-s" data-ca-range="3m" onclick="setAICrashChartRange('3m')">3M</button>
-          <button class="btn btn-b btn-s" data-ca-range="1y" onclick="setAICrashChartRange('1y')">1Y</button>
+          <button class="btn btn-n btn-s" data-ca-range="1y" onclick="setAICrashChartRange('1y')">1Y</button>
           <button class="btn btn-n btn-s" data-ca-range="3y" onclick="setAICrashChartRange('3y')">3Y</button>
+          <button class="btn btn-n btn-s" data-ca-range="5y" onclick="setAICrashChartRange('5y')">5Y</button>
+          <button class="btn btn-n btn-s" data-ca-range="10y" onclick="setAICrashChartRange('10y')">10Y</button>
         </div>
       </div>
-      <div class="ac-note">Each panel has its own scale. Missing series are shown as unavailable rather than filled with placeholder values. Sources and proxy labels appear below each chart.</div>
+      <div class="ac-note">Each panel has its own scale and interactive hover tooltips. Use the history ranges, or select a known stress episode to compare the 120 days before and 90 days after it. Missing data is never replaced with invented values.</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;padding:0 10px 8px;align-items:center"><span class="sub">Crash episode replay:</span>
+        <button class="btn btn-n btn-s" data-ca-event="2025" onclick="setAICrashEvent('2025')">Apr 2025 tariff selloff</button>
+        <button class="btn btn-n btn-s" data-ca-event="2022" onclick="setAICrashEvent('2022')">2022 bear market</button>
+        <button class="btn btn-n btn-s" data-ca-event="2020" onclick="setAICrashEvent('2020')">COVID crash</button>
+        <button class="btn btn-n btn-s" data-ca-event="none" onclick="setAICrashEvent('none')">Clear event</button>
+      </div>
       <div class="ai-ca-grid">
+        <div class="ai-ca-card"><div class="ai-ca-title">S&amp;P 500 Proxy — SPY</div><div class="ai-ca-canvas"><canvas id="ai-ca-spy"></canvas></div><div id="ai-ca-spy-source" class="ai-ca-source">Loading S&amp;P history…</div></div>
         <div class="ai-ca-card"><div class="ai-ca-title">Fear Index — VIX</div><div class="ai-ca-canvas"><canvas id="ai-ca-vix"></canvas></div><div id="ai-ca-vix-source" class="ai-ca-source">Loading VIX history…</div></div>
         <div class="ai-ca-card"><div class="ai-ca-title">Treasury Yields</div><div class="ai-ca-canvas"><canvas id="ai-ca-yields"></canvas></div><div id="ai-ca-yields-source" class="ai-ca-source">Loading yield history…</div></div>
         <div class="ai-ca-card"><div class="ai-ca-title">US Dollar Index — DXY</div><div class="ai-ca-canvas"><canvas id="ai-ca-dxy"></canvas></div><div id="ai-ca-dxy-source" class="ai-ca-source">Loading dollar history…</div></div>
         <div class="ai-ca-card"><div class="ai-ca-title">Gold Price</div><div class="ai-ca-canvas"><canvas id="ai-ca-gold"></canvas></div><div id="ai-ca-gold-source" class="ai-ca-source">Loading gold history…</div></div>
         <div class="ai-ca-card"><div class="ai-ca-title">High-Yield Credit Spread</div><div class="ai-ca-canvas"><canvas id="ai-ca-credit"></canvas></div><div id="ai-ca-credit-source" class="ai-ca-source">Loading credit history…</div></div>
+        <div class="ai-ca-card" style="grid-column:1/-1"><div class="ai-ca-title">Normalized Cross-Asset Trends — all series start at 100</div><div class="ai-ca-canvas" style="height:240px"><canvas id="ai-ca-normalized"></canvas></div><div id="ai-ca-normalized-source" class="ai-ca-source">Compare relative moves without mixing incompatible price scales.</div></div>
+        <div class="ai-ca-card" style="grid-column:1/-1"><div class="ai-ca-title">30-Session Rolling Correlation vs SPY</div><div class="ai-ca-canvas" style="height:240px"><canvas id="ai-ca-correlation"></canvas></div><div id="ai-ca-correlation-source" class="ai-ca-source">Correlation uses daily returns; values near -1 move inversely, near +1 move together.</div></div>
       </div>
     </div>
     <div class="ac-section" style="margin:12px 0 0">
@@ -4460,51 +4471,77 @@ function fmtMetric(v, suffix) {
 
 function aiCrashScoreClass(v){return v>=70?'r':v>=50?'y':'g';}
 let aiCrashChartRange='1y';
+let aiCrashSelectedEvent=null;
 const aiCrashCrossCharts={};
 function setAICrashChartRange(range){
-  aiCrashChartRange=range;
-  document.querySelectorAll('#ai-ca-range-controls [data-ca-range]').forEach(b=>{
-    const active=b.getAttribute('data-ca-range')===range;
-    b.className='btn '+(active?'btn-b':'btn-n')+' btn-s';
-  });
+  aiCrashChartRange=range;aiCrashSelectedEvent=null;
+  document.querySelectorAll('#ai-ca-range-controls [data-ca-range]').forEach(b=>{const active=b.getAttribute('data-ca-range')===range;b.className='btn '+(active?'btn-b':'btn-n')+' btn-s';});
+  document.querySelectorAll('#ai-cross-asset-section [data-ca-event]').forEach(b=>{b.className='btn '+(b.getAttribute('data-ca-event')==='none'?'btn-n':'btn-n')+' btn-s';});
+  if(aiCrashLastPayload)drawAICrashCrossAssetCharts(aiCrashLastPayload.cross_asset_charts||{});
+}
+function setAICrashEvent(event){
+  aiCrashSelectedEvent=event==='none'?null:event;
+  document.querySelectorAll('#ai-cross-asset-section [data-ca-event]').forEach(b=>{const active=b.getAttribute('data-ca-event')===event;b.className='btn '+(active?'btn-b':'btn-n')+' btn-s';});
   if(aiCrashLastPayload)drawAICrashCrossAssetCharts(aiCrashLastPayload.cross_asset_charts||{});
 }
 function drawAICrashCrossAssetCharts(payload){
-  const days=aiCrashChartRange==='1m'?31:aiCrashChartRange==='3m'?92:aiCrashChartRange==='3y'?1095:365;
-  const cutoff=new Date();cutoff.setDate(cutoff.getDate()-days);
+  const days=aiCrashChartRange==='1m'?31:aiCrashChartRange==='3m'?92:aiCrashChartRange==='3y'?1095:aiCrashChartRange==='5y'?1825:aiCrashChartRange==='10y'?3650:365;
+  const events={2025:{date:'2025-04-02',label:'April 2025 tariff selloff'},2022:{date:'2022-01-03',label:'2022 bear market'},2020:{date:'2020-02-19',label:'COVID crash'}};
+  const event=aiCrashSelectedEvent?events[aiCrashSelectedEvent]:null;
+  const eventDate=event?new Date(event.date+'T00:00:00Z'):null;
+  const latestCandidates=[];
+  ['spy','vix','dxy','gold','credit'].forEach(k=>(payload[k]&&payload[k].points||[]).forEach(p=>latestCandidates.push(p.t)));
+  const latestDate=latestCandidates.length?new Date(latestCandidates.sort().slice(-1)[0]+'T00:00:00Z'):new Date();
+  const cutoff=new Date(latestDate);cutoff.setDate(cutoff.getDate()-days);
+  const startEvent=eventDate?new Date(eventDate.getTime()-120*86400000):null;
+  const endEvent=eventDate?new Date(eventDate.getTime()+90*86400000):null;
+  function destroy(id){if(aiCrashCrossCharts[id]){aiCrashCrossCharts[id].destroy();delete aiCrashCrossCharts[id];}}
+  function filtered(points){return (points||[]).filter(p=>{const d=new Date(p.t+'T00:00:00Z');return event?(d>=startEvent&&d<=endEvent):d>=cutoff;});}
   const specs=[
+    {key:'spy',id:'ai-ca-spy',sourceId:'ai-ca-spy-source',title:'SPY',color:'#3fb950'},
     {key:'vix',id:'ai-ca-vix',sourceId:'ai-ca-vix-source',title:'VIX',color:'#f85149'},
     {key:'dxy',id:'ai-ca-dxy',sourceId:'ai-ca-dxy-source',title:'DXY',color:'#58a6ff'},
     {key:'gold',id:'ai-ca-gold',sourceId:'ai-ca-gold-source',title:'Gold',color:'#d29922'},
     {key:'credit',id:'ai-ca-credit',sourceId:'ai-ca-credit-source',title:'HY OAS',color:'#bc8cff'}
   ];
-  function destroy(id){if(aiCrashCrossCharts[id]){aiCrashCrossCharts[id].destroy();delete aiCrashCrossCharts[id];}}
-  function filtered(points){return (points||[]).filter(p=>{const d=new Date(p.t+'T00:00:00');return d>=cutoff;});}
   function lineChart(spec,series){
-    const canvas=document.getElementById(spec.id),source=document.getElementById(spec.sourceId);
-    const pts=filtered(series&&series.points);
-    if(source)source.textContent=(series&&series.source?series.source:'Source unavailable')+' · '+pts.length+' observations';
-    if(!canvas)return;
-    destroy(spec.id);
-    if(!window.Chart||pts.length<2){canvas.style.display='none';if(source)source.textContent=(series&&series.source?series.source:'Source unavailable')+' · no observations in selected range';return;}canvas.style.display='';
-    aiCrashCrossCharts[spec.id]=new Chart(canvas,{type:'line',data:{labels:pts.map(p=>p.t),datasets:[{label:spec.title,data:pts.map(p=>p.v),borderColor:spec.color,backgroundColor:spec.color+'18',fill:true,pointRadius:0,borderWidth:1.7,tension:.12,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>spec.title+': '+Number(c.parsed.y).toLocaleString(undefined,{maximumFractionDigits:2})}}},scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:6,maxRotation:0},grid:{color:'#21262d'}},y:{ticks:{color:'#8b949e',maxTicksLimit:5},grid:{color:'#21262d'}}}}});
+    const canvas=document.getElementById(spec.id),source=document.getElementById(spec.sourceId),pts=filtered(series&&series.points);
+    if(source)source.textContent=(series&&series.source?series.source:'Source unavailable')+' · '+pts.length+' observations'+(event?' · '+event.label:'');
+    if(!canvas)return;destroy(spec.id);
+    if(!window.Chart||pts.length<2){canvas.style.display='none';if(source)source.textContent=(series&&series.source?series.source:'Source unavailable')+' · no observations in selected window';return;}
+    canvas.style.display='';
+    aiCrashCrossCharts[spec.id]=new Chart(canvas,{type:'line',data:{labels:pts.map(p=>p.t),datasets:[{label:spec.title,data:pts.map(p=>p.v),borderColor:spec.color,backgroundColor:spec.color+'18',fill:true,pointRadius:0,borderWidth:1.8,tension:.12,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>spec.title+': '+Number(c.parsed.y).toLocaleString(undefined,{maximumFractionDigits:3})}}},scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:7,maxRotation:0},grid:{color:'#21262d'}},y:{ticks:{color:'#8b949e',maxTicksLimit:5},grid:{color:'#21262d'}}}}});
   }
   specs.forEach(s=>lineChart(s,payload[s.key]||{}));
-  const ys=payload.yields||{},source=document.getElementById('ai-ca-yields-source'),canvas=document.getElementById('ai-ca-yields');
-  const all={};
-  Object.entries(ys.series||{}).forEach(([name,pts])=>filtered(pts).forEach(p=>{if(!all[p.t])all[p.t]={};all[p.t][name]=p.v;}));
-  const labels=Object.keys(all).sort();
-  if(source)source.textContent=(ys.source||'Yield data source unavailable')+' · '+labels.length+' dates · %';
-  if(canvas){
-    destroy('ai-ca-yields');
-    const names=Object.keys(ys.series||{}).filter(name=>filtered(ys.series[name]).length>1);
-    if(window.Chart&&labels.length>1&&names.length){
-      canvas.style.display='';
-      const palette=['#58a6ff','#d29922','#bc8cff','#3fb950'];
-      aiCrashCrossCharts['ai-ca-yields']=new Chart(canvas,{type:'line',data:{labels,datasets:names.map((name,i)=>({label:name,data:labels.map(d=>all[d]&&all[d][name]!=null?all[d][name]:null),borderColor:palette[i%palette.length],backgroundColor:'transparent',pointRadius:0,borderWidth:1.6,tension:.12,spanGaps:true}))},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:true,labels:{color:'#c9d1d9',boxWidth:10,font:{size:10}}}},scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:6,maxRotation:0},grid:{color:'#21262d'}},y:{title:{display:true,text:'Yield (%)',color:'#8b949e'},ticks:{color:'#8b949e',maxTicksLimit:5},grid:{color:'#21262d'}}}}});
-    }else{canvas.style.display='none';if(source)source.textContent=(ys.source||'Yield data source unavailable')+' · no observations in selected range';}
-  }
+  const ys=payload.yields||{},ysSource=document.getElementById('ai-ca-yields-source'),yCanvas=document.getElementById('ai-ca-yields'),allY={};
+  Object.entries(ys.series||{}).forEach(([name,pts])=>filtered(pts).forEach(p=>{if(!allY[p.t])allY[p.t]={};allY[p.t][name]=p.v;}));
+  const yLabels=Object.keys(allY).sort();
+  if(ysSource)ysSource.textContent=(ys.source||'Yield data source unavailable')+' · '+yLabels.length+' dates · percent'+(event?' · '+event.label:'');
+  if(yCanvas){destroy('ai-ca-yields');const names=Object.keys(ys.series||{}).filter(name=>filtered(ys.series[name]).length>1);
+    if(window.Chart&&yLabels.length>1&&names.length){yCanvas.style.display='';const palette=['#58a6ff','#d29922','#bc8cff','#3fb950'];
+      aiCrashCrossCharts['ai-ca-yields']=new Chart(yCanvas,{type:'line',data:{labels:yLabels,datasets:names.map((name,i)=>({label:name,data:yLabels.map(d=>allY[d]&&allY[d][name]!=null?allY[d][name]:null),borderColor:palette[i%palette.length],backgroundColor:'transparent',pointRadius:0,borderWidth:1.6,tension:.12,spanGaps:true}))},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:true,labels:{color:'#c9d1d9',boxWidth:10,font:{size:10}}}},scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:7,maxRotation:0},grid:{color:'#21262d'}},y:{title:{display:true,text:'Yield (%)',color:'#8b949e'},ticks:{color:'#8b949e',maxTicksLimit:5},grid:{color:'#21262d'}}}}});
+    }else{yCanvas.style.display='none';if(ysSource)ysSource.textContent=(ys.source||'Yield data source unavailable')+' · no observations in selected window';}}
+  // Rebase SPY, VIX, dollar and gold to 100 to compare direction despite different native scales.
+  const normCanvas=document.getElementById('ai-ca-normalized'),normSource=document.getElementById('ai-ca-normalized-source');
+  destroy('ai-ca-normalized');
+  const normSpecs=specs.filter(s=>['spy','vix','dxy','gold'].includes(s.key));
+  const normSets=normSpecs.map(s=>{const pts=filtered((payload[s.key]||{}).points);const base=pts.find(p=>Number.isFinite(+p.v)&&+p.v!==0);return {label:s.title,points:pts,base:base?+base.v:null,color:s.color};}).filter(s=>s.base!=null&&s.points.length>1);
+  const normDates=Array.from(new Set(normSets.flatMap(s=>s.points.map(p=>p.t)))).sort();
+  const normMap={};normSets.forEach(s=>{normMap[s.label]={};s.points.forEach(p=>normMap[s.label][p.t]=+p.v/s.base*100);});
+  if(normSource)normSource.textContent=(event?event.label+' · normalized from first observation in event window':'Selected history · each series rebased to 100 at its first observation')+' · missing series are not fabricated';
+  if(normCanvas&&window.Chart&&normDates.length>1&&normSets.length>1){normCanvas.style.display='';aiCrashCrossCharts['ai-ca-normalized']=new Chart(normCanvas,{type:'line',data:{labels:normDates,datasets:normSets.map(s=>({label:s.label,data:normDates.map(d=>normMap[s.label][d]??null),borderColor:s.color,backgroundColor:'transparent',pointRadius:0,borderWidth:1.8,tension:.08,spanGaps:true}))},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:true,labels:{color:'#c9d1d9',boxWidth:10,font:{size:10}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+Number(c.parsed.y).toFixed(1)+' (index 100)'}}},scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:8,maxRotation:0},grid:{color:'#21262d'}},y:{title:{display:true,text:'Indexed value',color:'#8b949e'},ticks:{color:'#8b949e',maxTicksLimit:5},grid:{color:'#21262d'}}}}});}
+  else if(normCanvas){normCanvas.style.display='none';if(normSource)normSource.textContent='Not enough overlapping history to compare trends.';}
+  // 30-observation rolling Pearson correlation of daily percentage changes versus SPY.
+  const corrCanvas=document.getElementById('ai-ca-correlation'),corrSource=document.getElementById('ai-ca-correlation-source');destroy('ai-ca-correlation');
+  const returnMaps={};normSpecs.forEach(s=>{const pts=filtered((payload[s.key]||{}).points).slice().sort((a,b)=>a.t.localeCompare(b.t));const m={};for(let i=1;i<pts.length;i++){const prev=+pts[i-1].v,cur=+pts[i].v;if(prev>0&&Number.isFinite(cur))m[pts[i].t]=(cur/prev)-1;}returnMaps[s.key]=m;});
+  const corrDates=Array.from(new Set(Object.keys(returnMaps.spy||{}))).sort(),corrNames=[{key:'vix',label:'VIX',color:'#f85149'},{key:'dxy',label:'DXY',color:'#58a6ff'},{key:'gold',label:'Gold',color:'#d29922'}];
+  function pearson(xs,ys){const n=xs.length;if(n<20)return null;const mx=xs.reduce((a,b)=>a+b,0)/n,my=ys.reduce((a,b)=>a+b,0)/n;let num=0,dx=0,dy=0;for(let i=0;i<n;i++){num+=(xs[i]-mx)*(ys[i]-my);dx+=(xs[i]-mx)**2;dy+=(ys[i]-my)**2;}return dx&&dy?num/Math.sqrt(dx*dy):null;}
+  const corrDatasets=corrNames.map(spec=>({label:'SPY vs '+spec.label,color:spec.color,data:corrDates.map((date,i)=>{if(i<29)return null;const xs=[],ysv=[];for(let j=i-29;j<=i;j++){const a=returnMaps.spy[ corrDates[j] ],b=returnMaps[spec.key]&&returnMaps[spec.key][corrDates[j]];if(Number.isFinite(a)&&Number.isFinite(b)){xs.push(a);ysv.push(b);}}return pearson(xs,ysv);})}));
+  if(corrSource)corrSource.textContent='30-session rolling correlation of daily percentage returns versus SPY. Event view: '+(event?event.label:'not selected')+'. Values range from -1 to +1; correlations describe co-movement, not causation.';
+  if(corrCanvas&&window.Chart&&corrDates.length>35&&corrDatasets.some(d=>d.data.some(v=>v!=null))){corrCanvas.style.display='';aiCrashCrossCharts['ai-ca-correlation']=new Chart(corrCanvas,{type:'line',data:{labels:corrDates,datasets:corrDatasets.map(d=>({label:d.label,data:d.data,borderColor:d.color,backgroundColor:'transparent',pointRadius:0,borderWidth:1.7,tension:.08,spanGaps:true}))},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:true,labels:{color:'#c9d1d9',boxWidth:10,font:{size:10}}}},scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:8,maxRotation:0},grid:{color:'#21262d'}},y:{min:-1,max:1,title:{display:true,text:'Correlation',color:'#8b949e'},ticks:{color:'#8b949e',maxTicksLimit:5},grid:{color:'#21262d'}}}}});}
+  else if(corrCanvas){corrCanvas.style.display='none';if(corrSource)corrSource.textContent='Not enough aligned daily observations to calculate rolling correlations.';}
 }
+
 function drawAICrashHistory(rows){
   const el=$('ai-crash-chart'); if(!el||rows.length<2){if(el)el.innerHTML='<div style="color:#8b949e;padding:30px;text-align:center">History unavailable</div>';return;}
   const w=720,h=170,p=26,vals=rows.map(x=>+x.v||0),pts=rows.map((x,i)=>[p+i*(w-2*p)/(rows.length-1),h-p-vals[i]*(h-2*p)/100]);
