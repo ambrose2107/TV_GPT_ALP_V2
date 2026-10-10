@@ -26,7 +26,8 @@ _PROD_CACHE={"payload":None,"ts":0.0}
 _PROD_JOB={"status":"idle","result":None,"error":None,"started_at":None,"finished_at":None}
 _PROD_LOCK=threading.Lock()
 _PROD_THREAD=None
-FRED={"hy_oas":"BAMLH0A0HYM2","nfci":"NFCI","dfii10":"DFII10","unrate":"UNRATE","dgs10":"DGS10","dgs2":"DGS2","tb3ms":"TB3MS","vixcls":"VIXCLS","usd_broad":"DTWEXBGS","gold_fix":"GOLDAMGBD228NLBM"}
+# GOLDAMGBD228NLBM is currently returning HTTP 404 from FRED; keep optional gold fallback out of the required macro fetch set.
+FRED={"hy_oas":"BAMLH0A0HYM2","nfci":"NFCI","dfii10":"DFII10","unrate":"UNRATE","dgs10":"DGS10","dgs2":"DGS2","tb3ms":"TB3MS","vixcls":"VIXCLS","usd_broad":"DTWEXBGS"}
 MARKET=["SPY","QQQ","RSP","IWM","SOXX","^VIX"]
 HYPERSCALERS=["MSFT","GOOGL","AMZN","META","ORCL"]
 
