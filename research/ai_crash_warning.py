@@ -58,7 +58,7 @@ def _market():
     for sym in stocks:
         if sym in frames: continue
         try:
-            bars=alpaca_get_bars(sym,timeframe="1Day",limit=800,adjustment="all")
+            bars=alpaca_get_bars(sym,timeframe="1Day",limit=800)
             if bars:
                 z=pd.DataFrame(bars)
                 if not z.empty and "t" in z.columns and "c" in z.columns:
@@ -407,7 +407,7 @@ def _historical_crash_replay(f):
                         logger.warning("Yahoo recent-tail refresh failed for %s: %s",sym,exc)
                     if not refreshed and sym in ("SPY","QQQ"):
                         try:
-                            bars=alpaca_get_bars(sym,timeframe="1Day",limit=800)
+                            bars=alpaca_get_bars(sym,timeframe="1Day",limit=800,adjustment="all")
                             if bars:
                                 z=pd.DataFrame(bars)
                                 if not z.empty and "t" in z.columns and "c" in z.columns:
