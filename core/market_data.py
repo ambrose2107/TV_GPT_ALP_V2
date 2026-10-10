@@ -57,7 +57,7 @@ def _yahoo_reachable():
 # ── ALPACA DATA API ──────────────────────────────────────────────────────────
 def alpaca_get_bars(symbol: str, timeframe: str = "1Day",
                     limit: int = 200, feed: str = "iex",
-                    start=None):
+                    start=None, adjustment: str = "raw"):
     """
     Get OHLCV bars from Alpaca Data API.
 
@@ -91,8 +91,10 @@ def alpaca_get_bars(symbol: str, timeframe: str = "1Day",
             start = (now - timedelta(days=int(requested * 1.5))).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     url = f"{ALPACA_DATA_URL}/v2/stocks/{symbol.upper()}/bars"
+    if adjustment not in {"raw", "split", "dividend", "all"}:
+        adjustment = "raw"
     base_params = {"timeframe": timeframe, "limit": min(requested, 10000),
-                   "start": start, "sort": "asc", "adjustment": "raw"}
+                   "start": start, "sort": "asc", "adjustment": adjustment}
 
     for attempt_feed in ["iex", "sip", None]:
         try:
