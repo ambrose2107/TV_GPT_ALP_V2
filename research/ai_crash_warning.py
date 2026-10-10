@@ -884,6 +884,42 @@ def _historical_production_replay(fred_data):
         p["production_score"]=production
         p=p.dropna(subset=["SPY","QQQ","RSP","IWM","SOXX","^VIX","hy_oas","nfci","dfii10","unrate","production_score"])
 
+        # Quiet-period / false-alarm diagnostics. Treat threshold runs within 20
+        # trading sessions as one warning episode; only score episodes with a full
+        # 252-session forward window so right-censoring does not inflate misses.
+        warning=p["production_score"].ge(60).fillna(False).to_numpy()
+        warning_starts=[]
+        last_start=-10_000
+        for i,active in enumerate(warning):
+            if active and i-last_start>=20:
+                warning_starts.append(i)
+                last_start=i
+        mature=[]; false_alarms=0
+        for i in warning_starts:
+            if i+252>=len(p): continue
+            future=p["SPY"].iloc[i+1:i+253]
+            if future.empty: continue
+            peak_path=future.cummax()
+            drawdown=(future/peak_path)-1.0
+            followed_by_20pct=bool((drawdown<=-0.20).any())
+            mature.append({"date":p.index[i].strftime("%Y-%m-%d"),
+                           "score":round(float(p["production_score"].iloc[i]),1),
+                           "followed_by_20pct_drawdown":followed_by_20pct})
+            if not followed_by_20pct: false_alarms+=1
+        validation_metrics={
+            "threshold":60,
+            "warning_days":int(warning.sum()),
+            "warning_day_pct":round(float(warning.mean()*100),2) if len(warning) else None,
+            "warning_episodes":len(warning_starts),
+            "mature_warning_episodes":len(mature),
+            "false_alarm_episodes":false_alarms,
+            "false_alarm_rate_pct":round(false_alarms/len(mature)*100,1) if mature else None,
+            "episodes_followed_by_20pct_drawdown":len(mature)-false_alarms,
+            "forward_window_trading_days":252,
+            "episode_cooldown_trading_days":20,
+            "definition":"A warning episode begins on a score >=60, with starts separated by at least 20 trading sessions. False alarm means no >=20% peak-to-trough SPY drawdown in the following 252 trading sessions. Recent episodes without full forward coverage are excluded."
+        }
+
         episodes=[
           {"name":"Dot-com bust","symbol":"QQQ","peak":"2000-03-10"},
           {"name":"Global financial crisis","symbol":"SPY","peak":"2007-10-09"},
@@ -914,6 +950,7 @@ def _historical_production_replay(fred_data):
               "status":"Signal before -20% threshold" if first is not None else "No 60+ signal in 90D pre-breach window"})
 
         payload={"available":True,"episodes":results,"threshold":60,"exact_production":True,
+          "validation_metrics":validation_metrics,
           "method":"Production crash score replay: identical _score() formulas and weights evaluated day-by-day; SEC XBRL period-end financial reconstruction for AI Fundamental/AI Financing.",
           "production_formula":"AI Fundamental 18% + AI Financing 14% + Credit 20% + Liquidity 10% + Market Breadth 14% + Real Rates 10% + Volatility 5% + Recession 9%",
           "coverage_start":p.index.min().strftime("%Y-%m-%d") if not p.empty else None,
