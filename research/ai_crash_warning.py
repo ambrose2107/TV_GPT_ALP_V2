@@ -1082,20 +1082,22 @@ def _cross_asset_charts(px, fred):
     # Use the data already loaded by the working crash model before attempting new network calls.
     spy_series=px.get("SPY") if hasattr(px,"get") else None
     spy_live=series_points(spy_series)
-    spy_yahoo=yahoo_points("SPY")
-    spy_stooq=stooq_points("spy.us") if len(spy_yahoo)<1500 else []
-    spy_points=merge_points(spy_live,spy_yahoo,spy_stooq)
-    spy_source="SPY history (market feed + Yahoo/Stooq where available)" if spy_points else "Unavailable"
+    # Prefer Stooq for long history before querying Yahoo; this avoids bursts of
+    # Yahoo 429s and keeps the already-working Alpaca series as the latest tail.
+    spy_stooq=stooq_points("spy.us") if len(spy_live)<1500 else []
+    spy_yahoo=yahoo_points("SPY") if len(spy_live)+len(spy_stooq)<1500 else []
+    spy_points=merge_points(spy_stooq,spy_yahoo,spy_live)
+    spy_source="SPY history (Alpaca + Stooq/Yahoo long-history fallback)" if spy_points else "Unavailable"
     out["spy"]={"source":spy_source,"unit":"USD","points":spy_points}
 
     # QQQ is shown alongside SPY so users can compare the Nasdaq-100 growth-stock
     # proxy with the broad market on exactly the same calendar axis.
     qqq_series=px.get("QQQ") if hasattr(px,"get") else None
     qqq_live=series_points(qqq_series)
-    qqq_yahoo=yahoo_points("QQQ")
-    qqq_stooq=stooq_points("qqq.us") if len(qqq_yahoo)<1500 else []
-    qqq_points=merge_points(qqq_live,qqq_yahoo,qqq_stooq)
-    qqq_source="QQQ history (market feed + Yahoo/Stooq where available)" if qqq_points else "Unavailable"
+    qqq_stooq=stooq_points("qqq.us") if len(qqq_live)<1500 else []
+    qqq_yahoo=yahoo_points("QQQ") if len(qqq_live)+len(qqq_stooq)<1500 else []
+    qqq_points=merge_points(qqq_stooq,qqq_yahoo,qqq_live)
+    qqq_source="QQQ history (Alpaca + Stooq/Yahoo long-history fallback)" if qqq_points else "Unavailable"
     out["qqq"]={"source":qqq_source,"unit":"USD","points":qqq_points}
 
     vix_series=px.get("^VIX") if hasattr(px,"get") else None
@@ -1136,20 +1138,19 @@ def _cross_asset_charts(px, fred):
     # Gold data providers are intermittently blocked on hosted workers. Try spot/futures
     # first, then use GLD only as an explicitly labelled ETF proxy rather than leaving
     # the entire gold panel empty.
-    gold_yahoo=[]
-    gold_source="Unavailable"
-    for symbol,label in [("GC=F","Yahoo COMEX gold futures"),("XAUUSD=X","Yahoo spot gold (XAU/USD)")]:
-        gold_yahoo=yahoo_points(symbol)
-        if gold_yahoo:
-            gold_source=label
-            break
-    gold_stooq=stooq_points("gc.f") if len(gold_yahoo)<1500 else []
-    gold_points=merge_points(gold_yahoo,gold_stooq)
-    if gold_points and not gold_yahoo:
-        gold_source="Stooq COMEX gold futures"
+    gold_stooq=stooq_points("gc.f")
+    gold_points=gold_stooq[:]
+    gold_source="Stooq COMEX gold futures" if gold_points else "Unavailable"
+    if len(gold_points)<1500:
+        for symbol,label in [("GC=F","Yahoo COMEX gold futures"),("XAUUSD=X","Yahoo spot gold (XAU/USD)")]:
+            gold_yahoo=yahoo_points(symbol)
+            if gold_yahoo:
+                gold_points=merge_points(gold_points,gold_yahoo)
+                gold_source=label if not gold_stooq else label+" + Stooq history"
+                break
     if not gold_points:
-        gld_points=yahoo_points("GLD")
-        if not gld_points:gld_points=stooq_points("gld.us")
+        gld_points=stooq_points("gld.us")
+        if not gld_points:gld_points=yahoo_points("GLD")
         if gld_points:
             gold_points=gld_points
             gold_source="GLD ETF proxy (not spot gold; USD/oz comparison is approximate)"
