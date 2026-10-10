@@ -1166,6 +1166,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
       </div>
       <div class="ai-ca-grid">
         <div class="ai-ca-card"><div class="ai-ca-title">S&amp;P 500 Proxy — SPY</div><div class="ai-ca-canvas"><canvas id="ai-ca-spy"></canvas></div><div id="ai-ca-spy-source" class="ai-ca-source">Loading S&amp;P history…</div></div>
+        <div class="ai-ca-card"><div class="ai-ca-title">Nasdaq-100 Proxy — QQQ</div><div class="ai-ca-canvas"><canvas id="ai-ca-qqq"></canvas></div><div id="ai-ca-qqq-source" class="ai-ca-source">Loading Nasdaq-100 history…</div></div>
         <div class="ai-ca-card"><div class="ai-ca-title">Fear Index — VIX</div><div class="ai-ca-canvas"><canvas id="ai-ca-vix"></canvas></div><div id="ai-ca-vix-source" class="ai-ca-source">Loading VIX history…</div></div>
         <div class="ai-ca-card"><div class="ai-ca-title">Treasury Yields</div><div class="ai-ca-canvas"><canvas id="ai-ca-yields"></canvas></div><div id="ai-ca-yields-source" class="ai-ca-source">Loading yield history…</div></div>
         <div class="ai-ca-card"><div class="ai-ca-title">US Dollar Index — DXY</div><div class="ai-ca-canvas"><canvas id="ai-ca-dxy"></canvas></div><div id="ai-ca-dxy-source" class="ai-ca-source">Loading dollar history…</div></div>
@@ -4490,15 +4491,23 @@ function drawAICrashCrossAssetCharts(payload){
   const event=aiCrashSelectedEvent?events[aiCrashSelectedEvent]:null;
   const eventDate=event?new Date(event.date+'T00:00:00Z'):null;
   const latestCandidates=[];
-  ['spy','vix','dxy','gold','credit'].forEach(k=>(payload[k]&&payload[k].points||[]).forEach(p=>latestCandidates.push(p.t)));
+  ['spy','qqq','vix','dxy','gold','credit'].forEach(k=>(payload[k]&&payload[k].points||[]).forEach(p=>latestCandidates.push(p.t)));
+  Object.values((payload.yields||{}).series||{}).forEach(points=>(points||[]).forEach(p=>latestCandidates.push(p.t)));
   const latestDate=latestCandidates.length?new Date(latestCandidates.sort().slice(-1)[0]+'T00:00:00Z'):new Date();
-  const cutoff=new Date(latestDate);cutoff.setDate(cutoff.getDate()-days);
+  const cutoff=new Date(latestDate);cutoff.setUTCDate(cutoff.getUTCDate()-days);
   const startEvent=eventDate?new Date(eventDate.getTime()-120*86400000):null;
   const endEvent=eventDate?new Date(eventDate.getTime()+90*86400000):null;
   function destroy(id){if(aiCrashCrossCharts[id]){aiCrashCrossCharts[id].destroy();delete aiCrashCrossCharts[id];}}
-  function filtered(points){return (points||[]).filter(p=>{const d=new Date(p.t+'T00:00:00Z');return event?(d>=startEvent&&d<=endEvent):d>=cutoff;});}
+  function filtered(points){return (points||[]).filter(p=>{const d=new Date(p.t+'T00:00:00Z');return event?(d>=startEvent&&d<=endEvent):d>=cutoff&&d<=latestDate;});}
+  // Every panel shares the same ordered date labels. Holidays and missing observations
+  // remain null, avoiding visually shifted x-axes between market and macro series.
+  const sharedLabels=Array.from(new Set([
+    ...['spy','qqq','vix','dxy','gold','credit'].flatMap(k=>filtered((payload[k]||{}).points).map(p=>p.t)),
+    ...Object.values((payload.yields||{}).series||{}).flatMap(points=>filtered(points).map(p=>p.t))
+  ])).sort();
   const specs=[
     {key:'spy',id:'ai-ca-spy',sourceId:'ai-ca-spy-source',title:'SPY',color:'#3fb950'},
+    {key:'qqq',id:'ai-ca-qqq',sourceId:'ai-ca-qqq-source',title:'QQQ',color:'#58a6ff'},
     {key:'vix',id:'ai-ca-vix',sourceId:'ai-ca-vix-source',title:'VIX',color:'#f85149'},
     {key:'dxy',id:'ai-ca-dxy',sourceId:'ai-ca-dxy-source',title:'DXY',color:'#58a6ff'},
     {key:'gold',id:'ai-ca-gold',sourceId:'ai-ca-gold-source',title:'Gold',color:'#d29922'},
@@ -4509,8 +4518,9 @@ function drawAICrashCrossAssetCharts(payload){
     if(source)source.textContent=(series&&series.source?series.source:'Source unavailable')+' · '+pts.length+' observations'+(event?' · '+event.label:'');
     if(!canvas)return;destroy(spec.id);
     if(!window.Chart||pts.length<2){canvas.style.display='none';if(source)source.textContent=(series&&series.source?series.source:'Source unavailable')+' · no observations in selected window';return;}
+    const values={};pts.forEach(p=>values[p.t]=+p.v);
     canvas.style.display='';
-    aiCrashCrossCharts[spec.id]=new Chart(canvas,{type:'line',data:{labels:pts.map(p=>p.t),datasets:[{label:spec.title,data:pts.map(p=>p.v),borderColor:spec.color,backgroundColor:spec.color+'18',fill:true,pointRadius:0,borderWidth:1.8,tension:.12,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>spec.title+': '+Number(c.parsed.y).toLocaleString(undefined,{maximumFractionDigits:3})}}},scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:7,maxRotation:0},grid:{color:'#21262d'}},y:{ticks:{color:'#8b949e',maxTicksLimit:5},grid:{color:'#21262d'}}}}});
+    aiCrashCrossCharts[spec.id]=new Chart(canvas,{type:'line',data:{labels:sharedLabels,datasets:[{label:spec.title,data:sharedLabels.map(d=>values[d]??null),borderColor:spec.color,backgroundColor:spec.color+'18',fill:true,pointRadius:0,borderWidth:1.8,tension:.12,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y==null?'':spec.title+': '+Number(c.parsed.y).toLocaleString(undefined,{maximumFractionDigits:3})}}},scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:7,maxRotation:0},grid:{color:'#21262d'}},y:{ticks:{color:'#8b949e',maxTicksLimit:5},grid:{color:'#21262d'}}}}});
   }
   specs.forEach(s=>lineChart(s,payload[s.key]||{}));
   const ys=payload.yields||{},ysSource=document.getElementById('ai-ca-yields-source'),yCanvas=document.getElementById('ai-ca-yields'),allY={};
@@ -4524,7 +4534,7 @@ function drawAICrashCrossAssetCharts(payload){
   // Rebase SPY, VIX, dollar and gold to 100 to compare direction despite different native scales.
   const normCanvas=document.getElementById('ai-ca-normalized'),normSource=document.getElementById('ai-ca-normalized-source');
   destroy('ai-ca-normalized');
-  const normSpecs=specs.filter(s=>['spy','vix','dxy','gold'].includes(s.key));
+  const normSpecs=specs.filter(s=>['spy','qqq','vix','dxy','gold'].includes(s.key));
   const normSets=normSpecs.map(s=>{const pts=filtered((payload[s.key]||{}).points);const base=pts.find(p=>Number.isFinite(+p.v)&&+p.v!==0);return {label:s.title,points:pts,base:base?+base.v:null,color:s.color};}).filter(s=>s.base!=null&&s.points.length>1);
   const normDates=Array.from(new Set(normSets.flatMap(s=>s.points.map(p=>p.t)))).sort();
   const normMap={};normSets.forEach(s=>{normMap[s.label]={};s.points.forEach(p=>normMap[s.label][p.t]=+p.v/s.base*100);});
@@ -4534,7 +4544,7 @@ function drawAICrashCrossAssetCharts(payload){
   // 30-observation rolling Pearson correlation of daily percentage changes versus SPY.
   const corrCanvas=document.getElementById('ai-ca-correlation'),corrSource=document.getElementById('ai-ca-correlation-source');destroy('ai-ca-correlation');
   const returnMaps={};normSpecs.forEach(s=>{const pts=filtered((payload[s.key]||{}).points).slice().sort((a,b)=>a.t.localeCompare(b.t));const m={};for(let i=1;i<pts.length;i++){const prev=+pts[i-1].v,cur=+pts[i].v;if(prev>0&&Number.isFinite(cur))m[pts[i].t]=(cur/prev)-1;}returnMaps[s.key]=m;});
-  const corrDates=Array.from(new Set(Object.keys(returnMaps.spy||{}))).sort(),corrNames=[{key:'vix',label:'VIX',color:'#f85149'},{key:'dxy',label:'DXY',color:'#58a6ff'},{key:'gold',label:'Gold',color:'#d29922'}];
+  const corrDates=Array.from(new Set(Object.keys(returnMaps.spy||{}))).sort(),corrNames=[{key:'qqq',label:'QQQ',color:'#58a6ff'},{key:'vix',label:'VIX',color:'#f85149'},{key:'dxy',label:'DXY',color:'#58a6ff'},{key:'gold',label:'Gold',color:'#d29922'}];
   function pearson(xs,ys){const n=xs.length;if(n<20)return null;const mx=xs.reduce((a,b)=>a+b,0)/n,my=ys.reduce((a,b)=>a+b,0)/n;let num=0,dx=0,dy=0;for(let i=0;i<n;i++){num+=(xs[i]-mx)*(ys[i]-my);dx+=(xs[i]-mx)**2;dy+=(ys[i]-my)**2;}return dx&&dy?num/Math.sqrt(dx*dy):null;}
   const corrDatasets=corrNames.map(spec=>({label:'SPY vs '+spec.label,color:spec.color,data:corrDates.map((date,i)=>{if(i<29)return null;const xs=[],ysv=[];for(let j=i-29;j<=i;j++){const a=returnMaps.spy[ corrDates[j] ],b=returnMaps[spec.key]&&returnMaps[spec.key][corrDates[j]];if(Number.isFinite(a)&&Number.isFinite(b)){xs.push(a);ysv.push(b);}}return pearson(xs,ysv);})}));
   if(corrSource)corrSource.textContent='30-session rolling correlation of daily percentage returns versus SPY. Event view: '+(event?event.label:'not selected')+'. Values range from -1 to +1; correlations describe co-movement, not causation.';
