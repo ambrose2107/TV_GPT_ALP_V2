@@ -1091,6 +1091,12 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
  #ai-crash-terminal .ac-note{font-size:11px;line-height:1.55;color:#8b949e;padding:10px 12px;overflow-wrap:anywhere}
  #ai-crash-terminal .card,#ai-crash-terminal .sec{min-width:0;max-width:100%}
  #ai-crash-terminal #ai-crash-chart{width:100%;min-width:0}
+ #ai-crash-terminal .ai-ca-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:10px}
+ #ai-crash-terminal .ai-ca-card{border:1px solid #30363d;border-radius:8px;padding:9px;min-width:0;overflow:hidden}
+ #ai-crash-terminal .ai-ca-title{font-size:12px;font-weight:700;margin-bottom:6px}
+ #ai-crash-terminal .ai-ca-canvas{position:relative;height:190px;width:100%;min-width:0}
+ #ai-crash-terminal .ai-ca-source{font-size:10px;color:#8b949e;margin-top:6px;overflow-wrap:anywhere}
+ @media(max-width:700px){#ai-crash-terminal .ai-ca-grid{grid-template-columns:minmax(0,1fr);padding:7px}#ai-crash-terminal .ai-ca-canvas{height:180px}}
  #ai-crash-terminal #ai-crash-sheet table{min-width:590px}
  @media(max-width:980px){
    #ai-crash-terminal .ac-top-grid{grid-template-columns:minmax(130px,.55fr) repeat(2,minmax(0,1fr));gap:8px}
@@ -1138,6 +1144,25 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
     <div class="ac-mid-grid">
       <div class="sec" style="margin:0"><div class="sec-hdr"><h3 style="font-size:13px">Recent Broad-Market Proxy — 12M</h3><span class="sub">Not the live composite score</span></div><div id="ai-crash-chart" style="height:190px;padding:8px 10px"></div></div>
       <div class="sec" style="margin:0"><div class="sec-hdr"><h3 style="font-size:13px">Factor Attribution</h3></div><div id="ai-crash-factors" style="padding:8px 12px"></div></div>
+    </div>
+    <div class="ac-section" id="ai-cross-asset-section" style="margin:12px 0 0">
+      <div class="sec-hdr" style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+        <div><h3 style="font-size:13px">📈 Cross-Asset Stress Dashboard</h3><span class="sub">Fear · Treasury yields · dollar · gold · credit spreads</span></div>
+        <div id="ai-ca-range-controls" style="display:flex;gap:4px;flex-wrap:wrap">
+          <button class="btn btn-n btn-s" data-ca-range="1m" onclick="setAICrashChartRange('1m')">1M</button>
+          <button class="btn btn-n btn-s" data-ca-range="3m" onclick="setAICrashChartRange('3m')">3M</button>
+          <button class="btn btn-b btn-s" data-ca-range="1y" onclick="setAICrashChartRange('1y')">1Y</button>
+          <button class="btn btn-n btn-s" data-ca-range="3y" onclick="setAICrashChartRange('3y')">3Y</button>
+        </div>
+      </div>
+      <div class="ac-note">Each panel has its own scale. Missing series are shown as unavailable rather than filled with placeholder values. Sources and proxy labels appear below each chart.</div>
+      <div class="ai-ca-grid">
+        <div class="ai-ca-card"><div class="ai-ca-title">Fear Index — VIX</div><div class="ai-ca-canvas"><canvas id="ai-ca-vix"></canvas></div><div id="ai-ca-vix-source" class="ai-ca-source">Loading VIX history…</div></div>
+        <div class="ai-ca-card"><div class="ai-ca-title">Treasury Yields</div><div class="ai-ca-canvas"><canvas id="ai-ca-yields"></canvas></div><div id="ai-ca-yields-source" class="ai-ca-source">Loading yield history…</div></div>
+        <div class="ai-ca-card"><div class="ai-ca-title">US Dollar Index — DXY</div><div class="ai-ca-canvas"><canvas id="ai-ca-dxy"></canvas></div><div id="ai-ca-dxy-source" class="ai-ca-source">Loading dollar history…</div></div>
+        <div class="ai-ca-card"><div class="ai-ca-title">Gold Price</div><div class="ai-ca-canvas"><canvas id="ai-ca-gold"></canvas></div><div id="ai-ca-gold-source" class="ai-ca-source">Loading gold history…</div></div>
+        <div class="ai-ca-card"><div class="ai-ca-title">High-Yield Credit Spread</div><div class="ai-ca-canvas"><canvas id="ai-ca-credit"></canvas></div><div id="ai-ca-credit-source" class="ai-ca-source">Loading credit history…</div></div>
+      </div>
     </div>
     <div class="ac-section" style="margin:12px 0 0">
    <div class="sec-hdr"><h3 style="font-size:13px">Historical Crash Replay</h3><span class="sub">Time-varying broad-market indicators · exploratory threshold</span></div>
@@ -4434,6 +4459,51 @@ function fmtMetric(v, suffix) {
 }
 
 function aiCrashScoreClass(v){return v>=70?'r':v>=50?'y':'g';}
+let aiCrashChartRange='1y';
+const aiCrashCrossCharts={};
+function setAICrashChartRange(range){
+  aiCrashChartRange=range;
+  document.querySelectorAll('#ai-ca-range-controls [data-ca-range]').forEach(b=>{
+    const active=b.getAttribute('data-ca-range')===range;
+    b.className='btn '+(active?'btn-b':'btn-n')+' btn-s';
+  });
+  if(aiCrashLastPayload)drawAICrashCrossAssetCharts(aiCrashLastPayload.cross_asset_charts||{});
+}
+function drawAICrashCrossAssetCharts(payload){
+  const days=aiCrashChartRange==='1m'?31:aiCrashChartRange==='3m'?92:aiCrashChartRange==='3y'?1095:365;
+  const cutoff=new Date();cutoff.setDate(cutoff.getDate()-days);
+  const specs=[
+    {key:'vix',id:'ai-ca-vix',sourceId:'ai-ca-vix-source',title:'VIX',color:'#f85149'},
+    {key:'dxy',id:'ai-ca-dxy',sourceId:'ai-ca-dxy-source',title:'DXY',color:'#58a6ff'},
+    {key:'gold',id:'ai-ca-gold',sourceId:'ai-ca-gold-source',title:'Gold',color:'#d29922'},
+    {key:'credit',id:'ai-ca-credit',sourceId:'ai-ca-credit-source',title:'HY OAS',color:'#bc8cff'}
+  ];
+  function destroy(id){if(aiCrashCrossCharts[id]){aiCrashCrossCharts[id].destroy();delete aiCrashCrossCharts[id];}}
+  function filtered(points){return (points||[]).filter(p=>{const d=new Date(p.t+'T00:00:00');return d>=cutoff;});}
+  function lineChart(spec,series){
+    const canvas=document.getElementById(spec.id),source=document.getElementById(spec.sourceId);
+    const pts=filtered(series&&series.points);
+    if(source)source.textContent=(series&&series.source?series.source:'Source unavailable')+' · '+pts.length+' observations';
+    if(!canvas)return;
+    destroy(spec.id);
+    if(!window.Chart||pts.length<2){const parent=canvas.parentElement;if(parent)parent.innerHTML='<div style="padding:30px 8px;color:#8b949e;text-align:center">Chart unavailable — source data missing</div>';return;}
+    aiCrashCrossCharts[spec.id]=new Chart(canvas,{type:'line',data:{labels:pts.map(p=>p.t),datasets:[{label:spec.title,data:pts.map(p=>p.v),borderColor:spec.color,backgroundColor:spec.color+'18',fill:true,pointRadius:0,borderWidth:1.7,tension:.12,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>spec.title+': '+Number(c.parsed.y).toLocaleString(undefined,{maximumFractionDigits:2})}}},scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:6,maxRotation:0},grid:{color:'#21262d'}},y:{ticks:{color:'#8b949e',maxTicksLimit:5},grid:{color:'#21262d'}}}}});
+  }
+  specs.forEach(s=>lineChart(s,payload[s.key]||{}));
+  const ys=payload.yields||{},source=document.getElementById('ai-ca-yields-source'),canvas=document.getElementById('ai-ca-yields');
+  const all={};
+  Object.entries(ys.series||{}).forEach(([name,pts])=>filtered(pts).forEach(p=>{if(!all[p.t])all[p.t]={};all[p.t][name]=p.v;}));
+  const labels=Object.keys(all).sort();
+  if(source)source.textContent=(ys.source||'Yield data source unavailable')+' · '+labels.length+' dates · %';
+  if(canvas){
+    destroy('ai-ca-yields');
+    const names=Object.keys(ys.series||{}).filter(name=>filtered(ys.series[name]).length>1);
+    if(window.Chart&&labels.length>1&&names.length){
+      const palette=['#58a6ff','#d29922','#bc8cff','#3fb950'];
+      aiCrashCrossCharts['ai-ca-yields']=new Chart(canvas,{type:'line',data:{labels,datasets:names.map((name,i)=>({label:name,data:labels.map(d=>all[d]&&all[d][name]!=null?all[d][name]:null),borderColor:palette[i%palette.length],backgroundColor:'transparent',pointRadius:0,borderWidth:1.6,tension:.12,spanGaps:true}))},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:true,labels:{color:'#c9d1d9',boxWidth:10,font:{size:10}}}},scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:6,maxRotation:0},grid:{color:'#21262d'}},y:{title:{display:true,text:'Yield (%)',color:'#8b949e'},ticks:{color:'#8b949e',maxTicksLimit:5},grid:{color:'#21262d'}}}}});
+    }else{const parent=canvas.parentElement;if(parent)parent.innerHTML='<div style="padding:30px 8px;color:#8b949e;text-align:center">Yield history unavailable</div>';}
+  }
+}
 function drawAICrashHistory(rows){
   const el=$('ai-crash-chart'); if(!el||rows.length<2){if(el)el.innerHTML='<div style="color:#8b949e;padding:30px;text-align:center">History unavailable</div>';return;}
   const w=720,h=170,p=26,vals=rows.map(x=>+x.v||0),pts=rows.map((x,i)=>[p+i*(w-2*p)/(rows.length-1),h-p-vals[i]*(h-2*p)/100]);
@@ -4575,6 +4645,8 @@ async function loadAICrashDashboard(force){
       ['Confirmed Blocks',v2.confirmed_blocks==null?'—':v2.confirmed_blocks+'/4']
     ].map(x=>'<div class="card" style="padding:8px 10px"><div class="lbl">'+x[0]+'</div><div style="font-weight:700;margin-top:4px">'+x[1]+'</div></div>').join('');
     drawAICrashHistory(d.history||[]);
+    drawAICrashCrossAssetCharts(d.cross_asset_charts||{});
+    setAICrashChartRange(aiCrashChartRange);
     const replay=d.historical_replay||{}, replayRows=replay.episodes||[];
     const replayEl=$('ai-crash-replay'), replayNote=$('ai-crash-replay-note');
     if(replayEl){
