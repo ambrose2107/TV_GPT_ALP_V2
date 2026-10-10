@@ -4525,7 +4525,7 @@ function drawAICrashCrossAssetCharts(payload){
   specs.forEach(s=>lineChart(s,payload[s.key]||{}));
   const ys=payload.yields||{},ysSource=document.getElementById('ai-ca-yields-source'),yCanvas=document.getElementById('ai-ca-yields'),allY={};
   Object.entries(ys.series||{}).forEach(([name,pts])=>filtered(pts).forEach(p=>{if(!allY[p.t])allY[p.t]={};allY[p.t][name]=p.v;}));
-  const yLabels=Object.keys(allY).sort();
+  const yLabels=sharedLabels;
   if(ysSource)ysSource.textContent=(ys.source||'Yield data source unavailable')+' · '+yLabels.length+' dates · percent'+(event?' · '+event.label:'');
   if(yCanvas){destroy('ai-ca-yields');const names=Object.keys(ys.series||{}).filter(name=>filtered(ys.series[name]).length>1);
     if(window.Chart&&yLabels.length>1&&names.length){yCanvas.style.display='';const palette=['#58a6ff','#d29922','#bc8cff','#3fb950'];
@@ -4536,7 +4536,7 @@ function drawAICrashCrossAssetCharts(payload){
   destroy('ai-ca-normalized');
   const normSpecs=specs.filter(s=>['spy','qqq','vix','dxy','gold'].includes(s.key));
   const normSets=normSpecs.map(s=>{const pts=filtered((payload[s.key]||{}).points);const base=pts.find(p=>Number.isFinite(+p.v)&&+p.v!==0);return {label:s.title,points:pts,base:base?+base.v:null,color:s.color};}).filter(s=>s.base!=null&&s.points.length>1);
-  const normDates=Array.from(new Set(normSets.flatMap(s=>s.points.map(p=>p.t)))).sort();
+  const normDates=sharedLabels;
   const normMap={};normSets.forEach(s=>{normMap[s.label]={};s.points.forEach(p=>normMap[s.label][p.t]=+p.v/s.base*100);});
   if(normSource)normSource.textContent=(event?event.label+' · normalized from first observation in event window':'Selected history · each series rebased to 100 at its first observation')+' · missing series are not fabricated';
   if(normCanvas&&window.Chart&&normDates.length>1&&normSets.length>1){normCanvas.style.display='';aiCrashCrossCharts['ai-ca-normalized']=new Chart(normCanvas,{type:'line',data:{labels:normDates,datasets:normSets.map(s=>({label:s.label,data:normDates.map(d=>normMap[s.label][d]??null),borderColor:s.color,backgroundColor:'transparent',pointRadius:0,borderWidth:1.8,tension:.08,spanGaps:true}))},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:true,labels:{color:'#c9d1d9',boxWidth:10,font:{size:10}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+Number(c.parsed.y).toFixed(1)+' (index 100)'}}},scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:8,maxRotation:0},grid:{color:'#21262d'}},y:{title:{display:true,text:'Indexed value',color:'#8b949e'},ticks:{color:'#8b949e',maxTicksLimit:5},grid:{color:'#21262d'}}}}});}
