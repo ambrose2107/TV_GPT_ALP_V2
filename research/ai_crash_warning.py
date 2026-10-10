@@ -1056,6 +1056,13 @@ def _cross_asset_charts(px, fred):
         except Exception as exc:logger.warning("Cross-asset Yahoo history failed for %s: %s",symbol,exc)
         return []
 
+    def merge_points(*groups):
+        merged={}
+        for group in groups:
+            for point in group or []:
+                if point.get("t") and point.get("v") is not None:merged[point["t"]]=point
+        return [merged[k] for k in sorted(merged)]
+
     def stooq_points(symbol):
         try:
             url="https://stooq.com/q/d/l/"
@@ -1073,21 +1080,22 @@ def _cross_asset_charts(px, fred):
 
     # Use the data already loaded by the working crash model before attempting new network calls.
     spy_series=px.get("SPY") if hasattr(px,"get") else None
-    spy_points=series_points(spy_series)
-    if not spy_points:spy_points=yahoo_points("SPY") or stooq_points("spy.us")
-    out["spy"]={"source":"Existing market feed: SPY" if series_points(spy_series) else ("Yahoo Finance: SPY" if spy_points else "Stooq: SPY"),"unit":"USD","points":spy_points}
+    spy_live=series_points(spy_series)
+    spy_yahoo=yahoo_points("SPY")
+    spy_stooq=stooq_points("spy.us") if len(spy_yahoo)<1500 else []
+    spy_points=merge_points(spy_live,spy_yahoo,spy_stooq)
+    spy_source="SPY history (market feed + Yahoo/Stooq where available)" if spy_points else "Unavailable"
+    out["spy"]={"source":spy_source,"unit":"USD","points":spy_points}
 
     vix_series=px.get("^VIX") if hasattr(px,"get") else None
-    vix_points=series_points(vix_series)
-    vix_source="Existing market feed: official VIX" if vix_points else "Unavailable"
+    vix_live=series_points(vix_series)
+    vix_fred=series_points(fred.get("vixcls"))
+    vix_yahoo=yahoo_points("^VIX") if len(vix_fred)<1500 else []
+    vix_stooq=stooq_points("vix") if len(vix_fred)+len(vix_yahoo)<1500 else []
+    vix_points=merge_points(vix_live,vix_fred,vix_yahoo,vix_stooq)
+    vix_source="CBOE VIX (market feed + FRED/Yahoo/Stooq history)" if vix_points else "Unavailable"
     if not vix_points:
-        vix_points=series_points(fred.get("vixcls"))
-        if vix_points:vix_source="FRED: CBOE Volatility Index (VIXCLS)"
-    if not vix_points:
-        vix_points=yahoo_points("^VIX") or stooq_points("vix")
-        if vix_points:vix_source="Yahoo/Stooq: VIX index"
-    if not vix_points:
-        vix_points=yahoo_points("VIXY") or stooq_points("vixy.us")
+        vix_points=merge_points(yahoo_points("VIXY"),stooq_points("vixy.us"))
         if vix_points:vix_source="VIXY ETF proxy (not the VIX index)"
     out["vix"]={"source":vix_source,"unit":"index points" if "proxy" not in vix_source.lower() else "ETF price","points":vix_points}
 
@@ -1100,9 +1108,12 @@ def _cross_asset_charts(px, fred):
 
     # Prefer an actual DXY market ticker; if blocked, show a separately labelled broad USD proxy.
     dxy_points=[];dxy_source="Unavailable";dxy_unit="index points"
-    for symbol,label in [("DX-Y.NYB","US Dollar Index (DXY)"),("DX=F","US Dollar Index futures (DX=F)"),("^DXY","Yahoo ^DXY index")]:
-        dxy_points=yahoo_points(symbol) or stooq_points("dx.f")
+    for symbol,label in [("DX-Y.NYB","Yahoo US Dollar Index (DXY)"),("DX=F","Yahoo US Dollar Index futures (DX=F)"),("^DXY","Yahoo ^DXY index")]:
+        dxy_points=yahoo_points(symbol)
         if dxy_points:dxy_source=label;break
+    if not dxy_points:
+        dxy_points=stooq_points("dx.f")
+        if dxy_points:dxy_source="Stooq US Dollar Index futures (DX.F)"
     if not dxy_points:
         dxy_points=series_points(fred.get("usd_broad"))
         if dxy_points:dxy_source="FRED trade-weighted broad US dollar index (proxy; not DXY)";dxy_unit="index"
@@ -1111,11 +1122,15 @@ def _cross_asset_charts(px, fred):
         if dxy_points:dxy_source="UUP dollar ETF proxy (not DXY)";dxy_unit="ETF price"
     out["dxy"]={"source":dxy_source,"unit":dxy_unit,"points":dxy_points}
 
-    gold_points=yahoo_points("GC=F") or yahoo_points("XAUUSD=X") or stooq_points("gc.f") or stooq_points("xauusd")
-    gold_source="Yahoo gold futures/spot or Stooq gold futures" if gold_points else "Unavailable"
-    if not gold_points:
-        gold_points=series_points(fred.get("gold_fix"))
-        if gold_points:gold_source="FRED London gold fixing (check last observation date)"
+    gold_yahoo=yahoo_points("GC=F") or yahoo_points("XAUUSD=X")
+    gold_stooq=stooq_points("gc.f") if len(gold_yahoo)<1500 else []
+    gold_points=merge_points(gold_yahoo,gold_stooq)
+    gold_source="Yahoo gold history with Stooq futures fallback" if gold_points else "Unavailable"
+    if len(gold_points)<100:
+        gold_fred=series_points(fred.get("gold_fix"))
+        if gold_fred:
+            gold_points=merge_points(gold_points,gold_fred)
+            gold_source="Gold history includes FRED London fixing; check source/coverage dates"
     out["gold"]={"source":gold_source,"unit":"USD/oz","points":gold_points}
 
     hy=fred.get("hy_oas")
