@@ -75,7 +75,7 @@ def test_deployed_dashboard_and_ai_crash_smoke():
         # Render may still be deploying the commit that triggered this workflow.
         # Retry while the deployed replay is stale, but never treat a stale HTTP 200 as success.
         api_result = None
-        for attempt in range(4):
+        for attempt in range(10):
             api_result = page.evaluate("""async () => {
               const response = await fetch('/api/ai-crash/dashboard', {
                 credentials: 'same-origin'
@@ -93,7 +93,7 @@ def test_deployed_dashboard_and_ai_crash_smoke():
                 fresh_enough = False
             if api_result.get("status") == 200 and fresh_enough:
                 break
-            if attempt < 3:
+            if attempt < 9:
                 time.sleep(15)
         assert api_result["status"] == 200, (
             "AI Crash dashboard API failed: "
