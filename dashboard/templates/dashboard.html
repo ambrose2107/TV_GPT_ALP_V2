@@ -4487,12 +4487,21 @@ async function renderAICrashProductionStatus(d){
   if(state!=='complete' || !d.result){st.textContent='Not run — this heavy validation is never started automatically.';return;}
   const r=d.result||{}; st.textContent='✅ Production replay complete · '+(r.observations||0)+' daily observations'; st.style.color='#3fb950';
   if(table){
-    table.innerHTML='<table class="ac-table"><thead><tr><th>Episode</th><th>Peak</th><th>−20%</th><th>Score @ Peak</th><th>Max Pre-breach</th><th>First ≥60</th><th>Lead days</th><th>Result</th></tr></thead><tbody>'+
+    const vm=r.validation_metrics||{};
+    const metricCard=(label,value,detail)=>'<div class="card" style="padding:9px 10px;min-width:125px;flex:1"><div class="lbl">'+label+'</div><div style="font-size:19px;font-weight:700;margin-top:4px">'+value+'</div><div style="font-size:10px;color:#8b949e;margin-top:3px">'+detail+'</div></div>';
+    const metrics='<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px">'+
+      metricCard('Warning days',vm.warning_day_pct==null?'—':Number(vm.warning_day_pct).toFixed(1)+'%',(vm.warning_days||0)+' daily observations ≥60')+
+      metricCard('Warning episodes',vm.warning_episodes==null?'—':vm.warning_episodes,'Starts separated by 20 trading days')+
+      metricCard('Mature episodes',vm.mature_warning_episodes==null?'—':vm.mature_warning_episodes,'Full 252-session follow-up')+
+      metricCard('False-alarm rate',vm.false_alarm_rate_pct==null?'—':Number(vm.false_alarm_rate_pct).toFixed(1)+'%',(vm.false_alarm_episodes||0)+' of '+(vm.mature_warning_episodes||0)+' mature warnings not followed by a 20% SPY drawdown')+
+      '</div>';
+    table.innerHTML=metrics+'<table class="ac-table"><thead><tr><th>Episode</th><th>Peak</th><th>−20%</th><th>Score @ Peak</th><th>Max Pre-breach</th><th>First ≥60</th><th>Lead days</th><th>Result</th></tr></thead><tbody>'+
       (r.episodes||[]).map(x=>'<tr><td><strong>'+String(x.episode||'—')+'</strong></td><td>'+String(x.peak_date||'—')+'</td><td>'+String(x['20pct_date']||'—')+'</td><td>'+(x.score_at_peak==null?'—':Number(x.score_at_peak).toFixed(1))+'</td><td>'+(x.max_score_pre_breach==null?'—':Number(x.max_score_pre_breach).toFixed(1))+'</td><td>'+String(x.first_signal_date||'—')+'</td><td>'+(x.lead_days==null?'—':x.lead_days)+'</td><td>'+String(x.status||'—')+'</td></tr>').join('')+
       '</tbody></table>';
   }
   if(note){
-    note.textContent='Coverage '+(r.coverage_start||'—')+' → '+(r.coverage_end||'—')+' · '+(r.method||'Production replay')+' '+(r.warning||'');
+    const vm=r.validation_metrics||{};
+    note.textContent='Coverage '+(r.coverage_start||'—')+' → '+(r.coverage_end||'—')+' · '+(r.method||'Production replay')+' '+(vm.definition||'')+' '+(r.warning||'');
   }
 }
 let aiCrashProdPoll=null;
