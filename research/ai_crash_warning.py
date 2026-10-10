@@ -229,11 +229,13 @@ def _score(px,f,fund):
     rec=_clip((sahm or 0)*120)
     if len(un)>=6:rec=_clip(rec+(float(un.iloc[-1])-float(un.iloc[-4]))*18)
     cgap=fund.get("capex_growth_gap"); dgap=fund.get("debt_growth_gap"); ratio=fund.get("capex_revenue")
-    ai=35
+    # Missing financial data must not be encoded as low risk. Use a neutral
+    # midpoint only when a metric is unavailable, and surface coverage in the UI.
+    ai=50 if cgap is None and ratio is None else 35
     if cgap is not None: ai+=_clip(cgap*2,-20,35)
     if ratio is not None: ai+=_clip((ratio-15)*1.5,-15,25)
     ai=_clip(ai)
-    afin=_clip(35+(_clip(dgap*2.5,-15,45) if dgap is not None else 0))
+    afin=_clip((50 if dgap is None else 35)+(_clip(dgap*2.5,-15,45) if dgap is not None else 0))
     comps={"AI Fundamental":round(_clip(.65*ai+.35*afin),1),"AI Financing":round(afin,1),"Credit":round(credit,1),
       "Liquidity":round(liq,1),"Market Breadth":round(breadth,1),"Real Rates":round(real_score,1),"Volatility":round(vol,1),"Recession":round(rec,1)}
     w={"AI Fundamental":.18,"AI Financing":.14,"Credit":.20,"Liquidity":.10,"Market Breadth":.14,"Real Rates":.10,"Volatility":.05,"Recession":.09}
