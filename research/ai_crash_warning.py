@@ -187,7 +187,8 @@ def _fundamental_proxy_uncached():
                 dp=float(debt.iloc[-5]) if len(debt)>=5 else None
                 row["debt_growth"]=((dn/dp)-1)*100 if dp and dp>0 else None
             required=[row["revenue_ttm"] is not None,row["capex_ttm"] is not None,row["debt"] is not None]
-            row["coverage_status"]="COMPLETE" if all(required) else "PARTIAL" if any(required) else "MISSING"
+            growth_required=[row["revenue_growth"] is not None,row["capex_growth"] is not None,row["debt_growth"] is not None]
+            row["coverage_status"]="COMPLETE" if all(required+growth_required) else "PARTIAL" if any(required) else "MISSING"
         except Exception as exc:
             row["error"]=str(exc)[:180]
         rows.append(row)
@@ -869,8 +870,11 @@ def _historical_production_replay(fred_data):
         cgap=fund_agg["capex_growth_gap"].reindex(p.index).ffill()
         dgap=fund_agg["debt_growth_gap"].reindex(p.index).ffill()
         ratio=fund_agg["capex_revenue"].reindex(p.index).ffill()
-        ai=(35+cgap.mul(2).clip(-20,35)+(ratio.sub(15)*1.5).clip(-15,25)).clip(0,100)
-        afin=(35+dgap.mul(2.5).clip(-15,45)).clip(0,100)
+        # Keep the historical production replay aligned with the live formula's
+        # neutral midpoint for unavailable AI metrics; rows with missing required
+        # historical inputs remain excluded below rather than scored as low risk.
+        ai=(50+cgap.mul(2).clip(-20,35)+(ratio.sub(15)*1.5).clip(-15,25)).clip(0,100)
+        afin=(50+dgap.mul(2.5).clip(-15,45)).clip(0,100)
         ai_fund=(0.65*ai+0.35*afin).clip(0,100)
 
         production=(.18*ai_fund+.14*afin+.20*credit+.10*liquidity+.14*breadth+
