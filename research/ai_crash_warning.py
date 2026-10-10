@@ -26,7 +26,7 @@ _PROD_CACHE={"payload":None,"ts":0.0}
 _PROD_JOB={"status":"idle","result":None,"error":None,"started_at":None,"finished_at":None}
 _PROD_LOCK=threading.Lock()
 _PROD_THREAD=None
-FRED={"hy_oas":"BAMLH0A0HYM2","nfci":"NFCI","dfii10":"DFII10","unrate":"UNRATE"}
+FRED={"hy_oas":"BAMLH0A0HYM2","nfci":"NFCI","dfii10":"DFII10","unrate":"UNRATE","dgs10":"DGS10","dgs2":"DGS2","tb3ms":"TB3MS"}
 MARKET=["SPY","QQQ","RSP","IWM","SOXX","^VIX"]
 HYPERSCALERS=["MSFT","GOOGL","AMZN","META","ORCL"]
 
@@ -1016,6 +1016,74 @@ def production_replay_status():
             "result":result,
         }
 
+def _chart_points(series, max_days=1100):
+    """Convert a time series to compact, JSON-safe chart points."""
+    if series is None:
+        return []
+    try:
+        s=pd.to_numeric(series,errors="coerce").dropna().sort_index()
+        if s.empty:return []
+        latest=pd.Timestamp(s.index.max())
+        cutoff=latest-pd.Timedelta(days=max_days)
+        s=s[s.index>=cutoff]
+        out=[]
+        for stamp,value in s.items():
+            dt=pd.Timestamp(stamp)
+            if pd.isna(dt) or not np.isfinite(float(value)):continue
+            out.append({"t":dt.strftime("%Y-%m-%d"),"v":round(float(value),4)})
+        return out
+    except Exception:
+        return []
+
+
+def _cross_asset_charts(px, fred):
+    """Return source-labelled history for the AI Crash dashboard's cross-asset charts."""
+    out={}
+    vix_col="^VIX" if "^VIX" in px.columns else ("VIXY" if "VIXY" in px.columns else None)
+    if vix_col:
+        out["vix"]={"source":"Official VIX index (Yahoo/CBOE)" if vix_col=="^VIX" else "VIXY ETF proxy (not the VIX index)",
+                    "unit":"index points" if vix_col=="^VIX" else "ETF price","points":_chart_points(px[vix_col])}
+    else:
+        out["vix"]={"source":"Unavailable","unit":"index points","points":[]}
+
+    yield_specs=[("dgs10","10Y Treasury"),("dfii10","10Y real yield"),("dgs2","2Y Treasury"),("tb3ms","3M Treasury")]
+    yield_series={}
+    for key,label in yield_specs:
+        s=fred.get(key)
+        pts=_chart_points(s) if s is not None else []
+        if pts:yield_series[label]=pts
+    out["yields"]={"source":"FRED: U.S. Treasury / TIPS series","unit":"percent","series":yield_series}
+
+    for key,symbol,label in [("dxy","DX-Y.NYB","US Dollar Index (DXY)"),("gold","GC=F","Gold futures (GC=F)")]:
+        points=[];source=label
+        try:
+            chart=yahoo_get_chart(symbol,interval="1d",period="3y")
+            if chart and chart.get("timestamps") and chart.get("close") and len(chart["timestamps"])==len(chart["close"]):
+                q=pd.Series(pd.to_numeric(chart["close"],errors="coerce"),
+                    index=pd.to_datetime(chart["timestamps"],unit="s",utc=True,errors="coerce")).dropna()
+                q=q[~q.index.isna()]
+                points=_chart_points(q)
+        except Exception as exc:
+            logger.warning("Cross-asset chart fetch failed for %s: %s",symbol,exc)
+        if not points and key=="gold":
+            try:
+                chart=yahoo_get_chart("XAUUSD=X",interval="1d",period="3y")
+                if chart and chart.get("timestamps") and chart.get("close") and len(chart["timestamps"])==len(chart["close"]):
+                    q=pd.Series(pd.to_numeric(chart["close"],errors="coerce"),
+                        index=pd.to_datetime(chart["timestamps"],unit="s",utc=True,errors="coerce")).dropna()
+                    q=q[~q.index.isna()]
+                    points=_chart_points(q);source="Spot gold (XAUUSD=X)"
+            except Exception as exc:
+                logger.warning("Spot gold chart fallback failed: %s",exc)
+        if not points:source="Unavailable"
+        out[key]={"source":source,"unit":"index" if key=="dxy" else "USD/oz","points":points}
+
+    hy=fred.get("hy_oas")
+    out["credit"]={"source":"FRED: ICE BofA US High Yield Index Option-Adjusted Spread",
+                   "unit":"percent","points":_chart_points(hy) if hy is not None else []}
+    return out
+
+
 def build_dashboard(force=False):
     now=time.time()
     if not force and _CACHE["payload"] is not None and now-_CACHE["ts"]<CACHE_TTL:return _CACHE["payload"]
@@ -1078,7 +1146,7 @@ def build_dashboard(force=False):
             "method":"Separate broad-market index using credit, liquidity, breadth, real rates, volatility and recession factors; not a calibrated probability."},
           "components":factors,"confirmations":{"credit":comps["Credit"]>=70,"recession":comps["Recession"]>=70,
           "breadth":comps["Market Breadth"]>=70,"liquidity":comps["Liquidity"]>=70},
-          "details":core["details"],"fundamentals":fund,"data_quality":data_quality,"history":hist,
+          "details":core["details"],"fundamentals":fund,"data_quality":data_quality,"history":hist,"cross_asset_charts":_cross_asset_charts(px,f),
           "reliability":{"data_score":data_reliability,"data_label":reliability_label,"signal_confidence":signal_confidence,
             "note":"Data score measures input quality; signal confidence requires persistent or multi-block stress. Neither is a calibrated crash probability."},
           "v2":v2,
