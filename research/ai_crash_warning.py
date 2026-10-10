@@ -639,7 +639,13 @@ def _historical_crash_replay(f):
         qmom=p["QQQ"].pct_change(126)*100
         momentum=(50-qmom*1.5).clip(0,100)
         spy_high=p["SPY"].rolling(252,min_periods=60).max()
-        drawdown=((1-p["SPY"]/spy_high).clip(lower=0)*220).clip(0,100)
+        qqq_high=p["QQQ"].rolling(252,min_periods=60).max()
+        spy_drawdown=((1-p["SPY"]/spy_high).clip(lower=0)*220).clip(0,100)
+        qqq_drawdown=((1-p["QQQ"]/qqq_high).clip(lower=0)*220).clip(0,100)
+        # The replay uses QQQ as the breach instrument for the dot-com episode.
+        # Use the worse of SPY/QQQ drawdown stress so the score doesn't ignore a
+        # tech-led selloff simply because SPY has fallen less.
+        drawdown=pd.concat([spy_drawdown,qqq_drawdown],axis=1).max(axis=1,skipna=True)
         nf_mean=p["nfci"].rolling(104,min_periods=26).mean()
         nf_std=p["nfci"].rolling(104,min_periods=26).std().clip(lower=.15)
         liquidity=(40+(p["nfci"]-nf_mean)/nf_std*25).clip(0,100)
