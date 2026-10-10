@@ -177,10 +177,12 @@ def _fundamental_proxy_uncached():
                 rp=float(rev.iloc[-8:-4].sum()) if len(rev)>=8 else None
                 row["revenue_growth"]=((rt/rp)-1)*100 if rp and rp>0 else None
             if len(cap)>=1:
-                ct=float(abs(cap.tail(4).sum())); row["capex_ttm"]=ct
                 row["capex_period_end"]=pd.Timestamp(cap.index[-1]).strftime("%Y-%m-%d")
+                if len(cap)>=4:
+                    ct=float(abs(cap.tail(4).sum())); row["capex_ttm"]=ct
                 cp=float(abs(cap.iloc[-8:-4].sum())) if len(cap)>=8 else None
-                row["capex_growth"]=((ct/cp)-1)*100 if cp and cp>0 else None
+                if row["capex_ttm"] is not None:
+                    row["capex_growth"]=((row["capex_ttm"]/cp)-1)*100 if cp and cp>0 else None
             if len(debt)>=1:
                 dn=float(debt.iloc[-1]); row["debt"]=dn
                 row["debt_period_end"]=pd.Timestamp(debt.index[-1]).strftime("%Y-%m-%d")
