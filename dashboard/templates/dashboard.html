@@ -23,6 +23,8 @@ if ('serviceWorker' in navigator) {
 </script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/2.2.0/chartjs-plugin-zoom.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px}
@@ -1096,6 +1098,8 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
  #ai-crash-terminal .ai-ca-title{font-size:12px;font-weight:700;margin-bottom:6px}
  #ai-crash-terminal .ai-ca-canvas{position:relative;height:190px;width:100%;min-width:0}
  #ai-crash-terminal .ai-ca-source{font-size:10px;color:#8b949e;margin-top:6px;overflow-wrap:anywhere}
+ #ai-crash-terminal .ai-ca-collapsed .ai-ca-canvas,#ai-crash-terminal .ai-ca-collapsed .ai-ca-source,#ai-crash-terminal .ai-ca-collapsed .ac-note{display:none!important}
+ #ai-crash-terminal .ai-ca-collapsed{align-self:start}
  @media(max-width:700px){ #ai-crash-terminal .ai-ca-grid{grid-template-columns:minmax(0,1fr);padding:7px} #ai-crash-terminal .ai-ca-canvas{height:180px}}
  #ai-crash-terminal #ai-crash-sheet table{min-width:590px}
  @media(max-width:980px){
@@ -1157,7 +1161,8 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
           <button class="btn btn-n btn-s" data-ca-range="10y" onclick="setAICrashChartRange('10y')">10Y</button>
         </div>
       </div>
-      <div class="ac-note">Each panel has its own scale and interactive hover tooltips. Use the history ranges, or select a known stress episode to compare the 120 days before and 90 days after it. Missing data is never replaced with invented values.</div>
+      <div class="ac-note">Each panel shares the same calendar x-axis; missing observations remain gaps. Hover for values. When the zoom add-on loads, use pinch/drag on touchscreens. Use the controls to zoom X, Y or both and reset the view.</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:0 10px 8px"><label for="ai-ca-zoom-mode" class="sub">Zoom/pan axes:</label><select id="ai-ca-zoom-mode" style="padding:5px"><option value="xy">X + Y axes</option><option value="x">X axis only</option><option value="y">Y axis only</option></select><button class="btn btn-n btn-s" onclick="zoomAICrashCharts(1.25)">Zoom in</button><button class="btn btn-n btn-s" onclick="zoomAICrashCharts(0.8)">Zoom out</button><button class="btn btn-b btn-s" onclick="resetAICrashChartZoom()">Reset zoom</button><button class="btn btn-n btn-s" onclick="setAICrashChartRange('1y')">Reset to 1Y</button></div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;padding:0 10px 8px;align-items:center"><span class="sub">Crash episode replay:</span>
         <button class="btn btn-n btn-s" data-ca-event="2025" onclick="setAICrashEvent('2025')">Apr 2025 tariff selloff</button>
         <button class="btn btn-n btn-s" data-ca-event="2022" onclick="setAICrashEvent('2022')">2022 bear market</button>
@@ -1171,8 +1176,8 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
         <div class="ai-ca-card"><div class="ai-ca-title">Treasury Yields</div><div class="ai-ca-canvas"><canvas id="ai-ca-yields"></canvas></div><div id="ai-ca-yields-source" class="ai-ca-source">Loading yield history…</div></div>
         <div class="ai-ca-card"><div class="ai-ca-title">US Dollar Index — DXY</div><div class="ai-ca-canvas"><canvas id="ai-ca-dxy"></canvas></div><div id="ai-ca-dxy-source" class="ai-ca-source">Loading dollar history…</div></div>
         <div class="ai-ca-card"><div class="ai-ca-title">Gold Price</div><div class="ai-ca-canvas"><canvas id="ai-ca-gold"></canvas></div><div id="ai-ca-gold-source" class="ai-ca-source">Loading gold history…</div></div>
-        <div class="ai-ca-card"><div class="ai-ca-title">High-Yield Credit Spread</div><div class="ai-ca-canvas"><canvas id="ai-ca-credit"></canvas></div><div id="ai-ca-credit-source" class="ai-ca-source">Loading credit history…</div></div>
-        <div class="ai-ca-card" style="grid-column:1/-1"><div class="ai-ca-title">Normalized Cross-Asset Trends — all series start at 100</div><div class="ai-ca-canvas" style="height:240px"><canvas id="ai-ca-normalized"></canvas></div><div id="ai-ca-normalized-source" class="ai-ca-source">Compare relative moves without mixing incompatible price scales.</div></div>
+        <div class="ai-ca-card"><div class="ai-ca-title">High-Yield Credit Spread (HY OAS)</div><div class="ai-ca-canvas"><canvas id="ai-ca-credit"></canvas></div><div id="ai-ca-credit-source" class="ai-ca-source">Loading credit history…</div><div class="ac-note" style="margin-top:7px">What it measures: the extra annual yield investors demand to hold below-investment-grade (“high-yield/junk”) corporate bonds rather than comparable US Treasuries, adjusted for embedded options. Wider spreads mean investors demand more compensation for perceived default or liquidity risk; rapid widening can be an early stress signal. Tightening usually means easier credit conditions. It is a stress gauge, not a direct default forecast, and can stay calm until late in a selloff.</div></div>
+        <div class="ai-ca-card" style="grid-column:1/-1"><div class="ai-ca-title">Normalized Cross-Asset Trends — percentage change from window start</div><div class="ai-ca-canvas" style="height:260px"><canvas id="ai-ca-normalized"></canvas></div><div id="ai-ca-normalized-source" class="ai-ca-source">Zero means unchanged; +10 means up 10%; −10 means down 10%. VIX rising and credit spreads widening are positive stress moves. Values are capped at ±100% so extreme moves do not flatten other lines.</div></div>
         <div class="ai-ca-card" style="grid-column:1/-1"><div class="ai-ca-title">30-Session Rolling Correlation vs SPY</div><div class="ai-ca-canvas" style="height:240px"><canvas id="ai-ca-correlation"></canvas></div><div id="ai-ca-correlation-source" class="ai-ca-source">Correlation uses daily returns; values near -1 move inversely, near +1 move together.</div></div>
       </div>
     </div>
@@ -4474,6 +4479,22 @@ function aiCrashScoreClass(v){return v>=70?'r':v>=50?'y':'g';}
 let aiCrashChartRange='1y';
 let aiCrashSelectedEvent=null;
 const aiCrashCrossCharts={};
+function aiCrashZoomMode(){return document.getElementById('ai-ca-zoom-mode')?.value||'xy';}
+function zoomAICrashCharts(factor){Object.values(aiCrashCrossCharts).forEach(c=>{if(c&&typeof c.zoom==='function')c.zoom(factor);});}
+function resetAICrashChartZoom(){Object.values(aiCrashCrossCharts).forEach(c=>{if(c&&typeof c.resetZoom==='function')c.resetZoom();});}
+function aiCrashZoomOptions(){const mode=aiCrashZoomMode();return {zoom:{wheel:{enabled:true},pinch:{enabled:true},drag:{enabled:true},mode},pan:{enabled:true,mode}};}
+function aiCrashRegisterZoom(){try{if(window.Chart&&window.ChartZoom)Chart.register(window.ChartZoom);}catch(e){console.warn('Chart zoom plugin unavailable',e);}}
+function aiCrashAddCollapseButtons(){
+  document.querySelectorAll('#ai-cross-asset-section .ai-ca-card').forEach(card=>{
+    if(card.querySelector('.ai-ca-collapse'))return;
+    const title=card.querySelector('.ai-ca-title');if(!title)return;
+    title.style.display='flex';title.style.justifyContent='space-between';title.style.alignItems='center';title.style.gap='8px';
+    const b=document.createElement('button');b.type='button';b.className='btn btn-n btn-s ai-ca-collapse';b.textContent='Minimize';b.setAttribute('aria-expanded','true');
+    b.onclick=()=>{const collapsed=card.classList.toggle('ai-ca-collapsed');b.textContent=collapsed?'Expand':'Minimize';b.setAttribute('aria-expanded',String(!collapsed));if(!collapsed)setTimeout(()=>Object.values(aiCrashCrossCharts).forEach(c=>c&&c.resize&&c.resize()),30);};
+    title.appendChild(b);
+  });
+}
+document.addEventListener('change',e=>{if(e.target&&e.target.id==='ai-ca-zoom-mode')Object.values(aiCrashCrossCharts).forEach(c=>{if(c&&c.options.plugins&&c.options.plugins.zoom){c.options.plugins.zoom.zoom.mode=aiCrashZoomMode();c.options.plugins.zoom.pan.mode=aiCrashZoomMode();c.update('none');}});});
 function setAICrashChartRange(range){
   aiCrashChartRange=range;aiCrashSelectedEvent=null;
   document.querySelectorAll('#ai-ca-range-controls [data-ca-range]').forEach(b=>{const active=b.getAttribute('data-ca-range')===range;b.className='btn '+(active?'btn-b':'btn-n')+' btn-s';});
@@ -4486,6 +4507,7 @@ function setAICrashEvent(event){
   if(aiCrashLastPayload)drawAICrashCrossAssetCharts(aiCrashLastPayload.cross_asset_charts||{});
 }
 function drawAICrashCrossAssetCharts(payload){
+  aiCrashRegisterZoom();aiCrashAddCollapseButtons();
   const days=aiCrashChartRange==='1m'?31:aiCrashChartRange==='3m'?92:aiCrashChartRange==='3y'?1095:aiCrashChartRange==='5y'?1825:aiCrashChartRange==='10y'?3650:365;
   const events={2025:{date:'2025-04-02',label:'April 2025 tariff selloff'},2022:{date:'2022-01-03',label:'2022 bear market'},2020:{date:'2020-02-19',label:'COVID crash'}};
   const event=aiCrashSelectedEvent?events[aiCrashSelectedEvent]:null;
