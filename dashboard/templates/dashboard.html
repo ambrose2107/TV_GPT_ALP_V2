@@ -3164,7 +3164,7 @@ function renderEquityCurve(d) {
       pointBackgroundColor:cal.map((r,i)=>r.cumulative>=(i>0?cal[i-1].cumulative:0)?'#3fb950':'#f85149'),
     }]},
     options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`P&L: $${(c.raw||0).toFixed(2)}`}}},
+      plugins:{zoom:aiCrashZoomOptions(),legend:{display:false},tooltip:{callbacks:{label:c=>`P&L: $${(c.raw||0).toFixed(2)}`}}},
       scales:{x:{ticks:{maxTicksLimit:8,maxRotation:0,font:{size:10},color:'#8b949e'},grid:{color:'#21262d'}},
               y:{ticks:{callback:v=>'$'+v.toFixed(0),font:{size:10},color:'#8b949e'},grid:{color:'#21262d'}}}}
   });
@@ -3258,7 +3258,7 @@ function renderSectors(d) {
       {label:'1yr ago',data:prior,backgroundColor:'#30363d',borderRadius:3},
     ]},
     options:{responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{callbacks:{
+      plugins:{zoom:aiCrashZoomOptions(),legend:{display:false},tooltip:{callbacks:{
         label:c=>`${c.dataset.label}: ${(c.raw>=0?'+':'')+c.raw}%`
       }}},
       scales:{x:{ticks:{maxRotation:45,font:{size:10}},grid:{display:false}},
@@ -4082,7 +4082,7 @@ function renderAnalytics9(data) {
         tension:0.3, pointRadius:0, borderWidth:1.5,
       }]},
       options:{responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'P&L: '+fmt(c.raw)}}},
+        plugins:{zoom:aiCrashZoomOptions(),legend:{display:false},tooltip:{callbacks:{label:c=>'P&L: '+fmt(c.raw)}}},
         scales:{x:{ticks:{color:TC,maxTicksLimit:10},grid:{color:GC}},
                 y:{ticks:{color:TC,callback:v=>'$'+v.toFixed(0)},grid:{color:GC}}}}
     });
@@ -4162,7 +4162,7 @@ function renderAnalytics9(data) {
         backgroundColor:moVals.map(v=>v>=0?'#23863699':'#da363399'),
         borderColor:moVals.map(v=>v>=0?'#3fb950':'#f85149'),borderWidth:1}]},
       options:{responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'P&L: '+fmt(c.raw)}}},
+        plugins:{zoom:aiCrashZoomOptions(),legend:{display:false},tooltip:{callbacks:{label:c=>'P&L: '+fmt(c.raw)}}},
         scales:{x:{ticks:{color:TC,maxRotation:45},grid:{color:GC}},
                 y:{ticks:{color:TC,callback:v=>'$'+v.toFixed(0)},grid:{color:GC}}}}
     });
@@ -4542,7 +4542,7 @@ function drawAICrashCrossAssetCharts(payload){
     if(!window.Chart||pts.length<2){canvas.style.display='none';if(source)source.textContent=(series&&series.source?series.source:'Source unavailable')+' · no observations in selected window';return;}
     const values={};pts.forEach(p=>values[p.t]=+p.v);
     canvas.style.display='';
-    aiCrashCrossCharts[spec.id]=new Chart(canvas,{type:'line',data:{labels:sharedLabels,datasets:[{label:spec.title,data:sharedLabels.map(d=>values[d]??null),borderColor:spec.color,backgroundColor:spec.color+'18',fill:true,pointRadius:0,borderWidth:1.8,tension:.12,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y==null?'':spec.title+': '+Number(c.parsed.y).toLocaleString(undefined,{maximumFractionDigits:3})}}},scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:7,maxRotation:0},grid:{color:'#21262d'}},y:{ticks:{color:'#8b949e',maxTicksLimit:5},grid:{color:'#21262d'}}}}});
+    aiCrashCrossCharts[spec.id]=new Chart(canvas,{type:'line',data:{labels:sharedLabels,datasets:[{label:spec.title,data:sharedLabels.map(d=>values[d]??null),borderColor:spec.color,backgroundColor:spec.color+'18',fill:true,pointRadius:0,borderWidth:1.8,tension:.12,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{zoom:aiCrashZoomOptions(),legend:{display:false},tooltip:{callbacks:{label:c=>c.parsed.y==null?'':spec.title+': '+Number(c.parsed.y).toLocaleString(undefined,{maximumFractionDigits:3})}}},scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:7,maxRotation:0},grid:{color:'#21262d'}},y:{ticks:{color:'#8b949e',maxTicksLimit:5},grid:{color:'#21262d'}}}}});
   }
   specs.forEach(s=>lineChart(s,payload[s.key]||{}));
   const ys=payload.yields||{},ysSource=document.getElementById('ai-ca-yields-source'),yCanvas=document.getElementById('ai-ca-yields'),allY={};
@@ -4551,18 +4551,19 @@ function drawAICrashCrossAssetCharts(payload){
   if(ysSource)ysSource.textContent=(ys.source||'Yield data source unavailable')+' · '+yLabels.length+' dates · percent'+(event?' · '+event.label:'');
   if(yCanvas){destroy('ai-ca-yields');const names=Object.keys(ys.series||{}).filter(name=>filtered(ys.series[name]).length>1);
     if(window.Chart&&yLabels.length>1&&names.length){yCanvas.style.display='';const palette=['#58a6ff','#d29922','#bc8cff','#3fb950'];
-      aiCrashCrossCharts['ai-ca-yields']=new Chart(yCanvas,{type:'line',data:{labels:yLabels,datasets:names.map((name,i)=>({label:name,data:yLabels.map(d=>allY[d]&&allY[d][name]!=null?allY[d][name]:null),borderColor:palette[i%palette.length],backgroundColor:'transparent',pointRadius:0,borderWidth:1.6,tension:.12,spanGaps:true}))},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:true,labels:{color:'#c9d1d9',boxWidth:10,font:{size:10}}}},scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:7,maxRotation:0},grid:{color:'#21262d'}},y:{title:{display:true,text:'Yield (%)',color:'#8b949e'},ticks:{color:'#8b949e',maxTicksLimit:5},grid:{color:'#21262d'}}}}});
+      aiCrashCrossCharts['ai-ca-yields']=new Chart(yCanvas,{type:'line',data:{labels:yLabels,datasets:names.map((name,i)=>({label:name,data:yLabels.map(d=>allY[d]&&allY[d][name]!=null?allY[d][name]:null),borderColor:palette[i%palette.length],backgroundColor:'transparent',pointRadius:0,borderWidth:1.6,tension:.12,spanGaps:true}))},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{zoom:aiCrashZoomOptions(),legend:{display:true,labels:{color:'#c9d1d9',boxWidth:10,font:{size:10}}}},scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:7,maxRotation:0},grid:{color:'#21262d'}},y:{title:{display:true,text:'Yield (%)',color:'#8b949e'},ticks:{color:'#8b949e',maxTicksLimit:5},grid:{color:'#21262d'}}}}});
     }else{yCanvas.style.display='none';if(ysSource)ysSource.textContent=(ys.source||'Yield data source unavailable')+' · no observations in selected window';}}
-  // Rebase SPY, VIX, dollar and gold to 100 to compare direction despite different native scales.
+  // Compare percentage changes from the first valid observation in the selected window.
+  // VIX increases and HY OAS widening are positive stress moves; equity declines are negative.
   const normCanvas=document.getElementById('ai-ca-normalized'),normSource=document.getElementById('ai-ca-normalized-source');
   destroy('ai-ca-normalized');
-  const normSpecs=specs.filter(s=>['spy','qqq','vix','dxy','gold'].includes(s.key));
-  const normSets=normSpecs.map(s=>{const pts=filtered((payload[s.key]||{}).points);const base=pts.find(p=>Number.isFinite(+p.v)&&+p.v!==0);return {label:s.title,points:pts,base:base?+base.v:null,color:s.color};}).filter(s=>s.base!=null&&s.points.length>1);
+  const normSpecs=specs.filter(s=>['spy','qqq','vix','dxy','gold','credit'].includes(s.key));
+  const normSets=normSpecs.map(s=>{const pts=filtered((payload[s.key]||{}).points).slice().sort((a,b)=>a.t.localeCompare(b.t));const first=pts.find(p=>Number.isFinite(+p.v)&&+p.v!==0);return {label:s.key==='credit'?'HY OAS (widening = stress)':s.title,points:pts,base:first?+first.v:null,color:s.color};}).filter(s=>s.base!=null&&s.points.length>1);
   const normDates=sharedLabels;
-  const normMap={};normSets.forEach(s=>{normMap[s.label]={};s.points.forEach(p=>normMap[s.label][p.t]=+p.v/s.base*100);});
-  if(normSource)normSource.textContent=(event?event.label+' · normalized from first observation in event window':'Selected history · each series rebased to 100 at its first observation')+' · missing series are not fabricated';
-  if(normCanvas&&window.Chart&&normDates.length>1&&normSets.length>1){normCanvas.style.display='';aiCrashCrossCharts['ai-ca-normalized']=new Chart(normCanvas,{type:'line',data:{labels:normDates,datasets:normSets.map(s=>({label:s.label,data:normDates.map(d=>normMap[s.label][d]??null),borderColor:s.color,backgroundColor:'transparent',pointRadius:0,borderWidth:1.8,tension:.08,spanGaps:true}))},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:true,labels:{color:'#c9d1d9',boxWidth:10,font:{size:10}}},tooltip:{callbacks:{label:c=>c.dataset.label+': '+Number(c.parsed.y).toFixed(1)+' (index 100)'}}},scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:8,maxRotation:0},grid:{color:'#21262d'}},y:{title:{display:true,text:'Indexed value',color:'#8b949e'},ticks:{color:'#8b949e',maxTicksLimit:5},grid:{color:'#21262d'}}}}});}
-  else if(normCanvas){normCanvas.style.display='none';if(normSource)normSource.textContent='Not enough overlapping history to compare trends.';}
+  const normMap={};normSets.forEach(s=>{normMap[s.label]={};s.points.forEach(p=>{const pct=((+p.v/s.base)-1)*100;normMap[s.label][p.t]=Math.max(-100,Math.min(100,pct));});});
+  if(normSource)normSource.textContent=(event?event.label+' · ':'Selected window · ')+'percentage change from first valid observation; zero = unchanged. Rising VIX/HY OAS = more stress. Values capped at ±100%; missing values remain gaps.';
+  if(normCanvas&&window.Chart&&normDates.length>1&&normSets.length>1){normCanvas.style.display='';aiCrashCrossCharts['ai-ca-normalized']=new Chart(normCanvas,{type:'line',data:{labels:normDates,datasets:normSets.map(s=>({label:s.label,data:normDates.map(d=>normMap[s.label][d]??null),borderColor:s.color,backgroundColor:'transparent',pointRadius:0,borderWidth:1.8,tension:.08,spanGaps:true}))},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{zoom:aiCrashZoomOptions(),legend:{display:true,labels:{color:'#c9d1d9',boxWidth:10,font:{size:10}}},tooltip:{callbacks:{label:c=>c.parsed.y==null?'':c.dataset.label+': '+Number(c.parsed.y).toFixed(1)+'% from start'}}},scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:8,maxRotation:0},grid:{color:'#21262d'}},y:{min:-100,max:100,title:{display:true,text:'Change from start (%) · capped ±100%',color:'#8b949e'},ticks:{color:'#8b949e',maxTicksLimit:5},grid:{color:'#21262d'}}}}});}
+  else if(normCanvas){normCanvas.style.display='none';if(normSource)normSource.textContent='Not enough history to compare trends.';}
   // 30-observation rolling Pearson correlation of daily percentage changes versus SPY.
   const corrCanvas=document.getElementById('ai-ca-correlation'),corrSource=document.getElementById('ai-ca-correlation-source');destroy('ai-ca-correlation');
   const returnMaps={};normSpecs.forEach(s=>{const pts=filtered((payload[s.key]||{}).points).slice().sort((a,b)=>a.t.localeCompare(b.t));const m={};for(let i=1;i<pts.length;i++){const prev=+pts[i-1].v,cur=+pts[i].v;if(prev>0&&Number.isFinite(cur))m[pts[i].t]=(cur/prev)-1;}returnMaps[s.key]=m;});
@@ -4570,7 +4571,7 @@ function drawAICrashCrossAssetCharts(payload){
   function pearson(xs,ys){const n=xs.length;if(n<20)return null;const mx=xs.reduce((a,b)=>a+b,0)/n,my=ys.reduce((a,b)=>a+b,0)/n;let num=0,dx=0,dy=0;for(let i=0;i<n;i++){num+=(xs[i]-mx)*(ys[i]-my);dx+=(xs[i]-mx)**2;dy+=(ys[i]-my)**2;}return dx&&dy?num/Math.sqrt(dx*dy):null;}
   const corrDatasets=corrNames.map(spec=>({label:'SPY vs '+spec.label,color:spec.color,data:corrDates.map((date,i)=>{if(i<29)return null;const xs=[],ysv=[];for(let j=i-29;j<=i;j++){const a=returnMaps.spy[ corrDates[j] ],b=returnMaps[spec.key]&&returnMaps[spec.key][corrDates[j]];if(Number.isFinite(a)&&Number.isFinite(b)){xs.push(a);ysv.push(b);}}return pearson(xs,ysv);})}));
   if(corrSource)corrSource.textContent='30-session rolling correlation of daily percentage returns versus SPY. Event view: '+(event?event.label:'not selected')+'. Values range from -1 to +1; correlations describe co-movement, not causation.';
-  if(corrCanvas&&window.Chart&&corrDates.length>35&&corrDatasets.some(d=>d.data.some(v=>v!=null))){corrCanvas.style.display='';aiCrashCrossCharts['ai-ca-correlation']=new Chart(corrCanvas,{type:'line',data:{labels:corrDates,datasets:corrDatasets.map(d=>({label:d.label,data:d.data,borderColor:d.color,backgroundColor:'transparent',pointRadius:0,borderWidth:1.7,tension:.08,spanGaps:true}))},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{legend:{display:true,labels:{color:'#c9d1d9',boxWidth:10,font:{size:10}}}},scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:8,maxRotation:0},grid:{color:'#21262d'}},y:{min:-1,max:1,title:{display:true,text:'Correlation',color:'#8b949e'},ticks:{color:'#8b949e',maxTicksLimit:5},grid:{color:'#21262d'}}}}});}
+  if(corrCanvas&&window.Chart&&corrDates.length>35&&corrDatasets.some(d=>d.data.some(v=>v!=null))){corrCanvas.style.display='';aiCrashCrossCharts['ai-ca-correlation']=new Chart(corrCanvas,{type:'line',data:{labels:corrDates,datasets:corrDatasets.map(d=>({label:d.label,data:d.data,borderColor:d.color,backgroundColor:'transparent',pointRadius:0,borderWidth:1.7,tension:.08,spanGaps:true}))},options:{responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},plugins:{zoom:aiCrashZoomOptions(),legend:{display:true,labels:{color:'#c9d1d9',boxWidth:10,font:{size:10}}}},scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:8,maxRotation:0},grid:{color:'#21262d'}},y:{min:-1,max:1,title:{display:true,text:'Correlation',color:'#8b949e'},ticks:{color:'#8b949e',maxTicksLimit:5},grid:{color:'#21262d'}}}}});}
   else if(corrCanvas){corrCanvas.style.display='none';if(corrSource)corrSource.textContent='Not enough aligned daily observations to calculate rolling correlations.';}
 }
 
