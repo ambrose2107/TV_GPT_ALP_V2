@@ -32,11 +32,13 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install test-only dependencies
-        run: python -m pip install --disable-pip-version-check pytest playwright
+        run: python -m pip install --disable-pip-version-check pytest playwright numpy pandas requests yfinance
       - name: Install Chromium
         run: python -m playwright install --with-deps chromium
       - name: Compile changed Python modules
-        run: python -m py_compile core/market_data.py research/ai_crash_warning.py tests/test_ai_crash_baseline.py
+        run: python -m py_compile core/market_data.py research/ai_crash_warning.py tests/test_ai_crash_baseline.py tests/test_ai_crash_warning_model.py
+      - name: Validate crash-model scoring and missing-data handling
+        run: python -m pytest -q tests/test_ai_crash_warning_model.py
       - name: Validate checked-in historical baseline
         run: python -m pytest -q tests/test_ai_crash_baseline.py
       - name: Run browser smoke tests
