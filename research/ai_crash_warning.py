@@ -1010,7 +1010,9 @@ def _historical_production_replay(fred_data):
         # Do not require RSP/IWM/SOXX history for every date: some breadth ETFs
         # launched after the dot-com era. Their missing history should remove only
         # the breadth weight, not erase early crash episodes from the validation set.
-        p=p.dropna(subset=["SPY","QQQ","^VIX","production_score"])
+        # Preserve every market session in the forward windows. Dates with
+        # insufficient score coverage remain in the timeline but cannot trigger.
+        p=p.dropna(subset=["SPY","QQQ","^VIX"])
 
         # Quiet-period / false-alarm diagnostics. Treat threshold runs within 20
         # trading sessions as one warning episode; only score episodes with a full
@@ -1095,10 +1097,12 @@ def _historical_production_replay(fred_data):
             breach_date=breach.index[0]
             pre=p.loc[(p.index>=breach_date-pd.Timedelta(days=90))&(p.index<breach_date)]
             crossed=pre[pre["production_score"]>=60]; first=crossed.index[0] if not crossed.empty else None
+            peak_score=p.loc[peak_ix,"production_score"]
+            max_pre=pre["production_score"].max() if not pre.empty else np.nan
             results.append({"episode":e["name"],"peak_date":peak_ix.strftime("%Y-%m-%d"),
               "20pct_date":breach_date.strftime("%Y-%m-%d"),"days_to_20pct":int((breach_date-peak_ix).days),
-              "score_at_peak":round(float(p.loc[peak_ix,"production_score"]),1),
-              "max_score_pre_breach":round(float(pre["production_score"].max()),1) if not pre.empty else None,
+              "score_at_peak":round(float(peak_score),1) if pd.notna(peak_score) else None,
+              "max_score_pre_breach":round(float(max_pre),1) if pd.notna(max_pre) else None,
               "first_signal_date":first.strftime("%Y-%m-%d") if first is not None else None,
               "lead_days":int((breach_date-first).days) if first is not None else None,
               "status":"Signal before -20% threshold" if first is not None else "No 60+ signal in 90D pre-breach window"})
