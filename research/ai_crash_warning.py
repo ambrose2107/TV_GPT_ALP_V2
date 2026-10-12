@@ -943,6 +943,7 @@ def _historical_production_replay(fred_data):
 
         hy_native=_native_series("hy_oas")
         hy_med=hy_native.rolling(252,min_periods=60).median()
+        if not hy_native.empty:hy_med=hy_med.fillna(hy_native.expanding().median())
         hy_chg=hy_native.diff(20)
         if not hy_native.empty:hy_chg=hy_chg.fillna(hy_native-hy_native.iloc[0])
         credit_native=(0.65*((hy_native/hy_med.clip(lower=.5)-.85)*100).clip(0,100)+
@@ -963,10 +964,12 @@ def _historical_production_replay(fred_data):
 
         vol=((p["^VIX"]-16)*4).clip(0,100)
         breadth=pd.concat([(50-(p[sym]/p["SPY"]).pct_change(63)*2.5).clip(0,100) for sym in ("RSP","IWM","SOXX")],axis=1).mean(axis=1)
-        un=_native_series("unrate").reindex(p.index).ffill()
-        m=un.rolling(3).mean(); sahm=m-m.rolling(12).min()
-        recession=(sahm*120).clip(0,100)
-        recession=(recession+un.diff(3)*18).clip(0,100)
+        # Unemployment is monthly; calculate the Sahm-style and 3-month change
+        # signals at monthly frequency before carrying the latest observation forward.
+        un_native=_native_series("unrate")
+        m=un_native.rolling(3).mean(); sahm=m-m.rolling(12).min()
+        recession_native=((sahm*120).clip(0,100)+un_native.diff(3)*18).clip(0,100)
+        recession=recession_native.reindex(p.index).ffill()
 
         cgap=fund_agg["capex_growth_gap"].reindex(p.index).ffill()
         dgap=fund_agg["debt_growth_gap"].reindex(p.index).ffill()
