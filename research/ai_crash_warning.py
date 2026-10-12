@@ -313,15 +313,14 @@ def _score(px,f,fund):
     comps["Market Breadth"]=round(breadth,1)
 
     un=_series("unrate");sahm=None
-    rec_parts=[]
     if len(un)>=13:
         m=un.rolling(3).mean()
         sahm=float(m.iloc[-1]-m.rolling(12).min().iloc[-1])
-        rec_parts.append(_clip(sahm*120))
     if len(un)>=6:
-        rec_parts.append(_clip((float(un.iloc[-1])-float(un.iloc[-4]))*18))
-    rec=float(_clip(sum(rec_parts))) if rec_parts else 50.0
-    if rec_parts:available.add("Recession")
+        rec_base=_clip((sahm or 0)*120)
+        rec=_clip(rec_base+(float(un.iloc[-1])-float(un.iloc[-4]))*18)
+        available.add("Recession")
+    else:rec=50.0
     comps["Recession"]=round(rec,1)
 
     cgap=fund.get("capex_growth_gap");dgap=fund.get("debt_growth_gap");ratio=fund.get("capex_revenue")
@@ -1254,11 +1253,14 @@ def build_dashboard(force=False):
         now=time.time()
         if not force and _CACHE["payload"] is not None and now-_CACHE["ts"]<CACHE_TTL:return _CACHE["payload"]
         px=_market(); f={k:_fred(v) for k,v in FRED.items()}; fund=_fundamental_proxy(); core=_score(px,f,fund); s=core["score"]; comps=core["components"]
-        drivers=[k for k,v in sorted(comps.items(),key=lambda x:x[1],reverse=True)[:3] if v>=40]
+        available_components=set(core.get("available_components",[]))
+        drivers=[k for k,v in sorted(comps.items(),key=lambda x:x[1],reverse=True) if k in available_components and v>=40][:3]
         labels={"AI Fundamental":"Hyperscaler capex/revenue proxy","AI Financing":"Debt/revenue proxy","Credit":"HY credit stress",
           "Liquidity":"Financial conditions","Market Breadth":"RSP/IWM/SOXX vs SPY","Real Rates":"10Y real-rate pressure",
           "Volatility":"VIX pressure","Recession":"Sahm/unemployment pressure"}
-        factors=[{"name":k,"value":v,"label":labels[k],"status":"HIGH" if v>=70 else "ELEVATED" if v>=50 else "LOW"} for k,v in comps.items()]
+        factors=[{"name":k,"value":v,"label":labels[k] if k in available_components else labels[k]+" — data unavailable; excluded from score",
+          "available":k in available_components,
+          "status":("HIGH" if v>=70 else "ELEVATED" if v>=50 else "LOW") if k in available_components else "MISSING"} for k,v in comps.items()]
         hist=_history(px,core)
         market_date=px.index.max()
         market_age_days=max(0,int((pd.Timestamp.now(tz="UTC")-market_date).total_seconds()/86400)) if getattr(market_date,"tzinfo",None) else max(0,int((datetime.now()-market_date).total_seconds()/86400))
@@ -1275,6 +1277,8 @@ def build_dashboard(force=False):
         if fundamental_period_age_days is None or fundamental_period_age_days>180: quality_warnings.append("Hyperscaler financial period-end data is missing or older than 180 days; verify latest filings.")
         missing_macro=[k for k,v in f.items() if v is None or len(v.dropna())==0]
         if missing_macro: quality_warnings.append("Missing macro series: "+", ".join(missing_macro))
+        if core.get("score_coverage_pct",0)<80:
+            quality_warnings.append("Only "+str(core.get("score_coverage_pct",0))+"% of configured score weight is backed by available inputs; missing components are excluded and remaining weights are renormalized.")
         volatility_source = core["details"].get("volatility_source", "unknown")
         if "VIXY ETF proxy" in volatility_source:
             quality_warnings.append("Official VIX index unavailable; using Alpaca VIXY ETF proxy. VIXY is not the VIX index.")
@@ -1301,17 +1305,23 @@ def build_dashboard(force=False):
           "warnings":quality_warnings}
         # Separate broad-US-market risk from AI-specific concentration/funding risk.
         market_weights={"Credit":.27,"Liquidity":.14,"Market Breadth":.22,"Real Rates":.14,"Volatility":.10,"Recession":.13}
-        market_score=_clip(sum(comps[k]*w for k,w in market_weights.items()))
-        market_drivers=[k for k,v in sorted(((k,comps[k]) for k in market_weights),key=lambda x:x[1],reverse=True)[:3] if v>=40]
+        market_available={k:w for k,w in market_weights.items() if k in available_components}
+        market_weight_total=sum(market_available.values())
+        market_score=_clip(sum(comps[k]*w for k,w in market_available.items())/market_weight_total) if market_weight_total else 50.0
+        market_drivers=[k for k,v in sorted(((k,comps[k]) for k in market_available),key=lambda x:x[1],reverse=True) if v>=40][:3]
         payload={"as_of":datetime.now(timezone.utc).isoformat(),"score":s,"regime":_regime(s),"drivers":drivers,
+          "score_coverage_pct":core.get("score_coverage_pct",0),
+          "available_components":core.get("available_components",[]),"missing_components":core.get("missing_components",[]),
           "us_market":{"score":round(market_score,1),"regime":_regime(market_score),"drivers":market_drivers,
+            "score_coverage_pct":round(sum(market_available.values())/sum(market_weights.values())*100,1),
             "components":{k:round(comps[k],1) for k in market_weights},
-            "method":"Separate broad-market index using credit, liquidity, breadth, real rates, volatility and recession factors; not a calibrated probability."},
+            "method":"Separate broad-market index using available credit, liquidity, breadth, real rates, volatility and recession factors; unavailable factors are excluded and weights renormalized. Not a calibrated probability."},
           "components":factors,"confirmations":{"credit":comps["Credit"]>=70,"recession":comps["Recession"]>=70,
           "breadth":comps["Market Breadth"]>=70,"liquidity":comps["Liquidity"]>=70},
           "details":core["details"],"fundamentals":fund,"data_quality":data_quality,"history":hist,"cross_asset_charts":_cross_asset_charts(px,f),
           "reliability":{"data_score":data_reliability,"data_label":reliability_label,"signal_confidence":signal_confidence,
-            "note":"Data score measures input quality; signal confidence requires persistent or multi-block stress. Neither is a calibrated crash probability."},
+            "score_coverage_pct":core.get("score_coverage_pct",0),
+            "note":"Data score measures input quality; score coverage reports the configured weight backed by observed inputs. Signal confidence requires persistent or multi-block stress. None is a calibrated crash probability."},
           "v2":v2,
           "historical_replay":_historical_crash_replay(f),
           "methodology":{"weights":{"AI Fundamental":18,"AI Financing":14,"Credit":20,"Liquidity":10,"Market Breadth":14,"Real Rates":10,"Volatility":5,"Recession":9},
