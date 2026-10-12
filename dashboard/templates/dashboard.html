@@ -4677,9 +4677,9 @@ async function loadAICrashDashboard(force){
     const score=+d.score||0; $('ai-crash-score').textContent=score.toFixed(1);$('ai-crash-score').className='val '+aiCrashScoreClass(score);
     const rg=$('ai-crash-regime');rg.textContent=d.regime||'—';rg.style.color=score>=70?'#f85149':score>=50?'#d29922':'#3fb950';
     $('ai-crash-updated').textContent=d.as_of?new Date(d.as_of).toLocaleString():'';
-    const um=d.us_market||{}, ums=Number(um.score);
-    if($('us-market-score')){$('us-market-score').textContent=Number.isFinite(ums)?ums.toFixed(1):'—';$('us-market-score').className='val '+aiCrashScoreClass(ums);$('us-market-regime').textContent=um.regime||'—';$('us-market-regime').style.color=ums>=70?'#f85149':ums>=50?'#d29922':'#3fb950';}
-    if($('us-market-factors')){$('us-market-factors').innerHTML=Object.entries(um.components||{}).map(([k,v])=>'<div style="display:flex;justify-content:space-between;border-bottom:1px solid #21262d;padding:5px 0"><span>'+k+'</span><strong style="color:'+(Number(v)>=70?'#f85149':Number(v)>=50?'#d29922':'#3fb950')+'">'+Number(v).toFixed(1)+'</strong></div>').join('')||'<span style="color:#8b949e">US market factors unavailable.</span>';}
+    const um=d.us_market||{}, ums=um.score==null?NaN:Number(um.score);
+    if($('us-market-score')){$('us-market-score').textContent=Number.isFinite(ums)?ums.toFixed(1):'—';$('us-market-score').className='val '+aiCrashScoreClass(ums);$('us-market-regime').textContent=um.regime||'—';$('us-market-regime').style.color=!Number.isFinite(ums)?'#8b949e':ums>=70?'#f85149':ums>=50?'#d29922':'#3fb950';}
+    if($('us-market-factors')){$('us-market-factors').innerHTML=Object.entries(um.components||{}).map(([k,v])=>'<div style="display:flex;justify-content:space-between;border-bottom:1px solid #21262d;padding:5px 0"><span>'+k+'</span><strong style="color:'+(v==null?'#8b949e':Number(v)>=70?'#f85149':Number(v)>=50?'#d29922':'#3fb950')+'">'+(v==null?'—':Number(v).toFixed(1))+'</strong></div>').join('')||'<span style="color:#8b949e">US market factors unavailable.</span>';}
     const dq=d.data_quality||{}, qw=dq.warnings||[], qel=$('ai-crash-quality');
     if(qel){
       qel.innerHTML='<strong style="color:#c9d1d9">Data quality & coverage</strong> · Market data through '+String(dq.market_latest_date||'unknown')+
@@ -4692,13 +4692,13 @@ async function loadAICrashDashboard(force){
 
     const interp=$('ai-crash-interpretation');
     if(interp){
-      const aiScore=Number(d.score), marketScore=Number((d.us_market||{}).score);
+      const aiScore=Number(d.score), marketScore=(d.us_market||{}).score==null?NaN:Number((d.us_market||{}).score);
       const covered=Number(dq.fundamental_companies_covered||0), expected=Number(dq.fundamental_companies_expected||5);
       const episodes=((d.historical_replay||{}).episodes||[]);
-      const early=episodes.filter(e=>String(e.result||'').toLowerCase().includes('signal before')).length;
-      const missed=episodes.filter(e=>String(e.result||'').toLowerCase().includes('no 60+ signal')).length;
+      const early=episodes.filter(e=>String(e.status||e.result||'').toLowerCase().includes('signal before')).length;
+      const missed=episodes.filter(e=>String(e.status||e.result||'').toLowerCase().includes('no 60+ signal')).length;
       const aiState=aiScore>=70?'DEFENSIVE / high stress':aiScore>=50?'ELEVATED stress':aiScore>=25?'WATCH / monitor':'NORMAL / lower observed stress';
-      const marketState=marketScore>=70?'high stress':marketScore>=50?'elevated stress':marketScore>=25?'watch / monitor':'lower observed stress';
+      const marketState=!Number.isFinite(marketScore)?'data coverage insufficient':marketScore>=70?'high stress':marketScore>=50?'elevated stress':marketScore>=25?'watch / monitor':'lower observed stress';
       interp.innerHTML='<strong style="color:#c9d1d9">Current interpretation</strong><div style="margin-top:5px"><strong>AI composite '+(Number.isFinite(aiScore)?aiScore.toFixed(1):'—')+'/100:</strong> '+aiState+'. <strong>US market '+(Number.isFinite(marketScore)?marketScore.toFixed(1):'—')+'/100:</strong> '+marketState+'. These numbers are not percentages or crash odds.</div>'+
         '<div style="margin-top:5px"><strong>Coverage verdict:</strong> '+(covered===0?'AI-specific fundamentals are missing; their component weights are excluded from the composite and observed weights are renormalized. Treat AI-specific attribution as provisional.':covered<expected?'AI fundamentals are only partially covered ('+covered+'/'+expected+'); treat AI capex/financing attribution as provisional.':'AI fundamentals are covered for '+covered+'/'+expected+' companies, but company capex remains only a proxy for AI spending.')+'</div>'+
         '<div style="margin-top:5px"><strong>Historical check:</strong> '+(episodes.length?early+'/'+episodes.length+' episodes had a ≥60 warning before the −20% threshold'+(missed?'; '+missed+' episodes had no ≥60 warning in the 90-day pre-breach window':'')+'.':'Historical replay results are unavailable.')+' This small retrospective sample is not a calibrated forecast.</div>'+
