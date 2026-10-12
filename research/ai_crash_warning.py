@@ -316,6 +316,7 @@ def _score(px,f,fund):
     if len(un)>=13:
         m=un.rolling(3).mean()
         sahm=float(m.iloc[-1]-m.rolling(12).min().iloc[-1])
+        if not np.isfinite(sahm):sahm=None
     if len(un)>=6:
         rec_base=_clip((sahm or 0)*120)
         rec=_clip(rec_base+(float(un.iloc[-1])-float(un.iloc[-4]))*18)
@@ -992,8 +993,11 @@ def _historical_production_replay(fred_data):
         weights=pd.Series(SCORE_WEIGHTS,dtype=float)
         available_weights=score_parts.notna().mul(weights,axis=1).sum(axis=1)
         production=score_parts.mul(weights,axis=1).sum(axis=1,min_count=1).div(available_weights.replace(0,np.nan)).clip(0,100)
-        p["production_score"]=production
+        # Avoid reporting a historical signal when fewer than 60% of configured
+        # component weights have usable inputs. Live scoring still reports its
+        # score and exposes coverage/warnings for the operator.
         p["score_coverage_pct"]=available_weights*100
+        p["production_score"]=production.where(available_weights>=0.60)
 
         # Transparent, intentionally simple benchmark: credit, VIX, relative
         # breadth and QQQ 6M momentum. It is a baseline, not a TradingView clone.
@@ -1099,7 +1103,7 @@ def _historical_production_replay(fred_data):
               "lead_days":int((breach_date-first).days) if first is not None else None,
               "status":"Signal before -20% threshold" if first is not None else "No 60+ signal in 90D pre-breach window"})
 
-        payload={"available":True,"episodes":results,"threshold":60,"exact_production":True,
+        payload={"available":True,"episodes":results,"threshold":60,"exact_production":True,"minimum_score_coverage_pct":60,
           "validation_metrics":validation_metrics,
           "threshold_sensitivity":threshold_sensitivity,
           "baseline_comparison":baseline_validation,
