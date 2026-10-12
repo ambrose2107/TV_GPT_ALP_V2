@@ -931,18 +931,40 @@ def _historical_production_replay(fred_data):
             fund_agg[metric]=fund[cols].mean(axis=1,min_count=3)
         fund_agg=fund_agg.sort_index().ffill()
 
-        hy=p["hy_oas"]; hy_med=hy.rolling(252,min_periods=60).median(); hy_chg=hy.diff(20)
-        # Match the live _score() formula exactly, including clipping each credit
-        # sub-signal before combining them. A replay must not use a more permissive
-        # formula than the dashboard it is intended to validate.
-        credit=(0.65*((hy/hy_med.clip(lower=.5)-.85)*100).clip(0,100)+
-                0.35*(hy_chg*35).clip(0,100)).clip(0,100)
-        nf=p["nfci"]; nf_mean=nf.rolling(104,min_periods=26).mean(); nf_std=nf.rolling(104,min_periods=26).std()
-        liquidity=(((nf-nf_mean)/nf_std.clip(lower=.15)+.5)*35).clip(0,100)
-        real=p["dfii10"]; real_score=(((real-1)*22)+real.diff(60).clip(lower=0)*10).clip(0,100)
+        # Macro features must be calculated at their native observation frequency
+        # before they are aligned to daily market dates. FRED NFCI and HY OAS are
+        # weekly: rolling 104/252 *daily* rows would materially shorten the live
+        # model's 2-year/5-year reference windows and invalidate the replay.
+        def _native_series(key):
+            z=fred_data.get(key,pd.Series(dtype=float)).copy()
+            z.index=pd.to_datetime(z.index,errors="coerce").tz_localize(None).normalize()
+            z=pd.to_numeric(z,errors="coerce").dropna().sort_index()
+            return z[~z.index.duplicated(keep="last")]
+
+        hy_native=_native_series("hy_oas")
+        hy_med=hy_native.rolling(252,min_periods=60).median()
+        hy_chg=hy_native.diff(20)
+        if not hy_native.empty:hy_chg=hy_chg.fillna(hy_native-hy_native.iloc[0])
+        credit_native=(0.65*((hy_native/hy_med.clip(lower=.5)-.85)*100).clip(0,100)+
+                       0.35*(hy_chg*35).clip(0,100)).clip(0,100)
+        credit=credit_native.reindex(p.index).ffill()
+
+        nf_native=_native_series("nfci")
+        nf_mean=nf_native.rolling(104,min_periods=26).mean()
+        nf_std=nf_native.rolling(104,min_periods=26).std()
+        liquidity_native=(((nf_native-nf_mean)/nf_std.clip(lower=.15)+.5)*35).clip(0,100)
+        liquidity=liquidity_native.reindex(p.index).ffill()
+
+        real_native=_native_series("dfii10")
+        real_change=real_native.diff(60)
+        if not real_native.empty:real_change=real_change.fillna(real_native-real_native.iloc[0])
+        real_native_score=(((real_native-1)*22)+real_change.clip(lower=0)*10).clip(0,100)
+        real_score=real_native_score.reindex(p.index).ffill()
+
         vol=((p["^VIX"]-16)*4).clip(0,100)
         breadth=pd.concat([(50-(p[sym]/p["SPY"]).pct_change(63)*2.5).clip(0,100) for sym in ("RSP","IWM","SOXX")],axis=1).mean(axis=1)
-        un=p["unrate"]; m=un.rolling(3).mean(); sahm=m-m.rolling(12).min()
+        un=_native_series("unrate").reindex(p.index).ffill()
+        m=un.rolling(3).mean(); sahm=m-m.rolling(12).min()
         recession=(sahm*120).clip(0,100)
         recession=(recession+un.diff(3)*18).clip(0,100)
 
