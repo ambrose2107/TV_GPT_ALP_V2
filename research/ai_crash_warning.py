@@ -1005,7 +1005,7 @@ def _historical_production_replay(fred_data):
         baseline_parts=pd.DataFrame({"Credit":credit,"Volatility":vol,"Market Breadth":breadth,"Momentum":momentum},index=p.index)
         baseline_weights=pd.Series({"Credit":.30,"Volatility":.30,"Market Breadth":.20,"Momentum":.20})
         baseline_available=baseline_parts.notna().mul(baseline_weights,axis=1).sum(axis=1)
-        p["baseline_score"]=baseline_parts.mul(baseline_weights,axis=1).sum(axis=1,min_count=1).div(baseline_available.replace(0,np.nan)).clip(0,100)
+        p["baseline_score"]=baseline_parts.mul(baseline_weights,axis=1).sum(axis=1,min_count=1).div(baseline_available.replace(0,np.nan)).clip(0,100).where(baseline_available>=0.50)
 
         # Do not require RSP/IWM/SOXX history for every date: some breadth ETFs
         # launched after the dot-com era. Their missing history should remove only
