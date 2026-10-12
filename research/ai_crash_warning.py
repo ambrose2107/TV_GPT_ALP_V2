@@ -984,7 +984,7 @@ def _historical_production_replay(fred_data):
             (ratio.sub(15)*1.5).clip(-15,25).where(ratio.notna(),0)).clip(0,100).where(ai_valid)
         afin=(50+dgap.mul(2.5).clip(-15,45)).clip(0,100).where(dgap.notna())
         ai_weight=.65*ai.notna().astype(float)+.35*afin.notna().astype(float)
-        ai_fund=((.65*ai.fillna(0)+.35*afin.fillna(0))/ai_weight.replace(0,np.nan)).clip(0,100)
+        ai_fund=((.65*ai.fillna(0)+.35*afin.fillna(0))/ai_weight.replace(0,np.nan)).clip(0,100).where(ai_valid)
 
         score_parts=pd.DataFrame({
             "AI Fundamental":ai_fund,"AI Financing":afin,"Credit":credit,"Liquidity":liquidity,
