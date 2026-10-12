@@ -993,7 +993,16 @@ def _historical_production_replay(fred_data):
         production=score_parts.mul(weights,axis=1).sum(axis=1,min_count=1).div(available_weights.replace(0,np.nan)).clip(0,100)
         p["production_score"]=production
         p["score_coverage_pct"]=available_weights*100
-        p=p.dropna(subset=["SPY","QQQ","RSP","IWM","SOXX","^VIX","hy_oas","nfci","dfii10","unrate","production_score"])
+
+        # Transparent, intentionally simple benchmark: credit, VIX, relative
+        # breadth and QQQ 6M momentum. It is a baseline, not a TradingView clone.
+        momentum=(50-p["QQQ"].pct_change(126)*100*1.5).clip(0,100)
+        baseline_parts=pd.DataFrame({"Credit":credit,"Volatility":vol,"Market Breadth":breadth,"Momentum":momentum},index=p.index)
+        baseline_weights=pd.Series({"Credit":.30,"Volatility":.30,"Market Breadth":.20,"Momentum":.20})
+        baseline_available=baseline_parts.notna().mul(baseline_weights,axis=1).sum(axis=1)
+        p["baseline_score"]=baseline_parts.mul(baseline_weights,axis=1).sum(axis=1,min_count=1).div(baseline_available.replace(0,np.nan)).clip(0,100)
+
+        p=p.dropna(subset=["SPY","QQQ","RSP","IWM","SOXX","^VIX","production_score"])
 
         # Quiet-period / false-alarm diagnostics. Treat threshold runs within 20
         # trading sessions as one warning episode; only score episodes with a full
@@ -1031,6 +1040,32 @@ def _historical_production_replay(fred_data):
             "definition":"A warning episode begins on a score >=60, with starts separated by at least 20 trading sessions. False alarm means no >=20% peak-to-trough SPY drawdown in the following 252 trading sessions. Recent episodes without full forward coverage are excluded."
         }
 
+        def _warning_stats(score_series, threshold):
+            warning=score_series.ge(threshold).fillna(False).to_numpy()
+            starts=[];last_start=-10_000
+            for i,active in enumerate(warning):
+                if active and i-last_start>=20:
+                    starts.append(i);last_start=i
+            mature_count=0;false_count=0
+            for i in starts:
+                if i+252>=len(p):continue
+                future=p["SPY"].iloc[i+1:i+253]
+                if future.empty:continue
+                followed=bool(((future/future.cummax())-1.0<=-0.20).any())
+                mature_count+=1
+                if not followed:false_count+=1
+            return {"threshold":threshold,"warning_days":int(warning.sum()),
+                "warning_day_pct":round(float(warning.mean()*100),2) if len(warning) else None,
+                "warning_episodes":len(starts),"mature_warning_episodes":mature_count,
+                "false_alarm_episodes":false_count,
+                "false_alarm_rate_pct":round(false_count/mature_count*100,1) if mature_count else None,
+                "episodes_followed_by_20pct_drawdown":mature_count-false_count}
+
+        threshold_sensitivity=[_warning_stats(p["production_score"],t) for t in (50,60,70,80)]
+        baseline_validation=_warning_stats(p["baseline_score"],60)
+        baseline_validation.update({"method":"Simple benchmark: credit 30%, VIX 30%, relative breadth 20%, QQQ 6M momentum 20% (available weights renormalized).",
+            "not_a_calibrated_model":True})
+
         episodes=[
           {"name":"Dot-com bust","symbol":"QQQ","peak":"2000-03-10"},
           {"name":"Global financial crisis","symbol":"SPY","peak":"2007-10-09"},
@@ -1062,7 +1097,9 @@ def _historical_production_replay(fred_data):
 
         payload={"available":True,"episodes":results,"threshold":60,"exact_production":True,
           "validation_metrics":validation_metrics,
-          "method":"Production crash score replay: canonical SCORE_WEIGHTS and live-equivalent component formulas evaluated day-by-day; SEC XBRL period-end financial reconstruction for AI Fundamental/AI Financing.",
+          "threshold_sensitivity":threshold_sensitivity,
+          "baseline_comparison":baseline_validation,
+          "method":"Production crash score replay: canonical SCORE_WEIGHTS and live-equivalent component formulas evaluated day-by-day; HY OAS/NFCI rolling windows use native weekly observations and unemployment indicators use native monthly observations. SEC XBRL period-end financial reconstruction for AI Fundamental/AI Financing.",
           "production_formula":"AI Fundamental 18% + AI Financing 14% + Credit 20% + Liquidity 10% + Market Breadth 14% + Real Rates 10% + Volatility 5% + Recession 9%",
           "coverage_start":p.index.min().strftime("%Y-%m-%d") if not p.empty else None,
           "coverage_end":p.index.max().strftime("%Y-%m-%d") if not p.empty else None,
