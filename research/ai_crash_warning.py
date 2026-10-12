@@ -238,54 +238,119 @@ def _latest_change(s,n):
     return float(s.iloc[-1]),float(s.iloc[-1]-s.iloc[-min(n+1,len(s))])
 
 def _score(px,f,fund):
-    hy=f["hy_oas"]; hn,hc=_latest_change(hy,20); hb=float(hy.rolling(252,min_periods=60).median().iloc[-1]) if len(hy)>=60 else float(hy.median())
-    credit=_clip(.65*_clip((hn/max(hb,.5)-.85)*100)+.35*_clip((hc or 0)*35))
-    nf=f["nfci"]; nn=float(nf.iloc[-1]); nm=nf.rolling(104,min_periods=26).mean().iloc[-1]; ns=nf.rolling(104,min_periods=26).std().iloc[-1]
-    liq=_clip(((nn-float(nm))/max(float(ns),.15)+.5)*35) if len(nf)>=26 else 50
-    real=f["dfii10"]; rn,rc=_latest_change(real,60); real_score=_clip(((rn or 0)-1)*22+max(rc or 0,0)*10)
-    volatility_source = px.attrs.get("volatility_source", "Official VIX index (Yahoo/CBOE)")
-    if "^VIX" in px.columns and px["^VIX"].notna().any():
-        v = px["^VIX"].dropna()
-        vn = float(v.iloc[-1])
-        volatility_proxy = None
-        vol = _clip((vn-16)*4)
-        volatility_source = "Official VIX index (Yahoo/CBOE)"
-    elif "VIXY" in px.columns and px["VIXY"].notna().any():
-        v = px["VIXY"].dropna()
-        vn = None
-        vixy_return = ((float(v.iloc[-1])/float(v.iloc[-min(21, len(v))])-1)*100) if len(v)>1 else 0.0
-        volatility_proxy = round(vixy_return, 2)
-        vol = _clip(50 + vixy_return*2.0)
-        volatility_source = "Alpaca VIXY ETF proxy (20D return)"
+    """Score available evidence only; missing inputs do not silently count as neutral evidence."""
+    def _series(key):
+        value=f.get(key,pd.Series(dtype=float))
+        if value is None:return pd.Series(dtype=float)
+        return pd.to_numeric(value,errors="coerce").dropna()
+
+    comps={}
+    available=set()
+    details={}
+    hy=_series("hy_oas")
+    if not hy.empty:
+        hn,hc=_latest_change(hy,20)
+        hb=float(hy.rolling(252,min_periods=60).median().iloc[-1]) if len(hy)>=60 else float(hy.median())
+        credit=_clip(.65*_clip((hn/max(hb,.5)-.85)*100)+.35*_clip((hc or 0)*35))
+        available.add("Credit")
+        details.update({"hy_oas":hn,"hy_oas_20d_change":hc})
     else:
-        raise RuntimeError("No valid volatility index or ETF proxy available.")
-    b=[]
-    bd={}
-    for a,label in [("RSP","equal_weight"),("IWM","small_caps"),("SOXX","semis")]:
-        r=(px[a]/px["SPY"]).dropna()
-        ret=((r.iloc[-1]/r.iloc[-64])-1)*100 if len(r)>64 else 0
-        b.append(_clip(50-ret*2.5)); bd[label]=round(ret,2)
-    breadth=float(np.mean(b))
-    un=f["unrate"].dropna(); sahm=None
+        credit=50.0
+        details.update({"hy_oas":None,"hy_oas_20d_change":None})
+    comps["Credit"]=round(credit,1)
+
+    nf=_series("nfci")
+    if not nf.empty:
+        nn=float(nf.iloc[-1])
+        if len(nf)>=26:
+            nm=nf.rolling(104,min_periods=26).mean().iloc[-1]
+            ns=nf.rolling(104,min_periods=26).std().iloc[-1]
+            liq=_clip(((nn-float(nm))/max(float(ns),.15)+.5)*35) if pd.notna(nm) and pd.notna(ns) else 50.0
+            if pd.notna(nm) and pd.notna(ns):available.add("Liquidity")
+        else:liq=50.0
+        details["nfci"]=nn
+    else:
+        nn=None;liq=50.0;details["nfci"]=None
+    comps["Liquidity"]=round(liq,1)
+
+    real=_series("dfii10")
+    rn,rc=_latest_change(real,60)
+    real_score=_clip(((rn or 0)-1)*22+max(rc or 0,0)*10) if rn is not None else 50.0
+    if rn is not None:available.add("Real Rates")
+    details.update({"real10y":rn,"real10y_60d_change":rc})
+    comps["Real Rates"]=round(real_score,1)
+
+    volatility_source=px.attrs.get("volatility_source","Official VIX index (Yahoo/CBOE)")
+    vn=None;volatility_proxy=None
+    if "^VIX" in px.columns and px["^VIX"].notna().any():
+        v=pd.to_numeric(px["^VIX"],errors="coerce").dropna()
+        vn=float(v.iloc[-1]);vol=_clip((vn-16)*4)
+        volatility_source="Official VIX index (Yahoo/CBOE)"
+        available.add("Volatility")
+    elif "VIXY" in px.columns and px["VIXY"].notna().any():
+        v=pd.to_numeric(px["VIXY"],errors="coerce").dropna()
+        vixy_return=((float(v.iloc[-1])/float(v.iloc[-min(21,len(v))])-1)*100) if len(v)>1 else None
+        volatility_proxy=round(vixy_return,2) if vixy_return is not None else None
+        vol=_clip(50+vixy_return*2.0) if vixy_return is not None else 50.0
+        volatility_source="Alpaca VIXY ETF proxy (20D return)"
+        if vixy_return is not None:available.add("Volatility")
+    else:vol=50.0
+    comps["Volatility"]=round(vol,1)
+
+    breadth_values=[];bd={}
+    spy=pd.to_numeric(px.get("SPY",pd.Series(dtype=float)),errors="coerce").dropna()
+    for sym,label in [("RSP","equal_weight"),("IWM","small_caps"),("SOXX","semis")]:
+        asset=pd.to_numeric(px.get(sym,pd.Series(dtype=float)),errors="coerce")
+        pair=pd.concat([asset.rename("asset"),spy.rename("SPY")],axis=1).dropna()
+        if len(pair)>63 and float(pair["asset"].iloc[-64])!=0 and float(pair["SPY"].iloc[-64])!=0:
+            rel=pair["asset"]/pair["SPY"]
+            ret=(float(rel.iloc[-1])/float(rel.iloc[-64])-1)*100
+            value=_clip(50-ret*2.5)
+            breadth_values.append(value);bd[label]=round(ret,2)
+        else:bd[label]=None
+    breadth=float(np.mean(breadth_values)) if breadth_values else 50.0
+    if breadth_values:available.add("Market Breadth")
+    comps["Market Breadth"]=round(breadth,1)
+
+    un=_series("unrate");sahm=None
+    rec_parts=[]
     if len(un)>=13:
-        m=un.rolling(3).mean(); sahm=float(m.iloc[-1]-m.rolling(12).min().iloc[-1])
-    rec=_clip((sahm or 0)*120)
-    if len(un)>=6:rec=_clip(rec+(float(un.iloc[-1])-float(un.iloc[-4]))*18)
-    cgap=fund.get("capex_growth_gap"); dgap=fund.get("debt_growth_gap"); ratio=fund.get("capex_revenue")
-    # Neutral midpoint for every unavailable AI metric. Missing observations are
-    # separately surfaced in coverage metadata and must never masquerade as evidence.
-    ai=50
-    if cgap is not None: ai+=_clip(cgap*2,-20,35)
-    if ratio is not None: ai+=_clip((ratio-15)*1.5,-15,25)
-    ai=_clip(ai)
-    afin=_clip(50+(_clip(dgap*2.5,-15,45) if dgap is not None else 0))
-    comps={"AI Fundamental":round(_clip(.65*ai+.35*afin),1),"AI Financing":round(afin,1),"Credit":round(credit,1),
-      "Liquidity":round(liq,1),"Market Breadth":round(breadth,1),"Real Rates":round(real_score,1),"Volatility":round(vol,1),"Recession":round(rec,1)}
-    score=_clip(sum(comps[k]*SCORE_WEIGHTS[k] for k in SCORE_WEIGHTS))
-    return {"score":round(score,1),"components":comps,"details":{"hy_oas":hn,"hy_oas_20d_change":hc,"nfci":nn,
-      "real10y":rn,"real10y_60d_change":rc,"vix":vn,"volatility_proxy":volatility_proxy,
-      "volatility_source":volatility_source,"sahm":sahm,"breadth":bd,
-      "capex_revenue_pct":ratio,"capex_growth_gap_pct":cgap,"debt_growth_gap_pct":dgap}}
+        m=un.rolling(3).mean()
+        sahm=float(m.iloc[-1]-m.rolling(12).min().iloc[-1])
+        rec_parts.append(_clip(sahm*120))
+    if len(un)>=6:
+        rec_parts.append(_clip((float(un.iloc[-1])-float(un.iloc[-4]))*18))
+    rec=float(_clip(sum(rec_parts))) if rec_parts else 50.0
+    if rec_parts:available.add("Recession")
+    comps["Recession"]=round(rec,1)
+
+    cgap=fund.get("capex_growth_gap");dgap=fund.get("debt_growth_gap");ratio=fund.get("capex_revenue")
+    ai_parts=[]
+    if cgap is not None and pd.notna(cgap):ai_parts.append(_clip(float(cgap)*2,-20,35))
+    if ratio is not None and pd.notna(ratio):ai_parts.append(_clip((float(ratio)-15)*1.5,-15,25))
+    ai_core=_clip(50+sum(ai_parts)) if ai_parts else None
+    afin=_clip(50+_clip(float(dgap)*2.5,-15,45)) if dgap is not None and pd.notna(dgap) else None
+    fund_parts=[]
+    if ai_core is not None:fund_parts.append((.65,ai_core))
+    if afin is not None:fund_parts.append((.35,afin))
+    ai_fund=(sum(weight*value for weight,value in fund_parts)/sum(weight for weight,_ in fund_parts)) if fund_parts else 50.0
+    comps["AI Fundamental"]=round(_clip(ai_fund),1)
+    comps["AI Financing"]=round(afin if afin is not None else 50.0,1)
+    if ai_core is not None:available.add("AI Fundamental")
+    if afin is not None:available.add("AI Financing")
+
+    available_weight=sum(SCORE_WEIGHTS[k] for k in available)
+    score=(_clip(sum(comps[k]*SCORE_WEIGHTS[k] for k in available)/available_weight)
+           if available_weight>0 else 50.0)
+    missing=sorted(set(SCORE_WEIGHTS)-available)
+    details.update({"vix":vn,"volatility_proxy":volatility_proxy,"volatility_source":volatility_source,
+      "sahm":sahm,"breadth":bd,"capex_revenue_pct":ratio,"capex_growth_gap_pct":cgap,
+      "debt_growth_gap_pct":dgap,"available_components":sorted(available),
+      "missing_components":missing,"score_coverage_pct":round(available_weight*100,1)})
+    return {"score":round(score,1),"components":comps,"details":details,
+      "score_coverage_pct":round(available_weight*100,1),"available_components":sorted(available),
+      "missing_components":missing}
+
 
 def _v2_overlay(score, components, history):
     """V2 regime confirmation: persistence + acceleration + independent blocks.
@@ -885,18 +950,25 @@ def _historical_production_replay(fred_data):
         cgap=fund_agg["capex_growth_gap"].reindex(p.index).ffill()
         dgap=fund_agg["debt_growth_gap"].reindex(p.index).ffill()
         ratio=fund_agg["capex_revenue"].reindex(p.index).ffill()
-        # Keep the historical production replay aligned with the live formula's
-        # neutral midpoint for unavailable AI metrics; rows with missing required
-        # historical inputs remain excluded below rather than scored as low risk.
-        ai=(50+cgap.mul(2).clip(-20,35)+(ratio.sub(15)*1.5).clip(-15,25)).clip(0,100)
-        afin=(50+dgap.mul(2.5).clip(-15,45)).clip(0,100)
-        ai_fund=(0.65*ai+0.35*afin).clip(0,100)
+        # Missing historical AI metrics are excluded from the score, not imputed
+        # as neutral risk. When only one AI sub-block exists, renormalize the
+        # AI Fundamental blend over the observed sub-blocks exactly as live scoring does.
+        ai_valid=cgap.notna() | ratio.notna()
+        ai=(50+cgap.mul(2).clip(-20,35).where(cgap.notna(),0)+
+            (ratio.sub(15)*1.5).clip(-15,25).where(ratio.notna(),0)).clip(0,100).where(ai_valid)
+        afin=(50+dgap.mul(2.5).clip(-15,45)).clip(0,100).where(dgap.notna())
+        ai_weight=.65*ai.notna().astype(float)+.35*afin.notna().astype(float)
+        ai_fund=((.65*ai.fillna(0)+.35*afin.fillna(0))/ai_weight.replace(0,np.nan)).clip(0,100)
 
-        production=sum((component*SCORE_WEIGHTS[name] for name,component in {
+        score_parts=pd.DataFrame({
             "AI Fundamental":ai_fund,"AI Financing":afin,"Credit":credit,"Liquidity":liquidity,
             "Market Breadth":breadth,"Real Rates":real_score,"Volatility":vol,"Recession":recession
-        }.items())).clip(0,100)
+        },index=p.index)
+        weights=pd.Series(SCORE_WEIGHTS,dtype=float)
+        available_weights=score_parts.notna().mul(weights,axis=1).sum(axis=1)
+        production=score_parts.mul(weights,axis=1).sum(axis=1,min_count=1).div(available_weights.replace(0,np.nan)).clip(0,100)
         p["production_score"]=production
+        p["score_coverage_pct"]=available_weights*100
         p=p.dropna(subset=["SPY","QQQ","RSP","IWM","SOXX","^VIX","hy_oas","nfci","dfii10","unrate","production_score"])
 
         # Quiet-period / false-alarm diagnostics. Treat threshold runs within 20
