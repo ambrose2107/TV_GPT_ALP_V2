@@ -934,9 +934,10 @@ def _historical_production_replay(fred_data):
         fund_agg=fund_agg.sort_index().ffill()
 
         # Macro features must be calculated at their native observation frequency
-        # before they are aligned to daily market dates. FRED NFCI and HY OAS are
-        # weekly: rolling 104/252 *daily* rows would materially shorten the live
-        # model's 2-year/5-year reference windows and invalidate the replay.
+        # before alignment to daily market dates. NFCI is weekly and unemployment
+        # is monthly; rolling their series over daily market rows would materially
+        # shorten the live model's lookback windows and invalidate the replay.
+        # HY OAS and real yields are retained at their native daily frequency.
         def _native_series(key):
             z=fred_data.get(key,pd.Series(dtype=float)).copy()
             z.index=pd.to_datetime(z.index,errors="coerce").tz_localize(None).normalize()
@@ -1111,7 +1112,7 @@ def _historical_production_replay(fred_data):
           "validation_metrics":validation_metrics,
           "threshold_sensitivity":threshold_sensitivity,
           "baseline_comparison":baseline_validation,
-          "method":"Production crash score replay: canonical SCORE_WEIGHTS and live-equivalent component formulas evaluated day-by-day; HY OAS/NFCI rolling windows use native weekly observations and unemployment indicators use native monthly observations. SEC XBRL period-end financial reconstruction for AI Fundamental/AI Financing.",
+          "method":"Production crash score replay: canonical SCORE_WEIGHTS and live-equivalent component formulas evaluated day-by-day; HY OAS/real yields use native daily observations, NFCI native weekly observations, and unemployment native monthly observations. SEC XBRL period-end financial reconstruction for AI Fundamental/AI Financing.",
           "production_formula":"AI Fundamental 18% + AI Financing 14% + Credit 20% + Liquidity 10% + Market Breadth 14% + Real Rates 10% + Volatility 5% + Recession 9%",
           "coverage_start":p.index.min().strftime("%Y-%m-%d") if not p.empty else None,
           "coverage_end":p.index.max().strftime("%Y-%m-%d") if not p.empty else None,
