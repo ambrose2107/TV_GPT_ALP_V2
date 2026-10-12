@@ -30,6 +30,9 @@ _PROD_THREAD=None
 FRED={"hy_oas":"BAMLH0A0HYM2","nfci":"NFCI","dfii10":"DFII10","unrate":"UNRATE","dgs10":"DGS10","dgs2":"DGS2","tb3ms":"TB3MS","vixcls":"VIXCLS","usd_broad":"DTWEXBGS"}
 MARKET=["SPY","QQQ","RSP","IWM","SOXX","^VIX"]
 HYPERSCALERS=["MSFT","GOOGL","AMZN","META","ORCL"]
+# One canonical weight map is shared by live scoring and historical production replay.
+SCORE_WEIGHTS={"AI Fundamental":.18,"AI Financing":.14,"Credit":.20,"Liquidity":.10,
+               "Market Breadth":.14,"Real Rates":.10,"Volatility":.05,"Recession":.09}
 
 def _clip(x,lo=0.0,hi=100.0):
     try:return float(max(lo,min(hi,x)))
@@ -278,8 +281,7 @@ def _score(px,f,fund):
     afin=_clip(50+(_clip(dgap*2.5,-15,45) if dgap is not None else 0))
     comps={"AI Fundamental":round(_clip(.65*ai+.35*afin),1),"AI Financing":round(afin,1),"Credit":round(credit,1),
       "Liquidity":round(liq,1),"Market Breadth":round(breadth,1),"Real Rates":round(real_score,1),"Volatility":round(vol,1),"Recession":round(rec,1)}
-    w={"AI Fundamental":.18,"AI Financing":.14,"Credit":.20,"Liquidity":.10,"Market Breadth":.14,"Real Rates":.10,"Volatility":.05,"Recession":.09}
-    score=_clip(sum(comps[k]*w[k] for k in comps))
+    score=_clip(sum(comps[k]*SCORE_WEIGHTS[k] for k in SCORE_WEIGHTS))
     return {"score":round(score,1),"components":comps,"details":{"hy_oas":hn,"hy_oas_20d_change":hc,"nfci":nn,
       "real10y":rn,"real10y_60d_change":rc,"vix":vn,"volatility_proxy":volatility_proxy,
       "volatility_source":volatility_source,"sahm":sahm,"breadth":bd,
@@ -866,7 +868,11 @@ def _historical_production_replay(fred_data):
         fund_agg=fund_agg.sort_index().ffill()
 
         hy=p["hy_oas"]; hy_med=hy.rolling(252,min_periods=60).median(); hy_chg=hy.diff(20)
-        credit=(0.65*((hy/hy_med.clip(lower=.5)-.85)*100)+0.35*(hy_chg.fillna(0)*35)).clip(0,100)
+        # Match the live _score() formula exactly, including clipping each credit
+        # sub-signal before combining them. A replay must not use a more permissive
+        # formula than the dashboard it is intended to validate.
+        credit=(0.65*((hy/hy_med.clip(lower=.5)-.85)*100).clip(0,100)+
+                0.35*(hy_chg*35).clip(0,100)).clip(0,100)
         nf=p["nfci"]; nf_mean=nf.rolling(104,min_periods=26).mean(); nf_std=nf.rolling(104,min_periods=26).std()
         liquidity=(((nf-nf_mean)/nf_std.clip(lower=.15)+.5)*35).clip(0,100)
         real=p["dfii10"]; real_score=(((real-1)*22)+real.diff(60).clip(lower=0)*10).clip(0,100)
@@ -886,8 +892,10 @@ def _historical_production_replay(fred_data):
         afin=(50+dgap.mul(2.5).clip(-15,45)).clip(0,100)
         ai_fund=(0.65*ai+0.35*afin).clip(0,100)
 
-        production=(.18*ai_fund+.14*afin+.20*credit+.10*liquidity+.14*breadth+
-                    .10*real_score+.05*vol+.09*recession).clip(0,100)
+        production=sum((component*SCORE_WEIGHTS[name] for name,component in {
+            "AI Fundamental":ai_fund,"AI Financing":afin,"Credit":credit,"Liquidity":liquidity,
+            "Market Breadth":breadth,"Real Rates":real_score,"Volatility":vol,"Recession":recession
+        }.items())).clip(0,100)
         p["production_score"]=production
         p=p.dropna(subset=["SPY","QQQ","RSP","IWM","SOXX","^VIX","hy_oas","nfci","dfii10","unrate","production_score"])
 
@@ -958,7 +966,7 @@ def _historical_production_replay(fred_data):
 
         payload={"available":True,"episodes":results,"threshold":60,"exact_production":True,
           "validation_metrics":validation_metrics,
-          "method":"Production crash score replay: identical _score() formulas and weights evaluated day-by-day; SEC XBRL period-end financial reconstruction for AI Fundamental/AI Financing.",
+          "method":"Production crash score replay: canonical SCORE_WEIGHTS and live-equivalent component formulas evaluated day-by-day; SEC XBRL period-end financial reconstruction for AI Fundamental/AI Financing.",
           "production_formula":"AI Fundamental 18% + AI Financing 14% + Credit 20% + Liquidity 10% + Market Breadth 14% + Real Rates 10% + Volatility 5% + Recession 9%",
           "coverage_start":p.index.min().strftime("%Y-%m-%d") if not p.empty else None,
           "coverage_end":p.index.max().strftime("%Y-%m-%d") if not p.empty else None,
