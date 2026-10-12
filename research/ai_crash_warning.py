@@ -383,7 +383,8 @@ def _v2_overlay(score, components, history):
         "confirmation_score":round(confirmation_score,1),
         "signal_strength":"HIGH" if confirmed>=3 and persistence>=60 else
                          "ELEVATED" if confirmed>=2 or persistence>=60 else "LOW",
-        "note":"V2 adds persistence, acceleration and multi-block confirmation; it is not a calibrated crash probability."
+        "history_basis":"Persistence and acceleration use the separate broad-market proxy history, not a historical replay of the live eight-component composite.",
+        "note":"V2 adds broad-market proxy persistence, acceleration and live multi-block confirmation; it is not a calibrated crash probability."
     }
 
 
@@ -391,7 +392,7 @@ def _regime(s):
     return "CRISIS" if s>=85 else "DEFENSIVE" if s>=70 else "PRE-CRISIS" if s>=50 else "WATCH" if s>=25 else "NORMAL"
 
 def _history(px,core=None):
-    """Recent, time-varying broad-market proxy history (not the live composite score)."""
+    """Recent broad-market stress proxy; intentionally distinct from the live composite score."""
     idx=px.index
     idx=idx[idx>=idx.max()-pd.Timedelta(days=365)]
     if len(idx)>140: idx=idx[-140:]
@@ -1002,7 +1003,10 @@ def _historical_production_replay(fred_data):
         baseline_available=baseline_parts.notna().mul(baseline_weights,axis=1).sum(axis=1)
         p["baseline_score"]=baseline_parts.mul(baseline_weights,axis=1).sum(axis=1,min_count=1).div(baseline_available.replace(0,np.nan)).clip(0,100)
 
-        p=p.dropna(subset=["SPY","QQQ","RSP","IWM","SOXX","^VIX","production_score"])
+        # Do not require RSP/IWM/SOXX history for every date: some breadth ETFs
+        # launched after the dot-com era. Their missing history should remove only
+        # the breadth weight, not erase early crash episodes from the validation set.
+        p=p.dropna(subset=["SPY","QQQ","^VIX","production_score"])
 
         # Quiet-period / false-alarm diagnostics. Treat threshold runs within 20
         # trading sessions as one warning episode; only score episodes with a full
@@ -1106,7 +1110,7 @@ def _historical_production_replay(fred_data):
           "observations":int(len(p)),"data_sources":source_map,
           "fundamental_source":"SEC EDGAR XBRL companyfacts; period-end financial facts; aggregate requires at least 3 hyperscalers",
           "point_in_time":False,
-          "warning":"Production-formula replay, not calibrated probability. Financial facts use reporting period end rather than filing/publication date, so this is not yet a strict point-in-time backtest."}
+          "warning":"Production-formula replay, not calibrated probability. Available component weights are renormalized on each date; breadth history is incomplete before some ETFs launched. Financial facts use reporting period end rather than filing/publication date, so this is not yet a strict point-in-time backtest."}
     except Exception as exc:
         logger.warning("Historical production-score replay unavailable: %s",exc)
         payload={"available":False,"episodes":[],"warning":"Historical production-score replay unavailable: "+str(exc)[:260],
