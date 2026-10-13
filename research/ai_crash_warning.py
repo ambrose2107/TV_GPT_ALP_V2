@@ -793,6 +793,42 @@ def _historical_production_replay(fred_data):
         cik_map={"MSFT":"0000789019","GOOGL":"0001652044","AMZN":"0001018724","META":"0001326801","ORCL":"0001341439"}
 
         def _load_long(sym):
+            # Prefer the checked-in long-run validation baseline before network
+            # providers. Render workers can be rate-limited by Yahoo and Stooq;
+            # failure of either provider must not make SPY history disappear.
+            baseline_path=os.path.join(os.path.dirname(__file__),"data","ai_crash_validation_history.csv")
+            if sym in ("SPY","QQQ","^VIX"):
+                try:
+                    col="VIX_close" if sym=="^VIX" else "QQQ_adj_close" if sym=="QQQ" else "SPY_close"
+                    base=pd.read_csv(baseline_path,usecols=["date",col])
+                    ix=pd.to_datetime(base["date"],errors="coerce").dt.normalize()
+                    q=pd.Series(pd.to_numeric(base[col],errors="coerce").to_numpy(),index=ix).dropna()
+                    q=q[~q.index.isna()]
+                    q=q[~q.index.duplicated(keep="last")].sort_index()
+                    expected_start=pd.Timestamp("2000-01-01") if sym=="SPY" else pd.Timestamp("1999-03-01") if sym=="QQQ" else pd.Timestamp("1990-01-01")
+                    if len(q)>=250 and q.index.min()<=expected_start+pd.Timedelta(days=400):
+                        # Refresh the recent tail opportunistically. If online data
+                        # is unavailable, keep the verified baseline and disclose it.
+                        refreshed=False
+                        try:
+                            chart=yahoo_get_chart(sym,interval="1d",period="2y")
+                            if chart and chart.get("timestamps") and chart.get("close"):
+                                rx=pd.to_datetime(chart["timestamps"],unit="s",utc=True,errors="coerce").tz_localize(None).normalize()
+                                rq=pd.Series(pd.to_numeric(chart["close"],errors="coerce"),index=rx).dropna()
+                                rq=rq[~rq.index.isna()]
+                                rq=rq[~rq.index.duplicated(keep="last")]
+                                if not rq.empty and rq.index.max()>=pd.Timestamp.now().normalize()-pd.Timedelta(days=10):
+                                    q=pd.concat([q.loc[q.index<rq.index.min()],rq]).sort_index()
+                                    q=q[~q.index.duplicated(keep="last")]
+                                    refreshed=True
+                        except Exception as exc:
+                            logger.warning("Production replay recent-tail refresh failed for %s: %s",sym,exc)
+                        source_map[sym]="Repository baseline + refreshed Yahoo tail" if refreshed else "Repository historical baseline (tail refresh unavailable)"
+                        if not refreshed:
+                            logger.warning("Using bundled historical baseline for %s; recent provider refresh unavailable",sym)
+                        return sym,q
+                except Exception as exc:
+                    logger.warning("Production replay repository baseline unavailable for %s: %s",sym,exc)
             try:
                 chart=yahoo_get_chart(sym,interval="1d",period="max")
                 if chart and chart.get("timestamps") and chart.get("close"):
@@ -839,9 +875,17 @@ def _historical_production_replay(fred_data):
                             return sym,q
                 except Exception as exc:
                     logger.warning("CBOE VIX fallback failed: %s",exc)
+            # Breadth ETFs are optional historical inputs: RSP/IWM/SOXX did not
+            # exist for every crash era, and a provider outage should not abort the
+            # whole replay. An all-NaN series excludes only the unavailable breadth
+            # contribution; score coverage gates prevent overconfident signals.
+            if sym in ("RSP","IWM","SOXX"):
+                source_map[sym]="Unavailable optional breadth history"
+                logger.warning("No long-run history for optional breadth symbol %s; its score contribution will be omitted",sym)
+                return sym,pd.Series(dtype=float)
             raise RuntimeError("Long-run history unavailable for "+sym)
 
-        with ThreadPoolExecutor(max_workers=2) as pool:
+        with ThreadPoolExecutor(max_workers=3) as pool:
             series=dict(pool.map(_load_long,market_symbols))
         p=pd.concat(series,axis=1).sort_index()
         p=p[~p.index.duplicated(keep="last")]
@@ -1112,7 +1156,8 @@ def _historical_production_replay(fred_data):
           "validation_metrics":validation_metrics,
           "threshold_sensitivity":threshold_sensitivity,
           "baseline_comparison":baseline_validation,
-          "method":"Production crash score replay: canonical SCORE_WEIGHTS and live-equivalent component formulas evaluated day-by-day; HY OAS/real yields use native daily observations, NFCI native weekly observations, and unemployment native monthly observations. SEC XBRL period-end financial reconstruction for AI Fundamental/AI Financing.",
+          "market_data_sources":source_map,
+          "method":"Production crash score replay: canonical SCORE_WEIGHTS and live-equivalent component formulas evaluated day-by-day; SPY/QQQ/VIX prefer the checked-in long-run baseline with opportunistic Yahoo tail refresh; unavailable RSP/IWM/SOXX histories are omitted and score coverage is enforced. HY OAS/real yields use native daily observations, NFCI native weekly observations, and unemployment native monthly observations. SEC XBRL period-end financial reconstruction for AI Fundamental/AI Financing.",
           "production_formula":"AI Fundamental 18% + AI Financing 14% + Credit 20% + Liquidity 10% + Market Breadth 14% + Real Rates 10% + Volatility 5% + Recession 9%",
           "coverage_start":p.index.min().strftime("%Y-%m-%d") if not p.empty else None,
           "coverage_end":p.index.max().strftime("%Y-%m-%d") if not p.empty else None,
