@@ -1284,15 +1284,32 @@ def _cross_asset_charts(px, fred):
             logger.warning("Cross-asset Stooq history failed for %s: %s",symbol,exc)
             return []
 
-    # Use the data already loaded by the working crash model before attempting new network calls.
+    def baseline_points(column):
+        # The checked-in validation CSV is the deterministic fallback for Render
+        # when Yahoo/Stooq are throttled. Live prices are merged last so they win.
+        try:
+            path=os.path.join(os.path.dirname(__file__),"data","ai_crash_validation_history.csv")
+            frame=pd.read_csv(path,usecols=["date",column])
+            dates=pd.to_datetime(frame["date"],errors="coerce").dt.normalize()
+            values=pd.to_numeric(frame[column],errors="coerce")
+            q=pd.Series(values.to_numpy(),index=dates).dropna()
+            q=q[~q.index.isna()]
+            q=q[~q.index.duplicated(keep="last")].sort_index()
+            return _chart_points(q,max_days=3700) if not q.empty else []
+        except Exception as exc:
+            logger.warning("Cross-asset repository baseline unavailable for %s: %s",column,exc)
+            return []
+
+    # Use working live data first, then online long history, then the repository
+    # baseline. merge_points applies later sources last, preserving the newest tail.
     spy_series=px.get("SPY") if hasattr(px,"get") else None
     spy_live=series_points(spy_series)
-    # Prefer Stooq for long history before querying Yahoo; this avoids bursts of
-    # Yahoo 429s and keeps the already-working Alpaca series as the latest tail.
     spy_stooq=stooq_points("spy.us") if len(spy_live)<1500 else []
     spy_yahoo=yahoo_points("SPY") if len(spy_live)+len(spy_stooq)<1500 else []
-    spy_points=merge_points(spy_stooq,spy_yahoo,spy_live)
-    spy_source="SPY history (Alpaca + Stooq/Yahoo long-history fallback)" if spy_points else "Unavailable"
+    spy_base=baseline_points("SPY_close")
+    spy_points=merge_points(spy_base,spy_stooq,spy_yahoo,spy_live)
+    spy_source=("SPY history (live + online + repository baseline)" if spy_live or spy_stooq or spy_yahoo
+                else "SPY repository historical baseline" if spy_base else "Unavailable")
     out["spy"]={"source":spy_source,"unit":"USD","points":spy_points}
 
     # QQQ is shown alongside SPY so users can compare the Nasdaq-100 growth-stock
@@ -1301,8 +1318,10 @@ def _cross_asset_charts(px, fred):
     qqq_live=series_points(qqq_series)
     qqq_stooq=stooq_points("qqq.us") if len(qqq_live)<1500 else []
     qqq_yahoo=yahoo_points("QQQ") if len(qqq_live)+len(qqq_stooq)<1500 else []
-    qqq_points=merge_points(qqq_stooq,qqq_yahoo,qqq_live)
-    qqq_source="QQQ history (Alpaca + Stooq/Yahoo long-history fallback)" if qqq_points else "Unavailable"
+    qqq_base=baseline_points("QQQ_adj_close")
+    qqq_points=merge_points(qqq_base,qqq_stooq,qqq_yahoo,qqq_live)
+    qqq_source=("QQQ history (live + online + repository baseline)" if qqq_live or qqq_stooq or qqq_yahoo
+                else "QQQ repository historical baseline" if qqq_base else "Unavailable")
     out["qqq"]={"source":qqq_source,"unit":"USD","points":qqq_points}
 
     vix_series=px.get("^VIX") if hasattr(px,"get") else None
