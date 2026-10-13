@@ -789,7 +789,7 @@ def _historical_production_replay(fred_data):
     try:
         from concurrent.futures import ThreadPoolExecutor
         source_map={}
-        market_symbols=("SPY","QQQ","RSP","IWM","SOXX","^VIX")
+        market_symbols=("SPY","QQQ","RSP","IWM","SOXX","^VIX",*HYPERSCALERS)
         cik_map={"MSFT":"0000789019","GOOGL":"0001652044","AMZN":"0001018724","META":"0001326801","ORCL":"0001341439"}
 
         def _load_long(sym):
@@ -882,6 +882,10 @@ def _historical_production_replay(fred_data):
             if sym in ("RSP","IWM","SOXX"):
                 source_map[sym]="Unavailable optional breadth history"
                 logger.warning("No long-run history for optional breadth symbol %s; its score contribution will be omitted",sym)
+                return sym,pd.Series(dtype=float)
+            if sym in HYPERSCALERS:
+                source_map[sym]="Unavailable optional hyperscaler price history"
+                logger.warning("No long-run price history for optional hyperscaler %s; it will be omitted from the timeline basket",sym)
                 return sym,pd.Series(dtype=float)
             raise RuntimeError("Long-run history unavailable for "+sym)
 
@@ -1155,7 +1159,28 @@ def _historical_production_replay(fred_data):
               "lead_days":int((breach_date-first).days) if first is not None else None,
               "status":"Signal before -20% threshold" if first is not None else "No 60+ signal in 90D pre-breach window"})
 
+        # Compact sampled payload: every fifth trading session plus the final
+        # observation. Keep the chart data small on Render's memory-constrained tier.
+        timeline=[]
+        for i,(stamp,row) in enumerate(p.iterrows()):
+            if i % 5 != 0 and i != len(p)-1:
+                continue
+            def _point_value(value):
+                try:
+                    number=float(value)
+                    return round(number,4) if pd.notna(value) and np.isfinite(number) else None
+                except (TypeError,ValueError):
+                    return None
+            timeline.append({
+                "t":stamp.strftime("%Y-%m-%d"),
+                "score":_point_value(row.get("production_score")),
+                "spy":_point_value(row.get("SPY")),
+                "qqq":_point_value(row.get("QQQ")),
+                "hyperscalers":{sym:_point_value(row.get(sym)) for sym in HYPERSCALERS}
+            })
+
         payload={"available":True,"episodes":results,"threshold":60,"exact_production":True,"minimum_score_coverage_pct":60,
+          "timeline":timeline,
           "validation_metrics":validation_metrics,
           "threshold_sensitivity":threshold_sensitivity,
           "baseline_comparison":baseline_validation,
