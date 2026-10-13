@@ -1192,17 +1192,6 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
      <button class="btn btn-b" id="ai-crash-prod-btn" onclick="startAICrashProductionReplay()">▶ Run Production Replay</button>
      <span id="ai-crash-prod-status" style="font-size:11px;color:#8b949e">Not run — this heavy validation is never started automatically.</span>
    </div>
-   <div class="ac-section" style="margin:10px 0 12px;border-color:#30363d">
-     <div class="sec-hdr" style="padding:10px 12px">
-       <div><h3 style="font-size:13px">📉 Crash Score vs Market Timeline</h3><span class="sub">Production score on the left axis · normalized market returns on the right</span></div>
-       <select id="ai-crash-timeline-range" onchange="setAICrashTimelineRange(this.value)" style="padding:5px">
-         <option value="all" selected>Full history</option><option value="10y">10Y</option><option value="5y">5Y</option><option value="3y">3Y</option><option value="1y">1Y</option><option value="3m">3M</option><option value="1m">1M</option>
-       </select>
-     </div>
-     <div style="padding:8px 10px 0;color:#8b949e;font-size:11px">Run Production Replay to load the historical production-formula score. SPY, QQQ and an equal-weight hyperscaler basket are shown as percentage returns from the start of the selected window. Missing score/data coverage remains blank; this is retrospective research, not a calibrated crash probability.</div>
-     <div style="position:relative;height:330px;padding:8px 8px 12px"><canvas id="ai-crash-timeline-chart"></canvas></div>
-     <div id="ai-crash-timeline-note" class="ac-note" style="padding:0 10px 10px">Run Production Replay to populate the timeline.</div>
-   </div>
    <div id="ai-crash-prod-table" class="ac-table-wrap"></div>
    <div id="ai-crash-prod-note" class="ac-note" style="margin-top:8px">Uses the same production component formulas and weights, with historical market/macro inputs and SEC XBRL financial reconstruction where coverage permits. It is period-end financial replay, not a filing-date point-in-time backtest.</div>
  </div>
@@ -4624,69 +4613,7 @@ function exportAICrashCSV(){
   a.href=url;a.download='ai_crash_monitor_'+stamp+'.csv';
   document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
 }
-async let aiCrashProdTimeline=[];
-let aiCrashTimelineChart=null;
-let aiCrashTimelineRange='all';
-function setAICrashTimelineRange(range){
-  aiCrashTimelineRange=range||'all';
-  drawAICrashProductionTimeline();
-}
-function drawAICrashProductionTimeline(){
-  const canvas=$('ai-crash-timeline-chart'),note=$('ai-crash-timeline-note');
-  if(!canvas)return;
-  if(aiCrashTimelineChart){aiCrashTimelineChart.destroy();aiCrashTimelineChart=null;}
-  const rows=Array.isArray(aiCrashProdTimeline)?aiCrashProdTimeline:[];
-  if(rows.length<2){
-    if(note)note.textContent='No production-score timeline is loaded yet. Tap “Run Production Replay” above; the chart will appear when the historical replay completes.';
-    return;
-  }
-  const latest=new Date(rows[rows.length-1].t+'T00:00:00Z');
-  const dayMap={'1m':31,'3m':92,'1y':365,'3y':1095,'5y':1825,'10y':3650};
-  const cutoff=new Date(latest);
-  if(dayMap[aiCrashTimelineRange])cutoff.setUTCDate(cutoff.getUTCDate()-dayMap[aiCrashTimelineRange]);
-  const points=rows.filter(r=>aiCrashTimelineRange==='all'||new Date(r.t+'T00:00:00Z')>=cutoff);
-  const labels=points.map(r=>r.t);
-  function returnsFor(key){
-    const first=points.find(r=>r[key]!=null&&Number.isFinite(Number(r[key]))&&Number(r[key])>0);
-    const base=first?Number(first[key]):null;
-    return points.map(r=>base!=null&&r[key]!=null&&Number.isFinite(Number(r[key]))?((Number(r[key])/base)-1)*100:null);
-  }
-  const hyperSymbols=['MSFT','GOOGL','AMZN','META','ORCL'];
-  const hyperBases={};
-  hyperSymbols.forEach(sym=>{const first=points.find(r=>r.hyperscalers&&r.hyperscalers[sym]!=null&&Number(r.hyperscalers[sym])>0);hyperBases[sym]=first?Number(first.hyperscalers[sym]):null;});
-  const hyperReturns=points.map(r=>{
-    const values=hyperSymbols.map(sym=>hyperBases[sym]!=null&&r.hyperscalers&&r.hyperscalers[sym]!=null&&Number(r.hyperscalers[sym])>0?(Number(r.hyperscalers[sym])/hyperBases[sym]-1)*100:null).filter(v=>v!=null&&Number.isFinite(v));
-    return values.length>=3?values.reduce((a,b)=>a+b,0)/values.length:null;
-  });
-  const score=points.map(r=>r.score==null?null:Number(r.score));
-  const threshold=(value,label,color)=>({label,data:points.map(()=>value),yAxisID:'yScore',borderColor:color,borderDash:[5,5],borderWidth:1,pointRadius:0,fill:false,order:10});
-  const datasets=[
-    {label:'Production crash score',data:score,yAxisID:'yScore',borderColor:'#f85149',backgroundColor:'#f8514918',borderWidth:2,pointRadius:0,tension:.1,spanGaps:false},
-    {label:'SPY return',data:returnsFor('spy'),yAxisID:'yReturn',borderColor:'#3fb950',borderWidth:1.7,pointRadius:0,tension:.1,spanGaps:false},
-    {label:'QQQ return',data:returnsFor('qqq'),yAxisID:'yReturn',borderColor:'#58a6ff',borderWidth:1.7,pointRadius:0,tension:.1,spanGaps:false},
-    {label:'Hyperscaler basket return (≥3 stocks)',data:hyperReturns,yAxisID:'yReturn',borderColor:'#d29922',borderWidth:1.7,pointRadius:0,tension:.1,spanGaps:false},
-    threshold(25,'Watch threshold','#8b949e'),
-    threshold(50,'Elevated threshold','#d29922'),
-    threshold(70,'High-stress threshold','#f85149')
-  ];
-  aiCrashTimelineChart=new Chart(canvas,{type:'line',data:{labels,datasets},options:{
-    responsive:true,maintainAspectRatio:false,animation:false,interaction:{mode:'index',intersect:false},
-    plugins:{legend:{display:true,position:'bottom',labels:{color:'#c9d1d9',boxWidth:10,font:{size:10},filter:item=>!String(item.text).includes('undefined')}},tooltip:{callbacks:{label:c=>{
-      if(c.parsed.y==null)return '';
-      return c.dataset.yAxisID==='yScore'?c.dataset.label+': '+Number(c.parsed.y).toFixed(1)+'/100':c.dataset.label+': '+(c.parsed.y>=0?'+':'')+Number(c.parsed.y).toFixed(1)+'%';
-    }}}},
-    scales:{
-      x:{ticks:{color:'#8b949e',maxTicksLimit:8,maxRotation:0},grid:{color:'#21262d'}},
-      yScore:{position:'left',min:0,max:100,title:{display:true,text:'Crash score (0–100)',color:'#f85149'},ticks:{color:'#8b949e',maxTicksLimit:5},grid:{color:'#21262d'}},
-      yReturn:{position:'right',title:{display:true,text:'Return from window start (%)',color:'#58a6ff'},ticks:{color:'#8b949e',maxTicksLimit:5,callback:v=>(v>0?'+':'')+v+'%'},grid:{drawOnChartArea:false}}
-    }
-  }});
-  const scoreCoverage=points.filter(r=>r.score!=null).length;
-  const hyperCount=hyperSymbols.filter(sym=>points.some(r=>r.hyperscalers&&r.hyperscalers[sym]!=null)).length;
-  if(note)note.textContent='Timeline: '+labels[0]+' → '+labels[labels.length-1]+' · '+points.length+' sampled sessions · production score available on '+scoreCoverage+' dates · hyperscaler price coverage '+hyperCount+'/5 tickers. Prices are rebased to 0% at each selected window start; basket requires at least 3 stocks. Financial inputs use reporting period-end dates, not filing-publication dates.';
-}
-
-function renderAICrashProductionStatus(d){
+async function renderAICrashProductionStatus(d){
   const st=$('ai-crash-prod-status'),btn=$('ai-crash-prod-btn'),table=$('ai-crash-prod-table'),note=$('ai-crash-prod-note');
   if(!st)return;
   const state=d.status||'idle';
@@ -4702,8 +4629,6 @@ function renderAICrashProductionStatus(d){
   }
   if(state!=='complete' || !d.result){st.textContent='Not run — this heavy validation is never started automatically.';return;}
   const r=d.result||{}; st.textContent='✅ Production replay complete · '+(r.observations||0)+' daily observations'; st.style.color='#3fb950';
-  aiCrashProdTimeline=Array.isArray(r.timeline)?r.timeline:[];
-  drawAICrashProductionTimeline();
   if(table){
     const vm=r.validation_metrics||{};
     const metricCard=(label,value,detail)=>'<div class="card" style="padding:9px 10px;min-width:125px;flex:1"><div class="lbl">'+label+'</div><div style="font-size:19px;font-weight:700;margin-top:4px">'+value+'</div><div style="font-size:10px;color:#8b949e;margin-top:3px">'+detail+'</div></div>';
