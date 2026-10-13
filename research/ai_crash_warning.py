@@ -974,7 +974,10 @@ def _historical_production_replay(fred_data):
         fund_agg=pd.DataFrame(index=fund.index)
         for metric in ("capex_revenue","capex_growth_gap","debt_growth_gap"):
             cols=[c for c in fund.columns if c[1]==metric]
-            fund_agg[metric]=fund[cols].mean(axis=1,min_count=3)
+            metric_frame=fund[cols]
+            # DataFrame.mean has no min_count argument on supported pandas versions;
+            # explicitly gate rows on at least three observed company values.
+            fund_agg[metric]=metric_frame.mean(axis=1).where(metric_frame.count(axis=1)>=3)
         fund_agg=fund_agg.sort_index().ffill()
 
         # Macro features must be calculated at their native observation frequency
