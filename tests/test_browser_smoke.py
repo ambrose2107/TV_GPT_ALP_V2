@@ -164,6 +164,47 @@ def test_deployed_dashboard_and_ai_crash_smoke():
             }""",
             timeout=120_000,
         )
+        # Assert the cross-asset data is present and recent before trusting blank/visible canvases.
+        chart_data = payload.get("cross_asset_charts") or {}
+        chart_coverage = {}
+        for symbol in ("spy", "qqq"):
+            series = chart_data.get(symbol) or {}
+            points = series.get("points") or []
+            latest_point = points[-1].get("t") if points else None
+            chart_coverage[symbol] = {"source": series.get("source"), "points": len(points), "latest": latest_point}
+            assert len(points) >= 100, f"{symbol.upper()} cross-asset history is too short: {chart_coverage[symbol]}"
+            assert latest_point and latest_point >= (datetime.now(timezone.utc).date() - timedelta(days=10)).isoformat(), (
+                f"{symbol.upper()} cross-asset history has no recent tail: {chart_coverage[symbol]}"
+            )
+        print("Cross-asset chart coverage:", chart_coverage)
+
+        # Check Chart.js actually instantiated the SPY, QQQ and rolling-correlation plots.
+        rendered_charts = page.evaluate("""() => {
+          const ids = ['ai-ca-spy', 'ai-ca-qqq', 'ai-ca-correlation'];
+          return ids.map(id => {
+            const canvas = document.getElementById(id);
+            const chart = canvas && window.Chart ? Chart.getChart(canvas) : null;
+            return {id, exists: !!canvas, display: canvas ? getComputedStyle(canvas).display : null,
+                    chart: !!chart, labels: chart ? chart.data.labels.length : 0,
+                    datasets: chart ? chart.data.datasets.map(d => ({label:d.label, points:d.data.length,
+                      valid:d.data.filter(v => v !== null && Number.isFinite(Number(v))).length})) : []};
+          });
+        }""")
+        print("Rendered cross-asset charts:", rendered_charts)
+        for chart in rendered_charts:
+            assert chart["exists"] and chart["chart"] and chart["labels"] >= 20, (
+                "Expected a populated rendered chart, but got " + str(chart)
+            )
+
+        # Confirm short-window controls do not discard the return warm-up needed for correlation.
+        for window in ("1m", "3m", "1y"):
+            page.locator(f'#ai-ca-range-controls [data-ca-range="{window}"]').click()
+            page.wait_for_function("""(id) => {
+              const canvas = document.getElementById(id);
+              const chart = canvas && window.Chart ? Chart.getChart(canvas) : null;
+              return !!chart && chart.data.labels.length >= 20;
+            }""", arg="ai-ca-correlation", timeout=10_000)
+
         page.screenshot(path=str(ARTIFACTS / "ai-crash-mobile.png"), full_page=True)
 
         # Capture a desktop-width rendering too, useful for table/layout regressions.
