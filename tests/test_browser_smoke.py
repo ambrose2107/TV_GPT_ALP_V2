@@ -64,7 +64,16 @@ def test_deployed_dashboard_and_ai_crash_smoke():
         assert page.locator("#pane-bt").count() == 1, "Backtest pane is missing."
 
         # Open Backtest and keep the AI Crash replay manual; do not trigger heavy replay.
-        page.locator("#main-tabs .tab", has_text="Backtest").click()
+        # Target the actual Backtest tab by its handler instead of fuzzy text matching.
+        # Assert both the active-tab state and pane visibility so a click/UI regression
+        # produces a specific diagnostic before we test the crash charts.
+        backtest_tab = page.locator('#main-tabs .tab[onclick*="switchTab(12,\'bt\')"]')
+        assert backtest_tab.count() == 1, "The Backtest navigation tab is missing or its handler changed."
+        backtest_tab.click()
+        page.wait_for_function(
+            "() => document.querySelector('#main-tabs .tab[onclick*=\\\"switchTab(12,\\\\\\'bt\\\\\\')\\\"]')?.classList.contains('on') && document.querySelector('#pane-bt')?.classList.contains('on')",
+            timeout=15_000,
+        )
         page.locator("#pane-bt").wait_for(state="visible")
         crash_tab = page.locator("#bt-subnav .bt-stab", has_text="AI Crash")
         crash_tab.click()
