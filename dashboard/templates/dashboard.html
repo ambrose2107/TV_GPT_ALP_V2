@@ -605,15 +605,11 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
     <h2>🧭 Key Support, Resistance &amp; Liquidity Swings</h2>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <select id="keylevel-symbol" aria-label="Portfolio symbol"><option value="">Loading portfolio symbols…</option></select>
-      <select id="keylevel-timeframe" aria-label="Key level timeframe" onchange="loadKeyLevels()">
-        <option value="1Day">Daily</option><option value="4Hour">4-hour</option><option value="1Hour">1-hour</option><option value="15Min">15-minute</option>
+      <select id="keylevel-timeframe" aria-label="Key level timeframe">
+        <option value="1Day">Daily · swing levels</option>
+        <option value="1Hour">1-hour</option>
+        <option value="15Min">15-minute</option>
       </select>
-      <select id="keylevel-lookback" aria-label="Chart lookback" onchange="loadKeyLevels()">
-        <option value="1M">1M</option><option value="3M">3M</option><option value="6M">6M</option><option value="1Y" selected>1Y</option><option value="2Y">2Y</option><option value="5Y">5Y</option>
-      </select>
-      <button class="btn btn-n btn-s" type="button" id="keylevel-volume-btn" onclick="toggleKeyLevelVolume()">Volume: On</button>
-      <button class="btn btn-n btn-s" type="button" id="keylevel-zones-btn" onclick="toggleKeyLevelZones()">Zones: On</button>
-      <button class="btn btn-n btn-s" type="button" onclick="resetKeyLevelZoom()">Reset zoom</button>
       <button class="btn btn-b btn-s" id="keylevel-refresh" onclick="loadKeyLevels()">Analyze levels</button>
     </div>
   </div>
@@ -624,7 +620,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
     <div class="card"><div class="lbl">Nearest Resistance</div><div class="val r" id="kl-resistance">—</div></div>
     <div class="card"><div class="lbl">Confirmed Bars</div><div class="val" id="kl-bars">—</div></div>
   </div>
-  <div class="chart-wrap" style="height:360px;margin:4px 0 14px;touch-action:none">
+  <div class="chart-wrap" style="height:300px;margin:4px 0 14px">
     <canvas id="keyLevelChart" role="img" aria-label="Price history with confirmed support and resistance levels"></canvas>
   </div>
   <div style="overflow-x:auto">
@@ -5022,43 +5018,6 @@ function showBacktestDetail(strategyId) {
 /* Key support/resistance module: isolated from existing Analytics charts. */
 let keyLevelChartInst = null;
 let keyLevelPortfolioSymbolsLoaded = false;
-let keyLevelVolumeVisible = true;
-let keyLevelZonesVisible = true;
-const keyLevelZonePlugin = {
-  id:'keyLevelZones',
-  beforeDatasetsDraw(chart) {
-    if (!keyLevelZonesVisible || !chart.$keyLevels) return;
-    const {ctx,chartArea,scales} = chart;
-    if (!chartArea || !scales.y) return;
-    ctx.save();
-    for (const lv of chart.$keyLevels) {
-      const y1 = scales.y.getPixelForValue(Number(lv.zone_high));
-      const y2 = scales.y.getPixelForValue(Number(lv.zone_low));
-      if (!Number.isFinite(y1) || !Number.isFinite(y2)) continue;
-      ctx.fillStyle = lv.kind === 'support' ? 'rgba(63,185,80,0.13)' : 'rgba(248,81,73,0.13)';
-      ctx.fillRect(chartArea.left, Math.min(y1,y2), chartArea.right-chartArea.left, Math.max(1,Math.abs(y2-y1)));
-    }
-    ctx.restore();
-  }
-};
-function toggleKeyLevelVolume() {
-  keyLevelVolumeVisible = !keyLevelVolumeVisible;
-  const b = document.getElementById('keylevel-volume-btn');
-  if (b) b.textContent = 'Volume: ' + (keyLevelVolumeVisible ? 'On' : 'Off');
-  if (keyLevelChartInst) {
-    const i = keyLevelChartInst.data.datasets.findIndex(d => d.yAxisID === 'volume');
-    if (i >= 0) { keyLevelChartInst.data.datasets[i].hidden = !keyLevelVolumeVisible; keyLevelChartInst.update(); }
-  }
-}
-function toggleKeyLevelZones() {
-  keyLevelZonesVisible = !keyLevelZonesVisible;
-  const b = document.getElementById('keylevel-zones-btn');
-  if (b) b.textContent = 'Zones: ' + (keyLevelZonesVisible ? 'On' : 'Off');
-  if (keyLevelChartInst) keyLevelChartInst.draw();
-}
-function resetKeyLevelZoom() {
-  if (keyLevelChartInst && typeof keyLevelChartInst.resetZoom === 'function') keyLevelChartInst.resetZoom();
-}
 async function initKeyLevelSymbols() {
   const sel = document.getElementById('keylevel-symbol');
   if (!sel || keyLevelPortfolioSymbolsLoaded) return;
@@ -5095,9 +5054,7 @@ async function loadKeyLevels() {
   if (btn) btn.disabled = true;
   if (status) status.textContent = 'Fetching price history and calculating confirmed swing levels…';
   try {
-    const lookbackEl = document.getElementById('keylevel-lookback');
-    const lookback = lookbackEl ? lookbackEl.value : '1Y';
-    const url = '/api/portfolio-manager/key-levels?symbol='+encodeURIComponent(sel.value)+'&timeframe='+encodeURIComponent(tf.value)+'&lookback='+encodeURIComponent(lookback);
+    const url = '/api/portfolio-manager/key-levels?symbol='+encodeURIComponent(sel.value)+'&timeframe='+encodeURIComponent(tf.value);
     const r = await fetch(url, {credentials:'same-origin'});
     const d = await r.json();
     if (!r.ok || d.error) throw new Error(d.error || 'Key-level request failed');
@@ -5129,13 +5086,8 @@ async function loadKeyLevels() {
       const datasets = [{
         label: sel.value+' close', data: bars.map(b=>Number(b.c)),
         borderColor:'#58a6ff', backgroundColor:'#58a6ff18', pointRadius:0,
-        borderWidth:1.7, tension:0.12, fill:false, yAxisID:'y'
+        borderWidth:1.7, tension:0.12, fill:false
       }];
-      datasets.push({
-        label:'Volume', type:'bar', data:bars.map(b=>Number(b.v||0)), yAxisID:'volume',
-        backgroundColor:bars.map(b=>Number(b.c)>=Number(b.o)?'rgba(63,185,80,0.35)':'rgba(248,81,73,0.35)'),
-        borderWidth:0, barPercentage:1, categoryPercentage:1, hidden:!keyLevelVolumeVisible
-      });
       levels.forEach(lv => {
         datasets.push({
           label:(lv.kind==='support'?'S ':'R ')+Number(lv.price).toFixed(2)+(lv.broken?' · crossed':''),
@@ -5146,51 +5098,12 @@ async function loadKeyLevels() {
       });
       keyLevelChartInst = new Chart(ctx, {
         type:'line', data:{labels,datasets},
-        plugins:window.ChartZoom ? [keyLevelZonePlugin,window.ChartZoom] : [keyLevelZonePlugin],
         options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
           plugins:{legend:{display:true,labels:{color:'#8b949e',boxWidth:12,font:{size:10},filter:item=>item.datasetIndex===0||item.datasetIndex<=9}},
-            tooltip:{callbacks:{label:ctx=>ctx.dataset.yAxisID==='volume'?'Volume: '+Number(ctx.parsed.y).toLocaleString():ctx.dataset.label+': 
-    }
-    if (status) status.textContent = d.symbol+' · '+d.timeframe+' · '+(d.lookback||lookback)+' (effective '+(d.effective_lookback_days||'—')+' days) · '+d.source+' · As of '+String(d.as_of||'').replace('T',' ').slice(0,16)+' UTC. Pinch or wheel to zoom; drag to pan. Levels are confirmed pivots, not guaranteed turning points.';
-    const method = document.getElementById('keylevel-method');
-    if(method) method.textContent = (d.method||'')+' Price proximity tolerance: '+klMoney(d.tolerance)+'. The score is a heuristic ranking, not a calibrated probability. Pivot and wick contacts are separate evidence; wick-contact counting is a simplified approximation and does not replicate every LuxAlgo intrabar-volume rule. Swing/liquidity concepts are based on LuxAlgo Liquidity Swings / Liquidity Pools (CC BY-NC-SA 4.0): https://creativecommons.org/licenses/by-nc-sa/4.0/.';
-  } catch(e) {
-    if (status) status.textContent = 'Key-level analysis unavailable: '+e.message;
-    const tbody = document.getElementById('keylevel-tbody');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#f85149">'+klSafe(e.message)+'</td></tr>';
-  } finally { if(btn) btn.disabled=false; }
-}
-
-</script>
-
-
-</body>
-</html>
-+klMoney(ctx.parsed.y)}},
-            zoom:{pan:{enabled:true,mode:'xy',threshold:4},zoom:{wheel:{enabled:true},pinch:{enabled:true},mode:'xy'}}},
+            tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': $'+klMoney(ctx.parsed.y)}}},
           scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:8,maxRotation:0},grid:{color:'#21262d'}},
-            y:{position:'right',ticks:{color:'#8b949e',callback:v=>'
-    }
-    if (status) status.textContent = d.symbol+' · '+d.timeframe+' · '+d.source+' · As of '+String(d.as_of||'').replace('T',' ').slice(0,16)+' UTC. Pivot confirmation window: '+d.pivot_window+' bars; levels update only after confirmation.';
-    const method = document.getElementById('keylevel-method');
-    if(method) method.textContent = (d.method||'')+' Price proximity tolerance: '+klMoney(d.tolerance)+'. The score is a heuristic ranking, not a calibrated probability. Pivot and wick contacts are separate evidence; wick-contact counting is a simplified approximation and does not replicate every LuxAlgo intrabar-volume rule. Swing/liquidity concepts are based on LuxAlgo Liquidity Swings / Liquidity Pools (CC BY-NC-SA 4.0): https://creativecommons.org/licenses/by-nc-sa/4.0/.';
-  } catch(e) {
-    if (status) status.textContent = 'Key-level analysis unavailable: '+e.message;
-    const tbody = document.getElementById('keylevel-tbody');
-    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#f85149">'+klSafe(e.message)+'</td></tr>';
-  } finally { if(btn) btn.disabled=false; }
-}
-
-</script>
-
-
-</body>
-</html>
-+Number(v).toFixed(2)},grid:{color:'#21262d'}},
-            volume:{position:'left',display:false,beginAtZero:true,grid:{display:false}}}}
+            y:{ticks:{color:'#8b949e',callback:v=>'$'+Number(v).toFixed(2)},grid:{color:'#21262d'}}}}
       });
-      keyLevelChartInst.$keyLevels = levels;
-      try { keyLevelChartInst.update('none'); } catch (_) {}
     }
     if (status) status.textContent = d.symbol+' · '+d.timeframe+' · '+d.source+' · As of '+String(d.as_of||'').replace('T',' ').slice(0,16)+' UTC. Pivot confirmation window: '+d.pivot_window+' bars; levels update only after confirmation.';
     const method = document.getElementById('keylevel-method');
