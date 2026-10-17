@@ -5055,7 +5055,9 @@ async function loadKeyLevels() {
   if (btn) btn.disabled = true;
   if (status) status.textContent = 'Fetching price history and calculating confirmed swing levels…';
   try {
-    const url = '/api/portfolio-manager/key-levels?symbol='+encodeURIComponent(sel.value)+'&timeframe='+encodeURIComponent(tf.value);
+    const lookbackEl = document.getElementById('keylevel-lookback');
+    const lookback = lookbackEl ? lookbackEl.value : '1Y';
+    const url = '/api/portfolio-manager/key-levels?symbol='+encodeURIComponent(sel.value)+'&timeframe='+encodeURIComponent(tf.value)+'&lookback='+encodeURIComponent(lookback);
     const r = await fetch(url, {credentials:'same-origin'});
     const d = await r.json();
     if (!r.ok || d.error) throw new Error(d.error || 'Key-level request failed');
@@ -5106,7 +5108,7 @@ async function loadKeyLevels() {
             y:{ticks:{color:'#8b949e',callback:v=>'$'+Number(v).toFixed(2)},grid:{color:'#21262d'}}}}
       });
     }
-    if (status) status.textContent = d.symbol+' · '+d.timeframe+' · '+d.source+' · As of '+String(d.as_of||'').replace('T',' ').slice(0,16)+' UTC. Pivot confirmation window: '+d.pivot_window+' bars; levels update only after confirmation.';
+    if (status) status.textContent = d.symbol+' · '+d.timeframe+' · '+(d.lookback||lookback)+' (effective '+(d.effective_lookback_days||'—')+' days) · '+d.source+' · As of '+String(d.as_of||'').replace('T',' ').slice(0,16)+' UTC. Levels are confirmed pivots, not guaranteed turning points.';
     const method = document.getElementById('keylevel-method');
     if(method) method.textContent = (d.method||'')+' Price proximity tolerance: '+klMoney(d.tolerance)+'. The score is a heuristic ranking, not a calibrated probability. Pivot and wick contacts are separate evidence; wick-contact counting is a simplified approximation and does not replicate every LuxAlgo intrabar-volume rule. Swing/liquidity concepts are based on LuxAlgo Liquidity Swings / Liquidity Pools (CC BY-NC-SA 4.0): https://creativecommons.org/licenses/by-nc-sa/4.0/.';
   } catch(e) {
