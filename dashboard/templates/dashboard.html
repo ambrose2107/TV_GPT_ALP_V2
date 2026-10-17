@@ -5079,7 +5079,8 @@ const keyLevelZonePlugin = {id:'keyLevelZones',beforeDatasetsDraw(chart) {
     const py=y.getPixelForValue(Number(lv.price));
     if (!Number.isFinite(py) || py<chartArea.top-4 || py>chartArea.bottom+4) continue;
     const color=lv.kind==='support'?'#3fb950':'#f85149';
-    const text=(lv.kind==='support'?'S ':'R ')+Number(lv.price).toFixed(2)+(lv.broken?' ×':'');
+    const volText=Number(lv.$touchVolume||0)>=1e6?(Number(lv.$touchVolume)/1e6).toFixed(1)+'M':Number(lv.$touchVolume||0)>=1e3?(Number(lv.$touchVolume)/1e3).toFixed(1)+'K':String(Math.round(Number(lv.$touchVolume||0)));
+    const text=(lv.kind==='support'?'S ':'R ')+Number(lv.price).toFixed(2)+' · '+volText+(lv.broken?' ×':'');
     const w=ctx.measureText(text).width+8;
     ctx.fillStyle='rgba(13,17,23,0.92)';
     ctx.fillRect(x-w,py-7,w,14);
@@ -5227,7 +5228,14 @@ async function loadKeyLevels() {
               }},
             volume:{position:'left',display:false,beginAtZero:true,grid:{display:false}}}}
       });
-      keyLevelChartInst.$keyLevels=levels;
+      keyLevelChartInst.$keyLevels=levels.map(lv=>{
+        const lo=Number(lv.zone_low),hi=Number(lv.zone_high);
+        const touched=bars.filter(b=>{
+          const low=Number(b.l),high=Number(b.h);
+          return Number.isFinite(low)&&Number.isFinite(high)&&high>=lo&&low<=hi;
+        });
+        return Object.assign({},lv,{$touchVolume:touched.reduce((sum,b)=>sum+Math.max(0,Number(b.v)||0),0)});
+      });
       try { keyLevelChartInst.update('none'); } catch (_) {}
     }
     if (status) status.textContent = d.symbol+' · '+d.timeframe+' · '+(d.lookback||lookback)+' (effective '+(d.effective_lookback_days||'—')+' days) · '+d.source+' · As of '+String(d.as_of||'').replace('T',' ').slice(0,16)+' UTC. Levels are confirmed pivots, not guaranteed turning points.';
