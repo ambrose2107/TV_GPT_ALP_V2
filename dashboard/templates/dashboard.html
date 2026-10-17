@@ -612,7 +612,8 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
         <option value="1M">1M</option><option value="3M">3M</option><option value="6M">6M</option><option value="1Y" selected>1Y</option><option value="2Y">2Y</option><option value="5Y">5Y</option>
       </select>
       <button class="btn btn-n btn-s" type="button" id="keylevel-volume-btn" onclick="toggleKeyLevelVolume()">Volume: On</button>
-      <button class="btn btn-n btn-s" type="button" id="keylevel-values-btn" onclick="toggleKeyLevelValues()">Value labels: On</button>
+      <button class="btn btn-n btn-s" type="button" id="keylevel-values-btn" onclick="toggleKeyLevelValues()">Date/price readout: On</button>
+      <button class="btn btn-n btn-s" type="button" id="keylevel-candles-btn" onclick="toggleKeyLevelCandles()">Candles: Off</button>
       <button class="btn btn-n btn-s" type="button" id="keylevel-autoscale-btn" onclick="autoRescaleKeyLevelChart()">Auto rescale</button>
       <button class="btn btn-n btn-s" type="button" id="keylevel-zones-btn" onclick="toggleKeyLevelZones()">Zones: On</button>
       <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#8b949e"><input type="checkbox" id="keylevel-ema20" onchange="updateKeyLevelEmaVisibility()" checked> EMA 20</label>
@@ -5030,6 +5031,7 @@ let keyLevelPortfolioSymbolsLoaded = false;
 let keyLevelVolumeVisible = true;
 let keyLevelValuesVisible = true;
 let keyLevelZonesVisible = true;
+let keyLevelCandlesVisible = false;
 const keyLevelEmaPeriods = [20,50,200];
 function autoRescaleKeyLevelChart() {
   if (!keyLevelChartInst) return;
@@ -5052,7 +5054,15 @@ function toggleKeyLevelValues() {
   keyLevelValuesVisible = !keyLevelValuesVisible;
   const b = document.getElementById('keylevel-values-btn');
   if (b) b.textContent = 'Level values: ' + (keyLevelValuesVisible ? 'On' : 'Off');
-  if (keyLevelChartInst) keyLevelChartInst.draw();
+  if (keyLevelChartInst) {
+    const tooltip = keyLevelChartInst.options.plugins && keyLevelChartInst.options.plugins.tooltip;
+    if (tooltip) tooltip.enabled = keyLevelValuesVisible;
+    if (!keyLevelValuesVisible && typeof keyLevelChartInst.setActiveElements === 'function') {
+      keyLevelChartInst.setActiveElements([]);
+      if (keyLevelChartInst.tooltip && typeof keyLevelChartInst.tooltip.setActiveElements === 'function') keyLevelChartInst.tooltip.setActiveElements([], {x:0,y:0});
+    }
+    keyLevelChartInst.draw();
+  }
 }
 function keyLevelEma(values, period) {
   const out = []; let ema = null; const k = 2/(period+1);
@@ -5099,6 +5109,36 @@ const keyLevelZonePlugin = {id:'keyLevelZones',beforeDatasetsDraw(chart) {
   }
   ctx.restore();
 }};
+const keyLevelCandlesPlugin = {id:'keyLevelCandles',afterDatasetsDraw(chart) {
+  if (!keyLevelCandlesVisible || !chart.$keyLevelBars || !chart.chartArea || !chart.scales.y || !chart.scales.x) return;
+  const {ctx,chartArea,scales}=chart, bars=chart.$keyLevelBars, xMeta=chart.getDatasetMeta(0);
+  if (!xMeta || !xMeta.data || !xMeta.data.length) return;
+  const y=scales.y; ctx.save(); ctx.beginPath(); ctx.rect(chartArea.left,chartArea.top,chartArea.right-chartArea.left,chartArea.bottom-chartArea.top); ctx.clip();
+  for(let i=0;i<bars.length&&i<xMeta.data.length;i++) {
+    const b=bars[i], el=xMeta.data[i]; if(!b||!el) continue;
+    const o=Number(b.o),h=Number(b.h),l=Number(b.l),c=Number(b.c),px=el.x;
+    if(![o,h,l,c,px].every(Number.isFinite)) continue;
+    const up=c>=o, color=up?'#3fb950':'#f85149';
+    const next=i+1<xMeta.data.length?Math.abs(xMeta.data[i+1].x-px):Math.abs(i>0?px-xMeta.data[i-1].x:5);
+    const bodyW=Math.max(2,Math.min(9,next*0.62));
+    const yo=y.getPixelForValue(o), yh=y.getPixelForValue(h), yl=y.getPixelForValue(l), yc=y.getPixelForValue(c);
+    ctx.strokeStyle=color; ctx.fillStyle=color; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(px,yh); ctx.lineTo(px,yl); ctx.stroke();
+    const top=Math.min(yo,yc), height=Math.max(1,Math.abs(yc-yo));
+    ctx.fillRect(px-bodyW/2,top,bodyW,height);
+  }
+  ctx.restore();
+}};
+function toggleKeyLevelCandles() {
+  keyLevelCandlesVisible=!keyLevelCandlesVisible;
+  const b=document.getElementById('keylevel-candles-btn');
+  if(b)b.textContent='Candles: '+(keyLevelCandlesVisible?'On':'Off');
+  if(keyLevelChartInst){
+    const close=keyLevelChartInst.data.datasets[0];
+    if(close) close.hidden=keyLevelCandlesVisible;
+    keyLevelChartInst.draw();
+  }
+}
 function toggleKeyLevelVolume() {
   keyLevelVolumeVisible=!keyLevelVolumeVisible;
   const b=document.getElementById('keylevel-volume-btn');
@@ -5185,7 +5225,7 @@ async function loadKeyLevels() {
       const datasets = [{
         label: sel.value+' close', data: closes,
         borderColor:'#58a6ff', backgroundColor:'#58a6ff18', pointRadius:0,
-        borderWidth:1.7, tension:0.12, fill:false, yAxisID:'y'
+        borderWidth:1.7, tension:0.12, fill:false, yAxisID:'y', hidden:keyLevelCandlesVisible
       }];
       const emaColors = {20:'#e3b341',50:'#a371f7',200:'#f78166'};
       keyLevelEmaPeriods.forEach(period => {
@@ -5207,10 +5247,10 @@ async function loadKeyLevels() {
       });
       keyLevelChartInst = new Chart(ctx, {
         type:'line', data:{labels,datasets},
-        plugins:window.ChartZoom ? [keyLevelZonePlugin,window.ChartZoom] : [keyLevelZonePlugin],
+        plugins:window.ChartZoom ? [keyLevelZonePlugin,keyLevelCandlesPlugin,window.ChartZoom] : [keyLevelZonePlugin,keyLevelCandlesPlugin],
         options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
           plugins:{legend:{display:true,labels:{color:'#8b949e',boxWidth:12,font:{size:10},filter:item=>item.datasetIndex===0||item.datasetIndex<=9}},
-            tooltip:{callbacks:{label:ctx=>ctx.dataset.yAxisID==='volume'?'Volume: '+Number(ctx.parsed.y).toLocaleString():ctx.dataset.label+': $'+klMoney(ctx.parsed.y)}},
+            tooltip:{enabled:keyLevelValuesVisible,callbacks:{title:items=>items.length?String(labels[items[0].dataIndex]||''): '',label:ctx=>{if(keyLevelCandlesVisible&&ctx.datasetIndex===0){const b=bars[ctx.dataIndex]||{};return ['Open: $'+klMoney(b.o),'High: $'+klMoney(b.h),'Low: $'+klMoney(b.l),'Close: $'+klMoney(b.c)];}return ctx.dataset.yAxisID==='volume'?'Volume: '+Number(ctx.parsed.y).toLocaleString():ctx.dataset.label+': $'+klMoney(ctx.parsed.y);}}},
             zoom:{limits:{y:{min:0}},pan:{enabled:true,mode:'xy',threshold:4},zoom:{wheel:{enabled:true},pinch:{enabled:true},mode:'xy'}}},
           scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:9,maxRotation:0,autoSkip:true,callback:(value,index,ticks)=>{
               const chart=keyLevelChartInst;
@@ -5240,6 +5280,7 @@ async function loadKeyLevels() {
               }},
             volume:{position:'left',display:false,beginAtZero:true,grid:{display:false}}}}
       });
+      keyLevelChartInst.$keyLevelBars=bars;
       keyLevelChartInst.$keyLevels=levels.map(lv=>{
         const lo=Number(lv.zone_low),hi=Number(lv.zone_high);
         const touched=bars.filter(b=>{
