@@ -612,7 +612,8 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
         <option value="1M">1M</option><option value="3M">3M</option><option value="6M">6M</option><option value="1Y" selected>1Y</option><option value="2Y">2Y</option><option value="5Y">5Y</option>
       </select>
       <button class="btn btn-n btn-s" type="button" id="keylevel-volume-btn" onclick="toggleKeyLevelVolume()">Volume: On</button>
-      <button class="btn btn-n btn-s" type="button" id="keylevel-values-btn" onclick="toggleKeyLevelValues()">Level values: On</button>
+      <button class="btn btn-n btn-s" type="button" id="keylevel-values-btn" onclick="toggleKeyLevelValues()">Value labels: On</button>
+      <button class="btn btn-n btn-s" type="button" id="keylevel-autoscale-btn" onclick="toggleKeyLevelAutoScale()">Auto scale: On</button>
       <button class="btn btn-n btn-s" type="button" id="keylevel-zones-btn" onclick="toggleKeyLevelZones()">Zones: On</button>
       <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#8b949e"><input type="checkbox" id="keylevel-ema20" onchange="updateKeyLevelEmaVisibility()" checked> EMA 20</label>
       <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#8b949e"><input type="checkbox" id="keylevel-ema50" onchange="updateKeyLevelEmaVisibility()" checked> EMA 50</label>
@@ -5029,7 +5030,22 @@ let keyLevelPortfolioSymbolsLoaded = false;
 let keyLevelVolumeVisible = true;
 let keyLevelValuesVisible = true;
 let keyLevelZonesVisible = true;
+let keyLevelAutoScale = true;
 const keyLevelEmaPeriods = [20,50,200];
+function toggleKeyLevelAutoScale() {
+  keyLevelAutoScale = !keyLevelAutoScale;
+  const b = document.getElementById('keylevel-autoscale-btn');
+  if (b) b.textContent = 'Auto scale: ' + (keyLevelAutoScale ? 'On' : 'Off');
+  if (keyLevelChartInst) {
+    const y = keyLevelChartInst.options.scales.y;
+    if (keyLevelAutoScale) { delete y.min; delete y.max; }
+    else {
+      const vals = (keyLevelChartInst.data.datasets[0]?.data || []).filter(v => Number.isFinite(Number(v)) && Number(v) >= 0).map(Number);
+      if (vals.length) { y.min = Math.max(0, Math.min(...vals)*0.98); y.max = Math.max(...vals)*1.02; }
+    }
+    keyLevelChartInst.update();
+  }
+}
 function updateKeyLevelEmaVisibility() {
   if (!keyLevelChartInst) return;
   for (const period of keyLevelEmaPeriods) {
@@ -5059,6 +5075,8 @@ const keyLevelZonePlugin = {id:'keyLevelZones',beforeDatasetsDraw(chart) {
   if (!keyLevelZonesVisible || !chart.$keyLevels) return;
   const {ctx,chartArea,scales}=chart;
   if (!chartArea || !scales.y) return;
+  // Stocks and ordinary spot prices cannot be negative: keep the visible price axis at or above zero.
+  if (scales.y.min < 0) scales.y.options.min = 0;
   ctx.save();
   for (const lv of chart.$keyLevels) {
     const y1=scales.y.getPixelForValue(Number(lv.zone_high)), y2=scales.y.getPixelForValue(Number(lv.zone_low));
@@ -5207,13 +5225,14 @@ async function loadKeyLevels() {
               const label=String(raw[value]||raw[index]||'');
               const dt=new Date(label);
               if(!Number.isFinite(dt.getTime())) return label.slice(0,10);
-              const visible=(chart&&chart.scales&&chart.scales.x)?Math.max(1,(chart.scales.x.max||raw.length-1)-(chart.scales.x.min||0)+1):raw.length;
-              if(visible>730) return dt.getFullYear();
+              const min=chart&&chart.scales&&chart.scales.x?chart.scales.x.min:0;
+              const max=chart&&chart.scales&&chart.scales.x?chart.scales.x.max:raw.length-1;
+              const visible=Math.max(1,max-min+1);
+              if(visible>730) return String(dt.getFullYear());
               if(visible>120) return dt.toLocaleDateString('en-US',{month:'short',year:'2-digit'});
-              if(visible>35) return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});
               return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});
             }},grid:{color:'#21262d'},border:{display:true}},
-            y:{position:'right',ticks:{color:'#8b949e',callback:v=>'$'+Number(v).toFixed(2),maxTicksLimit:10},grid:{color:'#21262d',drawTicks:true},
+            y:{position:'right',min:0,ticks:{color:'#8b949e',callback:v=>'$'+Number(v).toFixed(2),maxTicksLimit:10},grid:{color:'#21262d',drawTicks:true},
               afterBuildTicks:axis=>{
                 const ticks=axis.ticks||[];
                 const values=[];
