@@ -5053,7 +5053,7 @@ function updateKeyLevelEmaVisibility() {
 function toggleKeyLevelValues() {
   keyLevelValuesVisible = !keyLevelValuesVisible;
   const b = document.getElementById('keylevel-values-btn');
-  if (b) b.textContent = 'Level values: ' + (keyLevelValuesVisible ? 'On' : 'Off');
+  if (b) b.textContent = 'Date/price readout: ' + (keyLevelValuesVisible ? 'On' : 'Off');
   if (keyLevelChartInst) {
     const tooltip = keyLevelChartInst.options.plugins && keyLevelChartInst.options.plugins.tooltip;
     if (tooltip) tooltip.enabled = keyLevelValuesVisible;
