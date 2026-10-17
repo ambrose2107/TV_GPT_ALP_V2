@@ -613,7 +613,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
       </select>
       <button class="btn btn-n btn-s" type="button" id="keylevel-volume-btn" onclick="toggleKeyLevelVolume()">Volume: On</button>
       <button class="btn btn-n btn-s" type="button" id="keylevel-values-btn" onclick="toggleKeyLevelValues()">Value labels: On</button>
-      <button class="btn btn-n btn-s" type="button" id="keylevel-autoscale-btn" onclick="toggleKeyLevelAutoScale()">Auto scale: On</button>
+      <button class="btn btn-n btn-s" type="button" id="keylevel-autoscale-btn" onclick="autoRescaleKeyLevelChart()">Auto rescale</button>
       <button class="btn btn-n btn-s" type="button" id="keylevel-zones-btn" onclick="toggleKeyLevelZones()">Zones: On</button>
       <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#8b949e"><input type="checkbox" id="keylevel-ema20" onchange="updateKeyLevelEmaVisibility()" checked> EMA 20</label>
       <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#8b949e"><input type="checkbox" id="keylevel-ema50" onchange="updateKeyLevelEmaVisibility()" checked> EMA 50</label>
@@ -5030,21 +5030,14 @@ let keyLevelPortfolioSymbolsLoaded = false;
 let keyLevelVolumeVisible = true;
 let keyLevelValuesVisible = true;
 let keyLevelZonesVisible = true;
-let keyLevelAutoScale = true;
 const keyLevelEmaPeriods = [20,50,200];
-function toggleKeyLevelAutoScale() {
-  keyLevelAutoScale = !keyLevelAutoScale;
-  const b = document.getElementById('keylevel-autoscale-btn');
-  if (b) b.textContent = 'Auto scale: ' + (keyLevelAutoScale ? 'On' : 'Off');
-  if (keyLevelChartInst) {
-    const y = keyLevelChartInst.options.scales.y;
-    if (keyLevelAutoScale) { delete y.min; delete y.max; }
-    else {
-      const vals = (keyLevelChartInst.data.datasets[0]?.data || []).filter(v => Number.isFinite(Number(v)) && Number(v) >= 0).map(Number);
-      if (vals.length) { y.min = Math.max(0, Math.min(...vals)*0.98); y.max = Math.max(...vals)*1.02; }
-    }
-    keyLevelChartInst.update();
-  }
+function autoRescaleKeyLevelChart() {
+  if (!keyLevelChartInst) return;
+  if (typeof keyLevelChartInst.resetZoom === 'function') keyLevelChartInst.resetZoom();
+  const y = keyLevelChartInst.options.scales.y;
+  y.min = 0;
+  delete y.max;
+  keyLevelChartInst.update();
 }
 function updateKeyLevelEmaVisibility() {
   if (!keyLevelChartInst) return;
@@ -5218,7 +5211,7 @@ async function loadKeyLevels() {
         options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
           plugins:{legend:{display:true,labels:{color:'#8b949e',boxWidth:12,font:{size:10},filter:item=>item.datasetIndex===0||item.datasetIndex<=9}},
             tooltip:{callbacks:{label:ctx=>ctx.dataset.yAxisID==='volume'?'Volume: '+Number(ctx.parsed.y).toLocaleString():ctx.dataset.label+': $'+klMoney(ctx.parsed.y)}},
-            zoom:{pan:{enabled:true,mode:'xy',threshold:4},zoom:{wheel:{enabled:true},pinch:{enabled:true},mode:'xy'}}},
+            zoom:{limits:{y:{min:0}},pan:{enabled:true,mode:'xy',threshold:4},zoom:{wheel:{enabled:true},pinch:{enabled:true},mode:'xy'}}},
           scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:9,maxRotation:0,autoSkip:true,callback:(value,index,ticks)=>{
               const chart=keyLevelChartInst;
               const raw=(chart&&chart.data.labels)||labels;
