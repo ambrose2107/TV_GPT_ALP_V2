@@ -480,10 +480,26 @@ def key_levels_data():
                     "last_seen": candidate["time"], "bars_ago": len(rows) - 1 - candidate["index"],
                 })
         for lv in levels:
+            lv["pivot_touches"] = lv["touches"]
+            # Approximate repeated wick contacts inspired by the supplied LuxAlgo
+            # Liquidity Swings/Pools concepts. Enforce a gap between contacts so a
+            # cluster of consecutive candles is not counted as many independent tests.
+            contact_count = 0
+            contact_volume = 0.0
+            last_contact_index = -10**9
+            for bar_index, bar in enumerate(rows):
+                wick_price = bar["l"] if lv["kind"] == "support" else bar["h"]
+                if abs(wick_price - lv["price"]) <= tolerance and bar_index - last_contact_index >= 5:
+                    contact_count += 1
+                    contact_volume += bar["v"]
+                    last_contact_index = bar_index
+            lv["wick_contacts"] = contact_count
+            lv["touches"] = max(lv["pivot_touches"], contact_count)
+            lv["contact_volume"] = round(contact_volume, 2)
             lv["distance_pct"] = (lv["price"] / last["c"] - 1) * 100
             lv["broken"] = (last["c"] < lv["price"] - tolerance) if lv["kind"] == "support" else (last["c"] > lv["price"] + tolerance)
             recency = max(0, 1 - lv["bars_ago"] / max(1, len(rows)))
-            lv["score"] = round(min(100, 20 + 12 * (lv["touches"] - 1) + 25 * recency + (10 if lv["volume"] > 0 else 0) - (25 if lv["broken"] else 0)), 1)
+            lv["score"] = round(min(100, 20 + 8 * (lv["touches"] - 1) + 25 * recency + (10 if contact_volume > 0 else 0) - (25 if lv["broken"] else 0)), 1)
             lv["price"] = round(lv["price"], 4)
             lv["zone_low"] = round(lv["zone_low"], 4)
             lv["zone_high"] = round(lv["zone_high"], 4)
