@@ -613,6 +613,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
       </select>
       <button class="btn btn-n btn-s" type="button" id="keylevel-volume-btn" onclick="toggleKeyLevelVolume()">Volume: On</button>
       <button class="btn btn-n btn-s" type="button" id="keylevel-values-btn" onclick="toggleKeyLevelValues()">Date/price readout: On</button>
+      <button class="btn btn-n btn-s" type="button" id="keylevel-sr-labels-btn" onclick="toggleKeyLevelSrLabels()">S/R prices: On</button>
       <button class="btn btn-n btn-s" type="button" id="keylevel-candles-btn" onclick="toggleKeyLevelCandles()">Candles: Off</button>
       <button class="btn btn-n btn-s" type="button" id="keylevel-autoscale-btn" onclick="autoRescaleKeyLevelChart()">Auto rescale</button>
       <button class="btn btn-n btn-s" type="button" id="keylevel-zones-btn" onclick="toggleKeyLevelZones()">Zones: On</button>
@@ -5030,6 +5031,7 @@ let keyLevelChartInst = null;
 let keyLevelPortfolioSymbolsLoaded = false;
 let keyLevelVolumeVisible = true;
 let keyLevelValuesVisible = true;
+let keyLevelSrLabelsVisible = true;
 let keyLevelZonesVisible = true;
 let keyLevelCandlesVisible = false;
 const keyLevelEmaPeriods = [20,50,200];
@@ -5064,6 +5066,12 @@ function toggleKeyLevelValues() {
     keyLevelChartInst.draw();
   }
 }
+function toggleKeyLevelSrLabels() {
+  keyLevelSrLabelsVisible = !keyLevelSrLabelsVisible;
+  const b = document.getElementById('keylevel-sr-labels-btn');
+  if (b) b.textContent = 'S/R prices: ' + (keyLevelSrLabelsVisible ? 'On' : 'Off');
+  if (keyLevelChartInst) keyLevelChartInst.draw();
+}
 function keyLevelEma(values, period) {
   const out = []; let ema = null; const k = 2/(period+1);
   for (let i=0;i<values.length;i++) {
@@ -5089,7 +5097,7 @@ const keyLevelZonePlugin = {id:'keyLevelZones',beforeDatasetsDraw(chart) {
   }
   ctx.restore();
 },afterDatasetsDraw(chart) {
-  if (!keyLevelValuesVisible || !chart.$keyLevels || !chart.chartArea || !chart.scales.y) return;
+  if (!keyLevelSrLabelsVisible || !chart.$keyLevels || !chart.chartArea || !chart.scales.y) return;
   const {ctx,chartArea,scales}=chart;
   const y=scales.y, x=chartArea.right;
   const levels=chart.$keyLevels;
