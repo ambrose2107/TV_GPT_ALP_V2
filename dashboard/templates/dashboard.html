@@ -625,7 +625,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
   </div>
   <div style="overflow-x:auto">
     <table>
-      <thead><tr><th>Level</th><th>Price</th><th>Zone</th><th>Distance</th><th>Pivot contacts</th><th>Score</th><th>Status</th><th>Last pivot</th></tr></thead>
+      <thead><tr><th>Level</th><th>Price</th><th>Zone</th><th>Distance</th><th>Pivot / wick contacts</th><th>Score</th><th>Status</th><th>Last pivot</th></tr></thead>
       <tbody id="keylevel-tbody"><tr><td colspan="8" style="color:#8b949e;text-align:center">Choose a portfolio ticker to analyze.</td></tr></tbody>
     </table>
   </div>
@@ -5074,7 +5074,7 @@ async function loadKeyLevels() {
       return '<tr><td style="color:'+color+';font-weight:600">'+(support?'SUPPORT':'RESISTANCE')+'</td>'+
         '<td>$'+klMoney(x.price)+'</td><td>$'+zone+'</td>'+
         '<td style="color:'+(Number(x.distance_pct)<=0?'#3fb950':'#f85149')+'">'+(Number(x.distance_pct)>0?'+':'')+Number(x.distance_pct).toFixed(2)+'%</td>'+
-        '<td>'+x.touches+'</td><td>'+Number(x.score).toFixed(0)+'/100</td>'+
+        '<td>'+Number(x.pivot_touches||0)+' / '+Number(x.wick_contacts||0)+'</td><td>'+Number(x.score).toFixed(0)+'/100</td>'+
         '<td><span class="tag '+(x.broken?'tr':'tg')+'">'+(x.broken?'BROKEN / CROSSED':'ACTIVE')+'</span></td>'+
         '<td>'+klSafe(String(x.last_seen||'').replace('T',' ').slice(0,16))+'</td></tr>';
     }).join('') : '<tr><td colspan="8" style="text-align:center;color:#8b949e">No confirmed pivot levels in this data window.</td></tr>';
@@ -5107,7 +5107,7 @@ async function loadKeyLevels() {
     }
     if (status) status.textContent = d.symbol+' · '+d.timeframe+' · '+d.source+' · As of '+String(d.as_of||'').replace('T',' ').slice(0,16)+' UTC. Pivot confirmation window: '+d.pivot_window+' bars; levels update only after confirmation.';
     const method = document.getElementById('keylevel-method');
-    if(method) method.textContent = (d.method||'')+' Price proximity tolerance: '+klMoney(d.tolerance)+'. The score is a heuristic ranking, not a calibrated probability. Pivot contacts count clustered confirmed swing pivots; this first version does not replicate every LuxAlgo intrabar-volume rule.';
+    if(method) method.textContent = (d.method||'')+' Price proximity tolerance: '+klMoney(d.tolerance)+'. The score is a heuristic ranking, not a calibrated probability. Pivot and wick contacts are separate evidence; wick-contact counting is a simplified approximation and does not replicate every LuxAlgo intrabar-volume rule. Swing/liquidity concepts are based on LuxAlgo Liquidity Swings / Liquidity Pools (CC BY-NC-SA 4.0): https://creativecommons.org/licenses/by-nc-sa/4.0/.';
   } catch(e) {
     if (status) status.textContent = 'Key-level analysis unavailable: '+e.message;
     const tbody = document.getElementById('keylevel-tbody');
