@@ -393,3 +393,116 @@ def portfolio_ai():
     except Exception as ex:
         logger.warning("Portfolio AI unavailable: %s",ex)
         return jsonify({"available":False,"message":"Existing MirrorFish AI endpoint unavailable; use the quantitative dashboard below.","detail":str(ex)}),200
+
+
+@portfolio_bp.route("/api/portfolio-manager/key-levels")
+def key_levels_data():
+    """Return confirmed pivot levels and repeated-contact zones for one portfolio symbol."""
+    err = _auth_json()
+    if err:
+        return err
+    symbol = (request.args.get("symbol") or "").strip().upper()
+    timeframe = (request.args.get("timeframe") or "1Day").strip()
+    allowed_timeframes = {"1Day": 420, "1Hour": 45, "15Min": 10}
+    if timeframe not in allowed_timeframes:
+        return jsonify({"error": "Unsupported timeframe. Use 1Day, 1Hour, or 15Min."}), 400
+    if not symbol or len(symbol) > 15 or not all(c.isalnum() or c in ".-" for c in symbol):
+        return jsonify({"error": "Enter a valid ticker symbol."}), 400
+    key = Config.ALPACA_API_KEY or os.environ.get("APCA_API_KEY_ID", "") or os.environ.get("ALPACA_KEY", "")
+    secret = Config.ALPACA_SECRET_KEY or os.environ.get("APCA_API_SECRET_KEY", "") or os.environ.get("ALPACA_SECRET", "")
+    if not key or not secret:
+        return jsonify({"error": "Alpaca market-data credentials are unavailable."}), 503
+    try:
+        from datetime import timedelta
+        end = datetime.now(timezone.utc)
+        start = end - timedelta(days=allowed_timeframes[timeframe])
+        url = "https://data.alpaca.markets/v2/stocks/bars"
+        params = {
+            "symbols": symbol, "timeframe": timeframe,
+            "start": start.isoformat().replace("+00:00", "Z"),
+            "end": end.isoformat().replace("+00:00", "Z"),
+            "limit": 10000, "adjustment": "all", "feed": "iex", "sort": "asc",
+        }
+        response = requests.get(url, params=params, headers={
+            "APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret,
+        }, timeout=15)
+        response.raise_for_status()
+        payload = response.json()
+        bars = (payload.get("bars") or {}).get(symbol) or []
+        if len(bars) < 35:
+            return jsonify({"error": f"Not enough {timeframe} price history for {symbol} ({len(bars)} bars returned).", "symbol": symbol, "bars_count": len(bars)}), 422
+        rows = []
+        for b in bars:
+            try:
+                o, h, l, c = [float(b[k]) for k in ("o", "h", "l", "c")]
+                if all(math.isfinite(v) for v in (o, h, l, c)) and h >= l:
+                    rows.append({"t": b.get("t"), "o": o, "h": h, "l": l, "c": c, "v": _safe_float(b.get("v"))})
+            except (KeyError, TypeError, ValueError):
+                continue
+        if len(rows) < 35:
+            return jsonify({"error": "Market data did not contain enough valid bars."}), 422
+        closes = [r["c"] for r in rows]
+        ranges = [r["h"] - r["l"] for r in rows]
+        # Pivot length mirrors the supplied LuxAlgo Swing Levels default (14).
+        # Use a smaller confirmation window for intraday bars to retain useful coverage.
+        left_right = 14 if timeframe == "1Day" else 5
+        candidates = []
+        for i in range(left_right, len(rows) - left_right):
+            r = rows[i]
+            window = rows[i-left_right:i+left_right+1]
+            is_high = r["h"] >= max(x["h"] for x in window) and sum(x["h"] == r["h"] for x in window) == 1
+            is_low = r["l"] <= min(x["l"] for x in window) and sum(x["l"] == r["l"] for x in window) == 1
+            if is_high:
+                candidates.append({"kind": "resistance", "price": r["h"], "zone_low": max(r["o"], r["c"]), "zone_high": r["h"], "index": i, "time": r["t"], "volume": r["v"]})
+            if is_low:
+                candidates.append({"kind": "support", "price": r["l"], "zone_low": r["l"], "zone_high": min(r["o"], r["c"]), "index": i, "time": r["t"], "volume": r["v"]})
+        last = rows[-1]
+        atr_window = ranges[-14:]
+        atr = sum(atr_window) / max(1, len(atr_window))
+        tolerance = max(last["c"] * 0.0035, atr * 0.35)
+        levels = []
+        for candidate in sorted(candidates, key=lambda x: x["index"]):
+            match = next((lv for lv in reversed(levels) if lv["kind"] == candidate["kind"] and abs(lv["price"] - candidate["price"]) <= tolerance), None)
+            if match:
+                n = match["touches"]
+                match["price"] = (match["price"] * n + candidate["price"]) / (n + 1)
+                match["touches"] += 1
+                match["volume"] += candidate["volume"]
+                match["last_seen"] = candidate["time"]
+                match["zone_low"] = min(match["zone_low"], candidate["zone_low"])
+                match["zone_high"] = max(match["zone_high"], candidate["zone_high"])
+                match["bars_ago"] = len(rows) - 1 - candidate["index"]
+            else:
+                levels.append({
+                    "kind": candidate["kind"], "price": candidate["price"],
+                    "zone_low": candidate["zone_low"], "zone_high": candidate["zone_high"],
+                    "touches": 1, "volume": candidate["volume"], "first_seen": candidate["time"],
+                    "last_seen": candidate["time"], "bars_ago": len(rows) - 1 - candidate["index"],
+                })
+        for lv in levels:
+            lv["distance_pct"] = (lv["price"] / last["c"] - 1) * 100
+            lv["broken"] = (last["c"] < lv["price"] - tolerance) if lv["kind"] == "support" else (last["c"] > lv["price"] + tolerance)
+            recency = max(0, 1 - lv["bars_ago"] / max(1, len(rows)))
+            lv["score"] = round(min(100, 20 + 12 * (lv["touches"] - 1) + 25 * recency + (10 if lv["volume"] > 0 else 0) - (25 if lv["broken"] else 0)), 1)
+            lv["price"] = round(lv["price"], 4)
+            lv["zone_low"] = round(lv["zone_low"], 4)
+            lv["zone_high"] = round(lv["zone_high"], 4)
+            lv["distance_pct"] = round(lv["distance_pct"], 2)
+        # Retain nearest and strongest levels, while limiting chart clutter.
+        support = sorted([x for x in levels if x["kind"] == "support"], key=lambda x: (x["broken"], abs(x["distance_pct"]), -x["score"]))[:8]
+        resistance = sorted([x for x in levels if x["kind"] == "resistance"], key=lambda x: (x["broken"], abs(x["distance_pct"]), -x["score"]))[:8]
+        selected = sorted(support + resistance, key=lambda x: x["last_seen"])
+        return jsonify({
+            "symbol": symbol, "timeframe": timeframe, "as_of": last["t"],
+            "current_price": last["c"], "bars_count": len(rows), "pivot_window": left_right,
+            "tolerance": round(tolerance, 4), "atr_proxy": round(atr, 4),
+            "bars": rows[-180:], "levels": selected,
+            "method": "Confirmed swing pivots clustered by price proximity; touch/recency score is heuristic, not a probability.",
+            "source": "Alpaca Stock Market Data API (IEX feed)",
+        })
+    except requests.RequestException as ex:
+        logger.warning("Key-level market-data request failed for %s: %s", symbol, ex)
+        return jsonify({"error": "Market data request failed. Check Alpaca data access and try again.", "detail": str(ex)[:180]}), 502
+    except Exception as ex:
+        logger.exception("Key-level analysis failed for %s", symbol)
+        return jsonify({"error": "Key-level analysis failed.", "detail": str(ex)[:180]}), 500
