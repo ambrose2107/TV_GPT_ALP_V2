@@ -631,6 +631,20 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
     <div class="card"><div class="lbl">Nearest Resistance</div><div class="val r" id="kl-resistance">—</div></div>
     <div class="card"><div class="lbl">Confirmed Bars</div><div class="val" id="kl-bars">—</div></div>
   </div>
+  <div class="sec" style="margin:0 0 14px;padding:12px;background:#0d1117;border:1px solid #30363d;border-radius:8px">
+    <div class="sec-hdr" style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+      <h3 style="margin:0;font-size:14px">Portfolio Support / Resistance Watchlist</h3>
+      <button class="btn btn-b btn-s" type="button" id="keylevel-portfolio-refresh" onclick="loadPortfolioLevels()">Refresh portfolio levels</button>
+    </div>
+    <div style="color:#8b949e;font-size:11px;margin:6px 0 10px">Next active support/resistance per open position. Percentages show P/L versus average entry and distance from current price to each level.</div>
+    <div id="keylevel-portfolio-status" style="color:#8b949e;font-size:11px;margin-bottom:8px">Tap Refresh portfolio levels to calculate levels for open positions.</div>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+      <table style="min-width:780px;width:100%">
+        <thead><tr><th>Stock</th><th>Price</th><th>Avg Entry</th><th>P/L %</th><th>Next Support</th><th>To S %</th><th>Next Resistance</th><th>To R %</th></tr></thead>
+        <tbody id="keylevel-portfolio-tbody"><tr><td colspan="8" style="text-align:center;color:#8b949e">No portfolio level scan run yet.</td></tr></tbody>
+      </table>
+    </div>
+  </div>
   <div class="chart-wrap" style="height:360px;margin:4px 0 14px;touch-action:none">
     <canvas id="keyLevelChart" role="img" aria-label="Price history with confirmed support and resistance levels"></canvas>
   </div>
@@ -5188,6 +5202,67 @@ async function initKeyLevelSymbols() {
 function klMoney(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:4}) : '—';
+}
+function klPct(v) {
+  const n=Number(v);
+  return Number.isFinite(n) ? (n>0?'+':'')+n.toFixed(2)+'%' : '—';
+}
+async function loadPortfolioLevels() {
+  const btn=document.getElementById('keylevel-portfolio-refresh');
+  const status=document.getElementById('keylevel-portfolio-status');
+  const tbody=document.getElementById('keylevel-portfolio-tbody');
+  if(!tbody) return;
+  if(btn) btn.disabled=true;
+  if(status) status.textContent='Loading open positions and calculating support/resistance…';
+  tbody.innerHTML='<tr><td colspan="8" style="text-align:center;color:#8b949e">Loading portfolio positions…</td></tr>';
+  try {
+    const pr=await fetch('/api/account',{credentials:'same-origin'});
+    const pd=await pr.json();
+    if(!pr.ok || pd.error) throw new Error(pd.error||'Portfolio request failed');
+    const positions=(pd.positions||[]).filter(p=>p.symbol);
+    if(!positions.length) {
+      tbody.innerHTML='<tr><td colspan="8" style="text-align:center;color:#8b949e">No open positions found.</td></tr>';
+      if(status) status.textContent='No open positions to scan.';
+      return;
+    }
+    const timeframe=(document.getElementById('keylevel-timeframe')||{}).value||'1Day';
+    const lookback=(document.getElementById('keylevel-lookback')||{}).value||'1Y';
+    const rows=[]; let failures=0;
+    for(const pos of positions) {
+      const symbol=String(pos.symbol).toUpperCase();
+      if(status) status.textContent='Calculating '+symbol+' ( '+(rows.length+failures+1)+' / '+positions.length+' )…';
+      try {
+        const url='/api/portfolio-manager/key-levels?symbol='+encodeURIComponent(symbol)+'&timeframe='+encodeURIComponent(timeframe)+'&lookback='+encodeURIComponent(lookback);
+        const r=await fetch(url,{credentials:'same-origin'});
+        const d=await r.json();
+        if(!r.ok||d.error) throw new Error(d.error||'level request failed');
+        const price=Number(d.current_price ?? pos.current_price);
+        const entry=Number(pos.avg_entry_price);
+        const levels=(d.levels||[]).filter(lv=>!lv.broken&&Number.isFinite(Number(lv.price)));
+        const support=levels.filter(lv=>lv.kind==='support'&&Number(lv.price)<price).sort((a,b)=>Number(b.price)-Number(a.price))[0];
+        const resistance=levels.filter(lv=>lv.kind==='resistance'&&Number(lv.price)>price).sort((a,b)=>Number(a.price)-Number(b.price))[0];
+        const pnlPct=Number.isFinite(entry)&&entry>0?(price-entry)/entry*100:NaN;
+        const toSupport=support?(price-Number(support.price))/price*100:NaN;
+        const toResistance=resistance?(Number(resistance.price)-price)/price*100:NaN;
+        rows.push({symbol,price,entry,pnlPct,support: support?Number(support.price):NaN,toSupport,resistance:resistance?Number(resistance.price):NaN,toResistance});
+      } catch(e) { failures++; rows.push({symbol,error:true}); }
+    }
+    tbody.innerHTML=rows.map(x=>{
+      if(x.error) return '<tr><td><strong>'+klSafe(x.symbol)+'</strong></td><td colspan="7" style="color:#8b949e">Level data unavailable</td></tr>';
+      const pnlColor=x.pnlPct>0?'#3fb950':x.pnlPct<0?'#f85149':'#8b949e';
+      return '<tr><td><strong>'+klSafe(x.symbol)+'</strong></td>'+
+        '<td>$'+klMoney(x.price)+'</td><td>$'+klMoney(x.entry)+'</td>'+
+        '<td style="color:'+pnlColor+'">'+klPct(x.pnlPct)+'</td>'+
+        '<td style="color:#3fb950">'+(Number.isFinite(x.support)?'$'+klMoney(x.support):'—')+'</td>'+
+        '<td style="color:#3fb950">'+(Number.isFinite(x.toSupport)?klPct(-x.toSupport):'—')+'</td>'+
+        '<td style="color:#f85149">'+(Number.isFinite(x.resistance)?'$'+klMoney(x.resistance):'—')+'</td>'+
+        '<td style="color:#3fb950">'+(Number.isFinite(x.toResistance)?klPct(x.toResistance):'—')+'</td></tr>';
+    }).join('');
+    if(status) status.textContent='Updated '+new Date().toLocaleTimeString()+' · '+rows.length+' positions · '+failures+' level-data failures · '+timeframe+' / '+lookback;
+  } catch(e) {
+    tbody.innerHTML='<tr><td colspan="8" style="text-align:center;color:#f85149">Could not load portfolio levels: '+klSafe(e.message)+'</td></tr>';
+    if(status) status.textContent='Portfolio scan failed.';
+  } finally { if(btn) btn.disabled=false; }
 }
 function klSafe(v) {
   return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
