@@ -403,9 +403,13 @@ def key_levels_data():
         return err
     symbol = (request.args.get("symbol") or "").strip().upper()
     timeframe = (request.args.get("timeframe") or "1Day").strip()
-    allowed_timeframes = {"1Day": 420, "1Hour": 45, "15Min": 10}
+    allowed_timeframes = {"1Day": 1825, "4Hour": 730, "1Hour": 180, "15Min": 30}
     if timeframe not in allowed_timeframes:
-        return jsonify({"error": "Unsupported timeframe. Use 1Day, 1Hour, or 15Min."}), 400
+        return jsonify({"error": "Unsupported timeframe. Use 1Day, 4Hour, 1Hour, or 15Min."}), 400
+    lookback = (request.args.get("lookback") or "1Y").strip().upper()
+    lookback_days = {"1M": 31, "3M": 92, "6M": 183, "1Y": 365, "2Y": 730, "5Y": 1825}
+    if lookback not in lookback_days:
+        return jsonify({"error": "Unsupported lookback. Use 1M, 3M, 6M, 1Y, 2Y, or 5Y."}), 400
     if not symbol or len(symbol) > 15 or not all(c.isalnum() or c in ".-" for c in symbol):
         return jsonify({"error": "Enter a valid ticker symbol."}), 400
     key = Config.ALPACA_API_KEY or os.environ.get("APCA_API_KEY_ID", "") or os.environ.get("ALPACA_KEY", "")
@@ -415,7 +419,9 @@ def key_levels_data():
     try:
         from datetime import timedelta
         end = datetime.now(timezone.utc)
-        start = end - timedelta(days=allowed_timeframes[timeframe])
+        # Cap history by timeframe so intraday requests do not exceed provider limits.
+        effective_days = min(lookback_days[lookback], allowed_timeframes[timeframe])
+        start = end - timedelta(days=effective_days)
         url = "https://data.alpaca.markets/v2/stocks/bars"
         params = {
             "symbols": symbol, "timeframe": timeframe,
@@ -509,7 +515,8 @@ def key_levels_data():
         resistance = sorted([x for x in levels if x["kind"] == "resistance"], key=lambda x: (x["broken"], abs(x["distance_pct"]), -x["score"]))[:8]
         selected = sorted(support + resistance, key=lambda x: x["last_seen"])
         return jsonify({
-            "symbol": symbol, "timeframe": timeframe, "as_of": last["t"],
+            "symbol": symbol, "timeframe": timeframe, "lookback": lookback,
+            "effective_lookback_days": effective_days, "as_of": last["t"],
             "current_price": last["c"], "bars_count": len(rows), "pivot_window": left_right,
             "tolerance": round(tolerance, 4), "atr_proxy": round(atr, 4),
             "bars": rows[-180:], "levels": selected,
