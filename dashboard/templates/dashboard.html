@@ -605,10 +605,11 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
     <h2>🧭 Key Support, Resistance &amp; Liquidity Swings</h2>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <select id="keylevel-symbol" aria-label="Portfolio symbol"><option value="">Loading portfolio symbols…</option></select>
-      <select id="keylevel-timeframe" aria-label="Key level timeframe">
-        <option value="1Day">Daily · swing levels</option>
-        <option value="1Hour">1-hour</option>
-        <option value="15Min">15-minute</option>
+      <select id="keylevel-timeframe" aria-label="Key level timeframe" onchange="loadKeyLevels()">
+        <option value="1Day">Daily</option><option value="4Hour">4-hour</option><option value="1Hour">1-hour</option><option value="15Min">15-minute</option>
+      </select>
+      <select id="keylevel-lookback" aria-label="Chart lookback" onchange="loadKeyLevels()">
+        <option value="1M">1M</option><option value="3M">3M</option><option value="6M">6M</option><option value="1Y" selected>1Y</option><option value="2Y">2Y</option><option value="5Y">5Y</option>
       </select>
       <button class="btn btn-b btn-s" id="keylevel-refresh" onclick="loadKeyLevels()">Analyze levels</button>
     </div>
