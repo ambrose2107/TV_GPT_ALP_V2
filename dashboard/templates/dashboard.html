@@ -600,6 +600,39 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
 <!-- ── ANALYTICS TAB v9 — Institutional Grade ──────────────────────────── -->
 <div class="pane" id="pane-ana8">
 
+<div class="sec" id="key-levels-section" style="margin-bottom:14px">
+  <div class="sec-hdr">
+    <h2>🧭 Key Support, Resistance &amp; Liquidity Swings</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <select id="keylevel-symbol" aria-label="Portfolio symbol"><option value="">Loading portfolio symbols…</option></select>
+      <select id="keylevel-timeframe" aria-label="Key level timeframe">
+        <option value="1Day">Daily · swing levels</option>
+        <option value="1Hour">1-hour</option>
+        <option value="15Min">15-minute</option>
+      </select>
+      <button class="btn btn-b btn-s" id="keylevel-refresh" onclick="loadKeyLevels()">Analyze levels</button>
+    </div>
+  </div>
+  <div id="keylevel-status" style="color:#8b949e;font-size:11px;margin:0 0 10px">Uses confirmed swing pivots and clusters nearby prices. Levels are technical references, not guaranteed turning points.</div>
+  <div class="grid" style="margin-bottom:12px">
+    <div class="card"><div class="lbl">Latest Price</div><div class="val" id="kl-price">—</div></div>
+    <div class="card"><div class="lbl">Nearest Support</div><div class="val g" id="kl-support">—</div></div>
+    <div class="card"><div class="lbl">Nearest Resistance</div><div class="val r" id="kl-resistance">—</div></div>
+    <div class="card"><div class="lbl">Confirmed Bars</div><div class="val" id="kl-bars">—</div></div>
+  </div>
+  <div class="chart-wrap" style="height:300px;margin:4px 0 14px">
+    <canvas id="keyLevelChart" role="img" aria-label="Price history with confirmed support and resistance levels"></canvas>
+  </div>
+  <div style="overflow-x:auto">
+    <table>
+      <thead><tr><th>Level</th><th>Price</th><th>Zone</th><th>Distance</th><th>Pivot contacts</th><th>Score</th><th>Status</th><th>Last pivot</th></tr></thead>
+      <tbody id="keylevel-tbody"><tr><td colspan="8" style="color:#8b949e;text-align:center">Choose a portfolio ticker to analyze.</td></tr></tbody>
+    </table>
+  </div>
+  <div id="keylevel-method" style="margin-top:9px;color:#8b949e;font-size:10px"></div>
+</div>
+
+
   <!-- Header Controls -->
   <div class="sec" style="margin-bottom:14px">
     <div class="sec-hdr">
@@ -1428,6 +1461,7 @@ function switchTab(idx, name) {
   if(name==='eod')  { const t=new Date().toISOString().slice(0,10); if($('eod-date'))$('eod-date').value=t; loadCalendar(); }
   if(name==='set')  loadSessionTimes();
   if(name==='ana8') {
+    initKeyLevelSymbols();
     portLoaded=false;
     switchAnalyticsView('portfolio');
     loadSignalsTable();
@@ -4978,6 +5012,107 @@ function showBacktestDetail(strategyId) {
       <td>${t.R !== null ? t.R : '—'}</td>
     </tr>
   `).join('') : '<tr><td colspan="7" style="color:#8b949e">No trades in this window.</td></tr>';
+}
+
+
+/* Key support/resistance module: isolated from existing Analytics charts. */
+let keyLevelChartInst = null;
+let keyLevelPortfolioSymbolsLoaded = false;
+async function initKeyLevelSymbols() {
+  const sel = document.getElementById('keylevel-symbol');
+  if (!sel || keyLevelPortfolioSymbolsLoaded) return;
+  try {
+    const r = await fetch('/api/portfolio-manager', {credentials:'same-origin'});
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || 'Portfolio symbols unavailable');
+    const symbols = [...new Set((d.positions || []).map(p => String(p.symbol || '').toUpperCase()).filter(Boolean))];
+    sel.innerHTML = symbols.length
+      ? symbols.map(s => '<option value="'+klSafe(s)+'">'+klSafe(s)+'</option>').join('')
+      : '<option value="">No open portfolio positions</option>';
+    keyLevelPortfolioSymbolsLoaded = true;
+    if (symbols.length) await loadKeyLevels();
+    else document.getElementById('keylevel-status').textContent = 'No open positions were returned by the portfolio endpoint.';
+  } catch (e) {
+    sel.innerHTML = '<option value="">Portfolio symbols unavailable</option>';
+    const st = document.getElementById('keylevel-status');
+    if (st) st.textContent = 'Could not load portfolio tickers: ' + e.message;
+  }
+}
+function klMoney(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:4}) : '—';
+}
+function klSafe(v) {
+  return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+async function loadKeyLevels() {
+  const sel = document.getElementById('keylevel-symbol');
+  const tf = document.getElementById('keylevel-timeframe');
+  const status = document.getElementById('keylevel-status');
+  const btn = document.getElementById('keylevel-refresh');
+  if (!sel || !sel.value) { if(status) status.textContent='Select a ticker with an available portfolio position.'; return; }
+  if (btn) btn.disabled = true;
+  if (status) status.textContent = 'Fetching price history and calculating confirmed swing levels…';
+  try {
+    const url = '/api/portfolio-manager/key-levels?symbol='+encodeURIComponent(sel.value)+'&timeframe='+encodeURIComponent(tf.value);
+    const r = await fetch(url, {credentials:'same-origin'});
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || 'Key-level request failed');
+    const p = Number(d.current_price);
+    document.getElementById('kl-price').textContent = '$'+klMoney(p);
+    document.getElementById('kl-bars').textContent = d.bars_count ?? '—';
+    const supports = (d.levels||[]).filter(x=>x.kind==='support'&&!x.broken&&Number(x.price)<=p).sort((a,b)=>b.price-a.price);
+    const resistances = (d.levels||[]).filter(x=>x.kind==='resistance'&&!x.broken&&Number(x.price)>=p).sort((a,b)=>a.price-b.price);
+    document.getElementById('kl-support').textContent = supports.length ? '$'+klMoney(supports[0].price) : '—';
+    document.getElementById('kl-resistance').textContent = resistances.length ? '$'+klMoney(resistances[0].price) : '—';
+    const levels = d.levels || [];
+    const tbody = document.getElementById('keylevel-tbody');
+    tbody.innerHTML = levels.length ? levels.slice().sort((a,b)=>Math.abs(a.distance_pct)-Math.abs(b.distance_pct)).map(x => {
+      const support = x.kind==='support';
+      const color = support ? '#3fb950' : '#f85149';
+      const zone = (Number(x.zone_low)===Number(x.zone_high)) ? klMoney(x.zone_low) : klMoney(x.zone_low)+'–'+klMoney(x.zone_high);
+      return '<tr><td style="color:'+color+';font-weight:600">'+(support?'SUPPORT':'RESISTANCE')+'</td>'+
+        '<td>$'+klMoney(x.price)+'</td><td>$'+zone+'</td>'+
+        '<td style="color:'+(Number(x.distance_pct)<=0?'#3fb950':'#f85149')+'">'+(Number(x.distance_pct)>0?'+':'')+Number(x.distance_pct).toFixed(2)+'%</td>'+
+        '<td>'+x.touches+'</td><td>'+Number(x.score).toFixed(0)+'/100</td>'+
+        '<td><span class="tag '+(x.broken?'tr':'tg')+'">'+(x.broken?'BROKEN / CROSSED':'ACTIVE')+'</span></td>'+
+        '<td>'+klSafe(String(x.last_seen||'').replace('T',' ').slice(0,16))+'</td></tr>';
+    }).join('') : '<tr><td colspan="8" style="text-align:center;color:#8b949e">No confirmed pivot levels in this data window.</td></tr>';
+    const ctx = document.getElementById('keyLevelChart');
+    if (ctx && window.Chart) {
+      if (keyLevelChartInst) { keyLevelChartInst.destroy(); keyLevelChartInst=null; }
+      const bars = d.bars || [];
+      const labels = bars.map(b => String(b.t||'').replace('T',' ').slice(0,16));
+      const datasets = [{
+        label: sel.value+' close', data: bars.map(b=>Number(b.c)),
+        borderColor:'#58a6ff', backgroundColor:'#58a6ff18', pointRadius:0,
+        borderWidth:1.7, tension:0.12, fill:false
+      }];
+      levels.forEach(lv => {
+        datasets.push({
+          label:(lv.kind==='support'?'S ':'R ')+Number(lv.price).toFixed(2)+(lv.broken?' · crossed':''),
+          data:bars.map(()=>Number(lv.price)),
+          borderColor:lv.kind==='support'?'#3fb950':'#f85149',
+          borderWidth:1, borderDash:lv.broken?[5,4]:[], pointRadius:0, fill:false, tension:0
+        });
+      });
+      keyLevelChartInst = new Chart(ctx, {
+        type:'line', data:{labels,datasets},
+        options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+          plugins:{legend:{display:true,labels:{color:'#8b949e',boxWidth:12,font:{size:10},filter:item=>item.datasetIndex===0||item.datasetIndex<=9}},
+            tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': $'+klMoney(ctx.parsed.y)}}},
+          scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:8,maxRotation:0},grid:{color:'#21262d'}},
+            y:{ticks:{color:'#8b949e',callback:v=>'$'+Number(v).toFixed(2)},grid:{color:'#21262d'}}}}
+      });
+    }
+    if (status) status.textContent = d.symbol+' · '+d.timeframe+' · '+d.source+' · As of '+String(d.as_of||'').replace('T',' ').slice(0,16)+' UTC. Pivot confirmation window: '+d.pivot_window+' bars; levels update only after confirmation.';
+    const method = document.getElementById('keylevel-method');
+    if(method) method.textContent = (d.method||'')+' Price proximity tolerance: '+klMoney(d.tolerance)+'. The score is a heuristic ranking, not a calibrated probability. Pivot contacts count clustered confirmed swing pivots; this first version does not replicate every LuxAlgo intrabar-volume rule.';
+  } catch(e) {
+    if (status) status.textContent = 'Key-level analysis unavailable: '+e.message;
+    const tbody = document.getElementById('keylevel-tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#f85149">'+klSafe(e.message)+'</td></tr>';
+  } finally { if(btn) btn.disabled=false; }
 }
 
 </script>
