@@ -612,7 +612,11 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
         <option value="1M">1M</option><option value="3M">3M</option><option value="6M">6M</option><option value="1Y" selected>1Y</option><option value="2Y">2Y</option><option value="5Y">5Y</option>
       </select>
       <button class="btn btn-n btn-s" type="button" id="keylevel-volume-btn" onclick="toggleKeyLevelVolume()">Volume: On</button>
+      <button class="btn btn-n btn-s" type="button" id="keylevel-values-btn" onclick="toggleKeyLevelValues()">Level values: On</button>
       <button class="btn btn-n btn-s" type="button" id="keylevel-zones-btn" onclick="toggleKeyLevelZones()">Zones: On</button>
+      <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#8b949e"><input type="checkbox" id="keylevel-ema20" onchange="updateKeyLevelEmaVisibility()" checked> EMA 20</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#8b949e"><input type="checkbox" id="keylevel-ema50" onchange="updateKeyLevelEmaVisibility()" checked> EMA 50</label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#8b949e"><input type="checkbox" id="keylevel-ema200" onchange="updateKeyLevelEmaVisibility()" checked> EMA 200</label>
       <button class="btn btn-n btn-s" type="button" onclick="resetKeyLevelZoom()">Reset zoom</button>
       <button class="btn btn-b btn-s" id="keylevel-refresh" onclick="loadKeyLevels()">Analyze levels</button>
     </div>
@@ -5023,7 +5027,34 @@ function showBacktestDetail(strategyId) {
 let keyLevelChartInst = null;
 let keyLevelPortfolioSymbolsLoaded = false;
 let keyLevelVolumeVisible = true;
+let keyLevelValuesVisible = true;
 let keyLevelZonesVisible = true;
+const keyLevelEmaPeriods = [20,50,200];
+function updateKeyLevelEmaVisibility() {
+  if (!keyLevelChartInst) return;
+  for (const period of keyLevelEmaPeriods) {
+    const ds = keyLevelChartInst.data.datasets.find(d => d.$emaPeriod === period);
+    const input = document.getElementById('keylevel-ema'+period);
+    if (ds) ds.hidden = !!(input && !input.checked);
+  }
+  keyLevelChartInst.update();
+}
+function toggleKeyLevelValues() {
+  keyLevelValuesVisible = !keyLevelValuesVisible;
+  const b = document.getElementById('keylevel-values-btn');
+  if (b) b.textContent = 'Level values: ' + (keyLevelValuesVisible ? 'On' : 'Off');
+  if (keyLevelChartInst) keyLevelChartInst.draw();
+}
+function keyLevelEma(values, period) {
+  const out = []; let ema = null; const k = 2/(period+1);
+  for (let i=0;i<values.length;i++) {
+    const v = Number(values[i]);
+    if (!Number.isFinite(v)) { out.push(null); continue; }
+    ema = ema === null ? v : v*k + ema*(1-k);
+    out.push(i < period-1 ? null : ema);
+  }
+  return out;
+}
 const keyLevelZonePlugin = {id:'keyLevelZones',beforeDatasetsDraw(chart) {
   if (!keyLevelZonesVisible || !chart.$keyLevels) return;
   const {ctx,chartArea,scales}=chart;
@@ -5034,6 +5065,25 @@ const keyLevelZonePlugin = {id:'keyLevelZones',beforeDatasetsDraw(chart) {
     if (!Number.isFinite(y1)||!Number.isFinite(y2)) continue;
     ctx.fillStyle=lv.kind==='support'?'rgba(63,185,80,0.13)':'rgba(248,81,73,0.13)';
     ctx.fillRect(chartArea.left,Math.min(y1,y2),chartArea.right-chartArea.left,Math.max(1,Math.abs(y2-y1)));
+  }
+  ctx.restore();
+},afterDatasetsDraw(chart) {
+  if (!keyLevelValuesVisible || !chart.$keyLevels || !chart.chartArea || !chart.scales.y) return;
+  const {ctx,chartArea,scales}=chart;
+  const y=scales.y, x=chartArea.right;
+  const levels=chart.$keyLevels;
+  ctx.save();
+  ctx.font='10px -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif';
+  ctx.textAlign='right'; ctx.textBaseline='middle';
+  for (const lv of levels) {
+    const py=y.getPixelForValue(Number(lv.price));
+    if (!Number.isFinite(py) || py<chartArea.top-4 || py>chartArea.bottom+4) continue;
+    const color=lv.kind==='support'?'#3fb950':'#f85149';
+    const text=(lv.kind==='support'?'S ':'R ')+Number(lv.price).toFixed(2)+(lv.broken?' ×':'');
+    const w=ctx.measureText(text).width+8;
+    ctx.fillStyle='rgba(13,17,23,0.92)';
+    ctx.fillRect(x-w,py-7,w,14);
+    ctx.fillStyle=color; ctx.fillText(text,x-4,py);
   }
   ctx.restore();
 }};
@@ -5118,12 +5168,20 @@ async function loadKeyLevels() {
     if (ctx && window.Chart) {
       if (keyLevelChartInst) { keyLevelChartInst.destroy(); keyLevelChartInst=null; }
       const bars = d.bars || [];
-      const labels = bars.map(b => String(b.t||'').replace('T',' ').slice(0,16));
+      const labels = bars.map(b => String(b.t||''));
+      const closes = bars.map(b=>Number(b.c));
       const datasets = [{
-        label: sel.value+' close', data: bars.map(b=>Number(b.c)),
+        label: sel.value+' close', data: closes,
         borderColor:'#58a6ff', backgroundColor:'#58a6ff18', pointRadius:0,
         borderWidth:1.7, tension:0.12, fill:false, yAxisID:'y'
       }];
+      const emaColors = {20:'#e3b341',50:'#a371f7',200:'#f78166'};
+      keyLevelEmaPeriods.forEach(period => {
+        const input=document.getElementById('keylevel-ema'+period);
+        const ds={label:'EMA '+period,data:keyLevelEma(closes,period),borderColor:emaColors[period],
+          borderWidth:1.2,pointRadius:0,fill:false,tension:0,yAxisID:'y',hidden:!!(input&&!input.checked)};
+        ds.$emaPeriod=period; datasets.push(ds);
+      });
       datasets.push({label:'Volume',type:'bar',data:bars.map(b=>Number(b.v||0)),yAxisID:'volume',
         backgroundColor:bars.map(b=>Number(b.c)>=Number(b.o)?'rgba(63,185,80,0.35)':'rgba(248,81,73,0.35)'),
         borderWidth:0,barPercentage:1,categoryPercentage:1,hidden:!keyLevelVolumeVisible});
@@ -5142,8 +5200,31 @@ async function loadKeyLevels() {
           plugins:{legend:{display:true,labels:{color:'#8b949e',boxWidth:12,font:{size:10},filter:item=>item.datasetIndex===0||item.datasetIndex<=9}},
             tooltip:{callbacks:{label:ctx=>ctx.dataset.yAxisID==='volume'?'Volume: '+Number(ctx.parsed.y).toLocaleString():ctx.dataset.label+': $'+klMoney(ctx.parsed.y)}},
             zoom:{pan:{enabled:true,mode:'xy',threshold:4},zoom:{wheel:{enabled:true},pinch:{enabled:true},mode:'xy'}}},
-          scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:8,maxRotation:0},grid:{color:'#21262d'}},
-            y:{position:'right',ticks:{color:'#8b949e',callback:v=>'$'+Number(v).toFixed(2)},grid:{color:'#21262d'}},
+          scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:9,maxRotation:0,autoSkip:true,callback:(value,index,ticks)=>{
+              const chart=keyLevelChartInst;
+              const raw=(chart&&chart.data.labels)||labels;
+              const label=String(raw[value]||raw[index]||'');
+              const dt=new Date(label);
+              if(!Number.isFinite(dt.getTime())) return label.slice(0,10);
+              const visible=(chart&&chart.scales&&chart.scales.x)?Math.max(1,(chart.scales.x.max||raw.length-1)-(chart.scales.x.min||0)+1):raw.length;
+              if(visible>730) return dt.getFullYear();
+              if(visible>120) return dt.toLocaleDateString('en-US',{month:'short',year:'2-digit'});
+              if(visible>35) return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+              return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+            }},grid:{color:'#21262d'},border:{display:true}},
+            y:{position:'right',ticks:{color:'#8b949e',callback:v=>'$'+Number(v).toFixed(2),maxTicksLimit:10},grid:{color:'#21262d',drawTicks:true},
+              afterBuildTicks:axis=>{
+                const ticks=axis.ticks||[];
+                const values=[];
+                for(let i=0;i<ticks.length;i++){
+                  values.push(ticks[i]);
+                  if(i<ticks.length-1){
+                    const a=Number(ticks[i].value),b=Number(ticks[i+1].value);
+                    for(let j=1;j<=3;j++) values.push({value:a+(b-a)*j/4,label:''});
+                  }
+                }
+                axis.ticks=values;
+              }},
             volume:{position:'left',display:false,beginAtZero:true,grid:{display:false}}}}
       });
       keyLevelChartInst.$keyLevels=levels;
