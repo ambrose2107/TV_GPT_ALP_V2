@@ -654,8 +654,9 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
       </table>
     </div>
   </div>
-  <div class="chart-wrap" style="height:360px;margin:4px 0 14px;touch-action:none">
+  <div class="chart-wrap" style="height:360px;margin:4px 0 14px;touch-action:none;position:relative">
     <canvas id="keyLevelChart" role="img" aria-label="Price history with confirmed support and resistance levels"></canvas>
+    <button class="btn btn-n btn-s" type="button" onclick="autoRescaleKeyLevelChart()" title="Auto scale price axis" aria-label="Auto scale price axis" style="position:absolute;right:5px;bottom:3px;z-index:5;min-width:25px;padding:3px 7px;border:1px solid #8b949e;background:#161b22;font-weight:700">A</button>
   </div>
   <div style="overflow-x:auto">
     <table>
@@ -5388,7 +5389,7 @@ async function loadKeyLevels() {
         options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
           plugins:{legend:{display:true,labels:{color:'#8b949e',boxWidth:12,font:{size:10},filter:item=>item.datasetIndex===0||item.datasetIndex<=9}},
             tooltip:{enabled:keyLevelValuesVisible,callbacks:{title:items=>items.length?String(labels[items[0].dataIndex]||''): '',label:ctx=>{if(keyLevelCandlesVisible&&ctx.datasetIndex===0){const b=bars[ctx.dataIndex]||{};return ['Open: $'+klMoney(b.o),'High: $'+klMoney(b.h),'Low: $'+klMoney(b.l),'Close: $'+klMoney(b.c)];}return ctx.dataset.yAxisID==='volume'?'Volume: '+Number(ctx.parsed.y).toLocaleString():ctx.dataset.label+': $'+klMoney(ctx.parsed.y);}}},
-            zoom:{limits:{y:{min:0}},pan:{enabled:true,mode:'xy',threshold:4},zoom:{wheel:{enabled:true},pinch:{enabled:true},mode:'xy'}}},
+            zoom:{limits:{y:{min:0}},pan:{enabled:true,mode:'x',threshold:2},zoom:{wheel:{enabled:true},pinch:{enabled:true},mode:'x'}}},
           scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:9,maxRotation:0,autoSkip:true,callback:(value,index,ticks)=>{
               const chart=keyLevelChartInst;
               const raw=(chart&&chart.data.labels)||labels;
@@ -5428,6 +5429,8 @@ async function loadKeyLevels() {
         return Object.assign({},lv,{$touchVolume:touched.reduce((sum,b)=>sum+Math.max(0,Number(b.v)||0),0)});
       });
       try { keyLevelChartInst.update('none'); } catch (_) {}
+      // Recalculate the price scale whenever the ticker, timeframe, or lookback reloads.
+      autoRescaleKeyLevelChart();
     }
     if (status) status.textContent = d.symbol+' · '+d.timeframe+' · '+(d.lookback||lookback)+' (effective '+(d.effective_lookback_days||'—')+' days) · '+d.source+' · As of '+String(d.as_of||'').replace('T',' ').slice(0,16)+' UTC. Levels are confirmed pivots, not guaranteed turning points.';
     const method = document.getElementById('keylevel-method');
