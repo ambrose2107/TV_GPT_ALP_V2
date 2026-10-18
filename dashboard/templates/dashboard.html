@@ -605,6 +605,8 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
     <h2>🧭 Key Support, Resistance &amp; Liquidity Swings</h2>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <select id="keylevel-symbol" aria-label="Portfolio symbol"><option value="">Loading portfolio symbols…</option></select>
+      <input id="keylevel-chart-manual-symbol" type="text" maxlength="20" placeholder="Ticker e.g. NVDA" aria-label="Manual chart ticker" style="width:125px;max-width:35vw;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:7px;text-transform:uppercase">
+      <button class="btn btn-n btn-s" type="button" onclick="loadManualKeyLevelChart()">Analyze</button>
       <select id="keylevel-timeframe" aria-label="Key level timeframe" onchange="loadKeyLevels()">
         <option value="1Day">Daily</option><option value="4Hour">4-hour</option><option value="1Hour">1-hour</option><option value="15Min">15-minute</option>
       </select>
@@ -616,6 +618,8 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
       <button class="btn btn-n btn-s" type="button" id="keylevel-sr-labels-btn" onclick="toggleKeyLevelSrLabels()">S/R prices: On</button>
       <button class="btn btn-n btn-s" type="button" id="keylevel-candles-btn" onclick="toggleKeyLevelCandles()">Candles: Off</button>
       <button class="btn btn-n btn-s" type="button" id="keylevel-autoscale-btn" onclick="autoRescaleKeyLevelChart()">Auto rescale</button>
+      <button class="btn btn-n btn-s" type="button" onclick="shiftKeyLevelView(-0.65)">← Older</button>
+      <button class="btn btn-n btn-s" type="button" onclick="shiftKeyLevelView(0.65)">Newer →</button>
       <button class="btn btn-n btn-s" type="button" id="keylevel-zones-btn" onclick="toggleKeyLevelZones()">Zones: On</button>
       <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#8b949e"><input type="checkbox" id="keylevel-ema20" onchange="updateKeyLevelEmaVisibility()" checked> EMA 20</label>
       <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#8b949e"><input type="checkbox" id="keylevel-ema50" onchange="updateKeyLevelEmaVisibility()" checked> EMA 50</label>
@@ -5057,10 +5061,18 @@ const keyLevelEmaPeriods = [20,50,200];
 function autoRescaleKeyLevelChart() {
   if (!keyLevelChartInst) return;
   if (typeof keyLevelChartInst.resetZoom === 'function') keyLevelChartInst.resetZoom();
-  const y = keyLevelChartInst.options.scales.y;
-  y.min = 0;
-  delete y.max;
+  const vals=[];
+  (keyLevelChartInst.$keyLevelBars||[]).forEach(b=>[b.l,b.h,b.o,b.c].forEach(v=>{const n=Number(v);if(Number.isFinite(n)&&n>=0)vals.push(n);}));
+  (keyLevelChartInst.$keyLevels||[]).forEach(lv=>[lv.zone_low,lv.zone_high,lv.price].forEach(v=>{const n=Number(v);if(Number.isFinite(n)&&n>=0)vals.push(n);}));
+  const lo=vals.length?Math.min(...vals):0,hi=vals.length?Math.max(...vals):1,pad=(hi-lo)*0.08||hi*0.02||1;
+  keyLevelChartInst.options.scales.y.min=Math.max(0,lo-pad); keyLevelChartInst.options.scales.y.max=hi+pad;
   keyLevelChartInst.update();
+}
+function shiftKeyLevelView(fraction) {
+  if(!keyLevelChartInst||!keyLevelChartInst.scales.x)return;
+  const x=keyLevelChartInst.scales.x,lo=Number(x.min),hi=Number(x.max),span=Math.max(1,hi-lo),max=keyLevelChartInst.data.labels.length-1;
+  const nextMin=Math.max(0,Math.min(max-span,lo+span*fraction)),nextMax=Math.min(max,nextMin+span);
+  keyLevelChartInst.options.scales.x.min=nextMin;keyLevelChartInst.options.scales.x.max=nextMax;keyLevelChartInst.update('none');
 }
 function updateKeyLevelEmaVisibility() {
   if (!keyLevelChartInst) return;
@@ -5290,6 +5302,12 @@ async function loadPortfolioLevels() {
 function klSafe(v) {
   return String(v == null ? '' : v).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+async function loadManualKeyLevelChart() {
+  const input=document.getElementById('keylevel-chart-manual-symbol'),symbol=String(input&&input.value||'').trim().toUpperCase(),status=document.getElementById('keylevel-status');
+  if(!/^[A-Z][A-Z0-9.\\-]{0,19}$/.test(symbol)){if(status)status.textContent='Enter a valid ticker symbol, e.g. AAPL, NVDA, BRK.B or SPY.';return;}
+  const sel=document.getElementById('keylevel-symbol');if(sel){let opt=[...sel.options].find(o=>o.value===symbol);if(!opt){opt=new Option(symbol,symbol);sel.add(opt);}sel.value=symbol;}
+  if(input)input.value='';await loadKeyLevels();
+}
 async function loadKeyLevels() {
   const sel = document.getElementById('keylevel-symbol');
   const tf = document.getElementById('keylevel-timeframe');
@@ -5384,7 +5402,7 @@ async function loadKeyLevels() {
               if(visible>120) return dt.toLocaleDateString('en-US',{month:'short',year:'2-digit'});
               return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});
             }},grid:{color:'#21262d'},border:{display:true}},
-            y:{position:'right',min:0,ticks:{color:'#8b949e',callback:v=>'$'+Number(v).toFixed(2),maxTicksLimit:10},grid:{color:'#21262d',drawTicks:true},
+            y:{position:'right',min:0,ticks:{color:'#8b949e',callback:v=>'$'+Number(v).toFixed(2),maxTicksLimit:10},grid:{color:'#30363d',drawTicks:true},border:{display:true,color:'#8b949e'},
               afterBuildTicks:axis=>{
                 const ticks=axis.ticks||[];
                 const values=[];
@@ -5392,7 +5410,7 @@ async function loadKeyLevels() {
                   values.push(ticks[i]);
                   if(i<ticks.length-1){
                     const a=Number(ticks[i].value),b=Number(ticks[i+1].value);
-                    for(let j=1;j<=3;j++) values.push({value:a+(b-a)*j/4,label:''});
+                    for(let j=1;j<=4;j++) values.push({value:a+(b-a)*j/5,label:''});
                   }
                 }
                 axis.ticks=values;
