@@ -519,7 +519,7 @@ def key_levels_data():
             "effective_lookback_days": effective_days, "as_of": last["t"],
             "current_price": last["c"], "bars_count": len(rows), "pivot_window": left_right,
             "tolerance": round(tolerance, 4), "atr_proxy": round(atr, 4),
-            "bars": rows[-180:], "levels": selected,
+            "bars": rows[-1200:], "levels": selected,
             "method": "Confirmed swing pivots clustered by price proximity; touch/recency score is heuristic, not a probability.",
             "source": "Alpaca Stock Market Data API (IEX feed)",
         })
