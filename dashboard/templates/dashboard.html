@@ -5390,27 +5390,22 @@ async function loadKeyLevels() {
           plugins:{legend:{display:true,labels:{color:'#8b949e',boxWidth:12,font:{size:10},filter:item=>item.datasetIndex===0||item.datasetIndex<=9}},
             tooltip:{enabled:keyLevelValuesVisible,callbacks:{title:items=>items.length?String(labels[items[0].dataIndex]||''): '',label:ctx=>{if(keyLevelCandlesVisible&&ctx.datasetIndex===0){const b=bars[ctx.dataIndex]||{};return ['Open: $'+klMoney(b.o),'High: $'+klMoney(b.h),'Low: $'+klMoney(b.l),'Close: $'+klMoney(b.c)];}return ctx.dataset.yAxisID==='volume'?'Volume: '+Number(ctx.parsed.y).toLocaleString():ctx.dataset.label+': $'+klMoney(ctx.parsed.y);}}},
             zoom:{limits:{y:{min:0}},pan:{enabled:true,mode:'x',threshold:2},zoom:{wheel:{enabled:true},pinch:{enabled:true},mode:'x'}}},
-          scales:{x:{ticks:{color:'#8b949e',maxRotation:0,autoSkip:false,callback:(value,index,ticks)=>{
+          scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:9,maxRotation:0,autoSkip:true,callback:(value,index,ticks)=>{
               const chart=keyLevelChartInst;
               const raw=(chart&&chart.data.labels)||labels;
-              const idx=Math.round(Number(value));
-              // Category ticks use the bar index as value. Never use the tick-array
-              // index as a fallback: that can display a timestamp from another bar.
-              if(!Number.isFinite(idx)||idx<0||idx>=raw.length) return '';
-              const min=chart&&chart.scales&&chart.scales.x?Math.max(0,Math.floor(Number(chart.scales.x.min)||0)):0;
-              const max=chart&&chart.scales&&chart.scales.x?Math.min(raw.length-1,Math.ceil(Number(chart.scales.x.max)||raw.length-1)):raw.length-1;
-              const visible=Math.max(1,max-min+1);
-              const stride=Math.max(1,Math.ceil(visible/8));
-              // Keep the newest visible bar timestamp as the rightmost tick.
-              if(idx!==min&&idx!==max&&((idx-min)%stride)!==0) return '';
-              const label=String(raw[idx]||'');
+              const label=String(raw[Math.round(Number(value))] ?? raw[index] ?? '');
+              // Alpaca bar timestamps are UTC. Format in UTC so Japan/local timezone
+              // conversion cannot shift a session date onto the previous/next day.
               const ms=Date.parse(label);
               if(!Number.isFinite(ms)) return label.slice(0,10);
               const dt=new Date(ms);
+              const min=chart&&chart.scales&&chart.scales.x?Number(chart.scales.x.min):0;
+              const max=chart&&chart.scales&&chart.scales.x?Number(chart.scales.x.max):raw.length-1;
+              const visible=Math.max(1,max-min+1);
               if(visible>730) return String(dt.getUTCFullYear());
               if(visible>120) return dt.toLocaleDateString('en-US',{month:'short',year:'2-digit',timeZone:'UTC'});
               return dt.toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'});
-            }},grid:{color:'#21262d'},border:{display:true}}
+            }},grid:{color:'#21262d'},border:{display:true}},
             y:{position:'right',min:0,ticks:{color:'#8b949e',callback:v=>'$'+Number(v).toFixed(2),maxTicksLimit:10},grid:{color:'#30363d',drawTicks:true},border:{display:true,color:'#8b949e'},
               afterBuildTicks:axis=>{
                 const ticks=axis.ticks||[];
