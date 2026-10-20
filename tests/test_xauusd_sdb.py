@@ -3,6 +3,8 @@ import types
 import unittest
 from unittest.mock import patch
 
+from flask import Flask
+from research.xauusd_sdb_routes import xauusd_sdb_bp
 import numpy as np
 import pandas as pd
 
@@ -42,6 +44,13 @@ class SDBTests(unittest.TestCase):
     def test_insufficient_higher_timeframe_history_fails_clearly(self):
         with self.assertRaisesRegex(ValueError, "Insufficient"):
             build_sdb_signals(sample_bars(120))
+
+    def test_sdb_api_rejects_unauthenticated_requests(self):
+        app = Flask(__name__)
+        app.secret_key = "unit-test-only"
+        app.register_blueprint(xauusd_sdb_bp)
+        response = app.test_client().post("/api/xauusd-sdb/run", json={})
+        self.assertEqual(response.status_code, 401)
 
     def test_live_data_failure_never_falls_back_to_synthetic(self):
         fake_yf = types.SimpleNamespace(download=lambda *args, **kwargs: pd.DataFrame())
