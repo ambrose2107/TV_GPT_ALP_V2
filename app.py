@@ -28,6 +28,7 @@ from research.xauusd_quad_rsi_v1_routes import xauusd_quad_rsi_v1_bp
 from research.xauusd_triple_rsi_v1_routes import xauusd_triple_rsi_v1_bp
 from research.strategy_chart_routes import strategy_chart_bp
 from research.xauusd_v3_routes import xauusd_v3_bp
+from research.xauusd_sdb_routes import xauusd_sdb_bp
 from webhook.routes import webhook_bp
 
 
@@ -56,6 +57,7 @@ def create_app():
     app.register_blueprint(portfolio_bp)
     app.register_blueprint(early_signal_bp)
     app.register_blueprint(xauusd_v3_bp)
+    app.register_blueprint(xauusd_sdb_bp)
     app.register_blueprint(xauusd_fib_mtf_bp)
     app.register_blueprint(xauusd_confluence_v4_bp)
     app.register_blueprint(xauusd_pullback_v1_bp)
