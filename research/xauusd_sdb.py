@@ -1,9 +1,9 @@
-"""Isolated ICT-style Standard Deviation (SDB) research engine for gold.
+"""Isolated ICT-style Standard Deviation (SDB) research engine for GLD.
 
 This is an explicitly documented research approximation, not a claim to reproduce
-every TradingView/ICT deviation tool. It uses GC=F Yahoo 5m bars as a futures
-proxy, never synthetic data. All higher-timeframe context is derived from
-completed 5m bars. Signals are entered at the next bar open in the backtest.
+every TradingView/ICT deviation tool. It uses real Alpaca GLD 5m stock bars,
+never synthetic data. All higher-timeframe context is derived from completed
+5m bars. Signals are entered at the next bar open in the backtest.
 """
 from __future__ import annotations
 
@@ -13,28 +13,81 @@ import pandas as pd
 
 
 def load_gold_data(period: str = "60d") -> pd.DataFrame:
-    """Fetch real Yahoo Finance GC=F 5m bars. Fail closed; no synthetic fallback."""
-    import yfinance as yf
+    """Fetch real Alpaca GLD 5m bars. Requires Alpaca credentials; never falls back."""
+    import os
+    from datetime import datetime, timedelta, timezone
+    import requests
 
-    raw = yf.download("GC=F", period=period, interval="5m", progress=False, auto_adjust=False)
-    if raw is None or raw.empty:
-        raise RuntimeError("Yahoo Finance returned no GC=F 5m data. No synthetic fallback is permitted.")
-    if isinstance(raw.columns, pd.MultiIndex):
-        raw.columns = raw.columns.get_level_values(0)
-    raw.columns = [str(c).title() for c in raw.columns]
-    required = ["Open", "High", "Low", "Close"]
-    missing = [c for c in required if c not in raw.columns]
-    if missing:
-        raise RuntimeError("Gold data is missing required columns: " + ", ".join(missing))
+    key = os.getenv("APCA_API_KEY_ID") or os.getenv("ALPACA_API_KEY")
+    secret = os.getenv("APCA_API_SECRET_KEY") or os.getenv("ALPACA_API_SECRET_KEY") or os.getenv("ALPACA_SECRET_KEY")
+    if not key or not secret:
+        raise RuntimeError(
+            "Alpaca credentials are missing. Set APCA_API_KEY_ID and APCA_API_SECRET_KEY "
+            "(or ALPACA_API_KEY and ALPACA_API_SECRET_KEY) in the Render environment."
+        )
+    try:
+        days = int(str(period).lower().removesuffix("d"))
+    except (TypeError, ValueError):
+        days = 60
+    days = min(max(days, 1), 60)
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=days)
+    url = "https://data.alpaca.markets/v2/stocks/GLD/bars"
+    headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret}
+    params = {
+        "timeframe": "5Min",
+        "start": start.isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "end": end.isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "limit": 10000,
+        "adjustment": "raw",
+        "feed": os.getenv("ALPACA_DATA_FEED", "iex"),
+        "sort": "asc",
+    }
+    records = []
+    page_token = None
+    try:
+        while True:
+            if page_token:
+                params["page_token"] = page_token
+            response = requests.get(url, headers=headers, params=params, timeout=25)
+            if response.status_code in (401, 403):
+                raise RuntimeError(
+                    "Alpaca rejected the GLD data request. Check Render API key/secret and "
+                    "whether the account has access to the selected market-data feed."
+                )
+            response.raise_for_status()
+            payload = response.json()
+            records.extend(payload.get("bars", {}).get("GLD", []) or [])
+            page_token = payload.get("next_page_token")
+            if not page_token:
+                break
+    except RuntimeError:
+        raise
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Alpaca GLD data request failed: {exc}") from exc
+    if not records:
+        raise RuntimeError(
+            "Alpaca returned no GLD 5m bars for the requested window. Check market-data "
+            "entitlements, feed setting, and Render credentials. No synthetic fallback is permitted."
+        )
+
+    raw = pd.DataFrame(records)
+    required_api = {"t", "o", "h", "l", "c"}
+    missing_api = required_api.difference(raw.columns)
+    if missing_api:
+        raise RuntimeError("Alpaca GLD response is missing fields: " + ", ".join(sorted(missing_api)))
+    raw = raw.rename(columns={"t": "Time", "o": "Open", "h": "High", "l": "Low", "c": "Close", "v": "Volume"})
+    raw["Time"] = pd.to_datetime(raw["Time"], utc=True, errors="coerce")
+    raw = raw.set_index("Time")
     if "Volume" not in raw.columns:
         raw["Volume"] = 0.0
     out = raw[["Open", "High", "Low", "Close", "Volume"]].copy()
-    out = out.apply(pd.to_numeric, errors="coerce").dropna(subset=required)
+    out = out.apply(pd.to_numeric, errors="coerce").dropna(subset=["Open", "High", "Low", "Close"])
     out = out[~out.index.duplicated(keep="last")].sort_index()
     if len(out) < 500:
-        raise RuntimeError(f"Only {len(out)} real 5m bars returned; at least 500 are required.")
+        raise RuntimeError(f"Alpaca returned only {len(out)} real GLD 5m bars; at least 500 are required.")
     if not isinstance(out.index, pd.DatetimeIndex):
-        raise RuntimeError("Gold data index is not datetime.")
+        raise RuntimeError("Alpaca GLD data index is not datetime.")
     return out
 
 
@@ -269,7 +322,7 @@ def run_backtest(data: pd.DataFrame, initial_equity: float = 10000.0,
         "max_drawdown_pct": round(max_dd * 100, 2),
         "final_equity": round(equity, 2),
         "data_start": str(d.index.min()), "data_end": str(d.index.max()),
-        "data_source": "Yahoo Finance GC=F 5m futures proxy (not spot XAUUSD)",
+        "data_source": "Alpaca GLD 5m ETF bars (gold ETF proxy; not spot XAUUSD)",
     }
     serial_trades = []
     for t in trades[-500:]:
