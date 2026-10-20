@@ -39,9 +39,14 @@ def load_gold_data(period: str = "60d") -> pd.DataFrame:
 
 
 def _resample(ohlc: pd.DataFrame, rule: str) -> pd.DataFrame:
-    return ohlc.resample(rule, label="right", closed="right").agg({
+    # Yahoo intraday timestamps mark bar opens. Group left-closed bars, then
+    # shift the aggregate timestamp to the period close so MTF values are not
+    # visible to 5m logic before the constituent bars have completed.
+    out = ohlc.resample(rule, label="left", closed="left").agg({
         "Open": "first", "High": "max", "Low": "min", "Close": "last", "Volume": "sum"
     }).dropna(subset=["Open", "High", "Low", "Close"])
+    out.index = out.index + pd.Timedelta(rule)
+    return out
 
 
 def build_sdb_signals(data: pd.DataFrame, sweep_lookback: int = 12,
