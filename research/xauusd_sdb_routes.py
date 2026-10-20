@@ -54,9 +54,9 @@ def run():
         data = load_gold_data("60d")
         result = run_backtest(data, risk_pct=risk_pct, spread_points=spread,
                               slippage_points=slippage)
-        result["symbol"] = "GC=F"
+        result["symbol"] = "GLD"
         result["disclaimer"] = (
-            "Research approximation only. Yahoo GC=F is a gold futures proxy, not spot XAUUSD. "
+            "Research approximation only. Alpaca GLD is a gold ETF proxy, not spot XAUUSD. "
             "Deviation targets use the documented range-projection convention; they are not "
             "statistical standard deviations or a verified TradingView tool replica."
         )
