@@ -28,7 +28,7 @@ button{background:#238636;color:white;border:0;border-radius:7px;padding:10px 16
 <a href="/xauusd-confluence-v4">Gold Confluence V4</a>
 <a href="/">Dashboard</a>
 </div>
-<div class="warn"><b>Data and method warning:</b> This first version uses real Yahoo Finance <code>GC=F</code> gold-futures 5m bars as a proxy, not broker spot XAUUSD. It fails closed if data is unavailable; it never substitutes synthetic prices. The negative SD labels use a documented range-projection approximation, not a verified replica of a specific TradingView/ICT tool. Results are research-only, not live-trading signals.</div>
+<div class="warn"><b>Data and method warning:</b> Uses real Alpaca <code>GLD</code> 5-minute ETF bars as a gold proxy, not broker spot XAUUSD. Render must have valid Alpaca market-data credentials and access to the configured feed (default: IEX). It fails closed if data is unavailable; it never substitutes synthetic prices. The negative SD labels use a documented range-projection approximation, not a verified replica of a specific TradingView/ICT tool. Results are research-only, not live-trading signals.</div>
 <div class="panel">
 <h2>Backtest settings</h2>
 <div class="controls">
@@ -48,7 +48,7 @@ const fmt=(v,n=2)=>v===null||v===undefined||v===""?"—":(typeof v==="number"?v.
 const el=id=>document.getElementById(id);
 function td(v){const x=document.createElement("td");x.textContent=v;return x;}
 el("run").addEventListener("click",async()=>{
-  const btn=el("run");btn.disabled=true;el("status").className="muted";el("status").textContent="Fetching real GC=F data and running isolated backtest…";
+  const btn=el("run");btn.disabled=true;el("status").className="muted";el("status").textContent="Fetching real Alpaca GLD bars and running isolated backtest…";
   el("results").hidden=true;
   try{
     const res=await fetch("/api/xauusd-sdb/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({risk_pct:Number(el("risk").value),spread_points:Number(el("spread").value),slippage_points:Number(el("slippage").value)})});
