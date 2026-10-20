@@ -52,11 +52,42 @@ class SDBTests(unittest.TestCase):
         response = app.test_client().post("/api/xauusd-sdb/run", json={})
         self.assertEqual(response.status_code, 401)
 
-    def test_live_data_failure_never_falls_back_to_synthetic(self):
-        fake_yf = types.SimpleNamespace(download=lambda *args, **kwargs: pd.DataFrame())
-        with patch.dict(sys.modules, {"yfinance": fake_yf}):
-            with self.assertRaisesRegex(RuntimeError, "No synthetic fallback"):
+    def test_missing_alpaca_credentials_fails_clearly(self):
+        with patch.dict("os.environ", {}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "Alpaca credentials are missing"):
                 load_gold_data()
+
+    def test_live_data_failure_never_falls_back_to_synthetic(self):
+        response = types.SimpleNamespace(
+            status_code=200,
+            json=lambda: {"bars": [], "next_page_token": None},
+            raise_for_status=lambda: None,
+        )
+        with patch.dict("os.environ", {"APCA_API_KEY_ID": "test", "APCA_API_SECRET_KEY": "test"}, clear=True):
+            with patch("requests.get", return_value=response):
+                with self.assertRaisesRegex(RuntimeError, "No synthetic fallback"):
+                    load_gold_data()
+
+    def test_alpaca_gld_bars_are_normalized(self):
+        times = pd.date_range("2026-01-05", periods=600, freq="5min", tz="UTC")
+        bars = [{
+            "t": ts.isoformat().replace("+00:00", "Z"),
+            "o": 400.0, "h": 401.0, "l": 399.0, "c": 400.5, "v": 1000
+        } for ts in times]
+        response = types.SimpleNamespace(
+            status_code=200,
+            json=lambda: {"bars": bars, "next_page_token": None},
+            raise_for_status=lambda: None,
+        )
+        with patch.dict("os.environ", {"APCA_API_KEY_ID": "test", "APCA_API_SECRET_KEY": "test"}, clear=True):
+            with patch("requests.get", return_value=response) as get:
+                result = load_gold_data()
+        self.assertEqual(len(result), 600)
+        self.assertEqual(list(result.columns), ["Open", "High", "Low", "Close", "Volume"])
+        self.assertEqual(str(result.index.tz), "UTC")
+        self.assertEqual(float(result.iloc[0]["Close"]), 400.5)
+        self.assertIn("/v2/stocks/GLD/bars", get.call_args.args[0])
+        self.assertEqual(get.call_args.kwargs["params"]["timeframe"], "5Min")
 
 
 if __name__ == "__main__":
