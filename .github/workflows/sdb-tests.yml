@@ -1,0 +1,30 @@
+name: SDB isolated tests
+
+on:
+  pull_request:
+    paths:
+      - "research/xauusd_sdb.py"
+      - "research/xauusd_sdb_routes.py"
+      - "tests/test_xauusd_sdb.py"
+      - ".github/workflows/sdb-tests.yml"
+  push:
+    branches:
+      - "feature/xauusd-sdb"
+    paths:
+      - "research/xauusd_sdb.py"
+      - "research/xauusd_sdb_routes.py"
+      - "tests/test_xauusd_sdb.py"
+      - ".github/workflows/sdb-tests.yml"
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install numpy pandas flask
+      - run: python -m py_compile research/xauusd_sdb.py research/xauusd_sdb_routes.py app.py
+      - run: python -m unittest discover -s tests -p 'test_xauusd_sdb.py' -v

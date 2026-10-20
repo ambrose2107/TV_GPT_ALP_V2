@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>XAUUSD SDB Research</title>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--line:#30363d;--text:#c9d1d9;--muted:#8b949e;--good:#7ee787;--warn:#d29922;--bad:#ff7b72}
+*{box-sizing:border-box}body{margin:0 auto;padding:16px;max-width:1400px;background:var(--bg);color:var(--text);font:14px system-ui,-apple-system,Segoe UI,sans-serif}
+a{color:#58a6ff}h1{font-size:23px;margin:4px 0}.muted{color:var(--muted);line-height:1.5}.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin:12px 0}
+.nav{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.nav a{padding:8px 10px;border:1px solid var(--line);border-radius:6px;text-decoration:none}
+.warn{border:1px solid var(--warn);background:#30260f;padding:12px;border-radius:8px;color:#f0d58b;line-height:1.5}
+.controls{display:flex;flex-wrap:wrap;gap:12px;align-items:end}.controls label{display:flex;flex-direction:column;gap:5px;color:var(--muted);font-size:12px}
+input{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:9px;color:var(--text);width:120px}
+button{background:#238636;color:white;border:0;border-radius:7px;padding:10px 16px;font-weight:700;cursor:pointer}button:disabled{opacity:.5}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px}.metric{padding:12px;background:#0d1117;border:1px solid var(--line);border-radius:8px}.metric .v{font-size:20px;font-weight:700;margin-top:4px;overflow-wrap:anywhere}
+.scroll{overflow:auto;max-height:440px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{text-align:right;padding:8px;border-bottom:1px solid var(--line);white-space:nowrap}th:first-child,td:first-child{text-align:left}th{position:sticky;top:0;background:var(--panel)}
+#status{white-space:pre-wrap;margin-left:6px}.good{color:var(--good)}.bad{color:var(--bad)}
+@media(max-width:600px){body{padding:9px}.panel{padding:10px}.controls label,input{width:100%}.controls button{width:100%}}
+</style>
+</head>
+<body>
+<h1>ICT Standard Deviation (SDB) — Gold Research</h1>
+<div class="muted">Separate research page · 1H directional context → completed 15m liquidity sweep → 5m MSS entry</div>
+<div class="nav">
+<a href="/xauusd-strategy-lab-v2">← Strategy Lab V2</a>
+<a href="/xauusd-confluence-v4">Gold Confluence V4</a>
+<a href="/">Dashboard</a>
+</div>
+<div class="warn"><b>Data and method warning:</b> This first version uses real Yahoo Finance <code>GC=F</code> gold-futures 5m bars as a proxy, not broker spot XAUUSD. It fails closed if data is unavailable; it never substitutes synthetic prices. The negative SD labels use a documented range-projection approximation, not a verified replica of a specific TradingView/ICT tool. Results are research-only, not live-trading signals.</div>
+<div class="panel">
+<h2>Backtest settings</h2>
+<div class="controls">
+<label>Risk per trade (%)<input id="risk" type="number" min="0.01" max="2" step="0.05" value="0.5"></label>
+<label>Spread (price points)<input id="spread" type="number" min="0" max="20" step="0.05" value="0.30"></label>
+<label>Slippage (price points)<input id="slippage" type="number" min="0" max="10" step="0.05" value="0.05"></label>
+<button id="run">Run SDB Backtest</button><span id="status" class="muted">Ready — nothing runs until you click.</span>
+</div>
+</div>
+<div id="results" hidden>
+<div class="panel"><h2>Summary</h2><div id="metrics" class="metrics"></div><p id="disclaimer" class="muted"></p></div>
+<div class="panel"><h2>Recent SDB signals</h2><div class="scroll"><table><thead><tr><th>Time</th><th>Side</th><th>Setup</th><th>Stop</th><th>−1 SD</th><th>−2 SD</th><th>−2.5 SD</th><th>−4 SD</th></tr></thead><tbody id="signals"></tbody></table></div></div>
+<div class="panel"><h2>Backtest trades</h2><div class="scroll"><table><thead><tr><th>Entry</th><th>Exit</th><th>Side</th><th>Entry price</th><th>Stop</th><th>Targets</th><th>P/L</th><th>Exit reason</th></tr></thead><tbody id="trades"></tbody></table></div></div>
+</div>
+<script>
+const fmt=(v,n=2)=>v===null||v===undefined||v===""?"—":(typeof v==="number"?v.toLocaleString(undefined,{maximumFractionDigits:n}):String(v));
+const el=id=>document.getElementById(id);
+function td(v){const x=document.createElement("td");x.textContent=v;return x;}
+el("run").addEventListener("click",async()=>{
+  const btn=el("run");btn.disabled=true;el("status").className="muted";el("status").textContent="Fetching real GC=F data and running isolated backtest…";
+  el("results").hidden=true;
+  try{
+    const res=await fetch("/api/xauusd-sdb/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({risk_pct:Number(el("risk").value),spread_points:Number(el("spread").value),slippage_points:Number(el("slippage").value)})});
+    const data=await res.json();if(!res.ok)throw new Error(data.error||"Request failed");
+    const m=data.metrics||{};el("metrics").replaceChildren();
+    [["Data bars",m.bars],["Trades",m.trades],["Win rate",m.win_rate_pct+"%"],["Net P/L",fmt(m.net_pnl)],["Return",m.return_pct+"%"],["Profit factor",m.profit_factor],["Max drawdown",m.max_drawdown_pct+"%"],["Final equity",fmt(m.final_equity)]].forEach(([k,v])=>{const card=document.createElement("div");card.className="metric";const label=document.createElement("div");label.className="muted";label.textContent=k;const val=document.createElement("div");val.className="v";val.textContent=fmt(v);card.append(label,val);el("metrics").append(card);});
+    el("disclaimer").textContent=(m.data_source||"")+". Data: "+m.data_start+" to "+m.data_end+". "+(data.disclaimer||"");
+    const sig=el("signals");sig.replaceChildren();(data.signals||[]).slice(-100).reverse().forEach(s=>{const tr=document.createElement("tr");[s.time,s.signal===1?"LONG":"SHORT",s.setup,fmt(s.stop),fmt(s.sd1),fmt(s.sd2),fmt(s.sd25),fmt(s.sd4)].forEach(v=>tr.append(td(v)));sig.append(tr);});
+    const trades=el("trades");trades.replaceChildren();(data.trades||[]).slice(-200).reverse().forEach(t=>{const tr=document.createElement("tr");[t.entry_time,t.exit_time,t.side===1?"LONG":"SHORT",fmt(t.entry),fmt(t.stop),(t.targets||[]).map(x=>fmt(x)).join(" / "),fmt(t.pnl),t.exit_reason].forEach(v=>tr.append(td(v)));trades.append(tr);});
+    el("results").hidden=false;el("status").className="good";el("status").textContent="Completed. Review data source and caveats before interpreting results.";
+  }catch(e){el("status").className="bad";el("status").textContent="SDB run failed safely: "+e.message;}
+  finally{btn.disabled=false;}
+});
+</script>
+</body>
+</html>
