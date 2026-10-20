@@ -57,7 +57,11 @@ def load_gold_data(period: str = "60d") -> pd.DataFrame:
                 )
             response.raise_for_status()
             payload = response.json()
-            records.extend(payload.get("bars", {}).get("GLD", []) or [])
+            bars_payload = payload.get("bars", [])
+            if isinstance(bars_payload, dict):
+                records.extend(bars_payload.get("GLD", []) or [])
+            elif isinstance(bars_payload, list):
+                records.extend(bars_payload)
             page_token = payload.get("next_page_token")
             if not page_token:
                 break
