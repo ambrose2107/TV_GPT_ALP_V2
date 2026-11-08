@@ -91,6 +91,22 @@ def test_deployed_dashboard_and_ai_crash_smoke():
           catch (error) { return {index, message: error.message, stack: error.stack}; }
         }).filter(Boolean)""")
         print("Inline JavaScript parse errors:", parse_errors)
+        if parse_errors:
+            inline_scripts = page.locator("script").all_text_contents()
+            cdp = context.new_cdp_session(page)
+            for script_index, script_text in enumerate(inline_scripts):
+                if not script_text.strip():
+                    continue
+                try:
+                    compiled = cdp.send("Runtime.compileScript", {
+                        "expression": script_text, "sourceURL": f"dashboard-inline-{script_index}.js",
+                        "persistScript": False
+                    })
+                    if compiled.get("exceptionDetails"):
+                        print("CDP JavaScript parse location:", compiled["exceptionDetails"])
+                except Exception as compile_error:
+                    print("CDP compile error:", str(compile_error))
+            cdp.detach()
         assert not parse_errors, "Inline JavaScript syntax errors: " + str(parse_errors)
         assert not page_errors, "Browser JavaScript error after opening Analytics: " + " | ".join(page_errors)
         page.locator("#pane-ana8").wait_for(state="visible")
