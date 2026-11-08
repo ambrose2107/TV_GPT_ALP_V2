@@ -965,8 +965,8 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
       <div class="card"><div class="lbl">Currently Invested (Cost)</div><div class="val" id="ah-invested">—</div></div>
       <div class="card"><div class="lbl">Unrealized P&amp;L</div><div class="val" id="ah-unrealized">—</div></div>
       <div class="card"><div class="lbl">Realized P&amp;L (FIFO)</div><div class="val" id="ah-realized">—</div></div>
-      <div class="card"><div class="lbl">Lifetime Buys</div><div class="val" id="ah-buys">—</div></div>
-      <div class="card"><div class="lbl">Lifetime Sells</div><div class="val" id="ah-sells">—</div></div>
+      <div class="card"><div class="lbl">Buy Value (Range)</div><div class="val" id="ah-buys">—</div></div>
+      <div class="card"><div class="lbl">Sell Value (Range)</div><div class="val" id="ah-sells">—</div></div>
       <div class="card"><div class="lbl">Gross Dividends</div><div class="val" id="ah-dividends">—</div></div>
       <div class="card"><div class="lbl">Dividend Withholding</div><div class="val" id="ah-div-tax">—</div></div>
       <div class="card"><div class="lbl">All Tax Withheld</div><div class="val" id="ah-tax">—</div></div>
@@ -5531,7 +5531,7 @@ async function loadAccountHistory(force=false){
 }
 function renderAccountHistory(data){
   const s=data.summary||{},set=(id,value,color)=>{const el=document.getElementById(id);if(el){el.textContent=value;if(color)el.style.color=color;}};
-  const signed=v=>(Number(v||0)>0?'+':'')+ahMoney(v);
+  const signed=v=>v==null?'—':(Number(v||0)>0?'+':'')+ahMoney(v);
   set('ah-equity',ahMoney(s.current_equity));set('ah-cash',ahMoney(s.cash));set('ah-invested',ahMoney(s.current_invested_cost_basis));
   set('ah-unrealized',signed(s.unrealized_pnl),Number(s.unrealized_pnl)>=0?'#3fb950':'#f85149');
   set('ah-realized',signed(s.realized_pnl_fifo),Number(s.realized_pnl_fifo)>=0?'#3fb950':'#f85149');
@@ -5542,7 +5542,7 @@ function renderAccountHistory(data){
   const status=document.getElementById('ah-status');
   if(status)status.textContent=(data.source||'Alpaca')+' · '+(s.activity_count||0)+' activities · '+(data.pages_loaded||0)+' page(s) · '+(data.account_mode||'account');
   const foot=document.getElementById('ah-footnote');
-  if(foot)foot.textContent=(data.has_more?'⚠️ Showing the most recent 1,000 activities; narrow the date range to inspect older transactions. ':'')+(data.notes||[]).join(' · ');
+  if(foot)foot.textContent=(data.has_more?'⚠️ Showing up to the most recent 1,000 activities; narrow the date range to inspect older transactions. ':'')+(data.notes||[]).join(' · ');
   renderAccountHistoryTable();
 }
 function renderAccountHistoryTable(){

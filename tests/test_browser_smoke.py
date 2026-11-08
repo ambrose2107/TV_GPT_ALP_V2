@@ -63,6 +63,16 @@ def test_deployed_dashboard_and_ai_crash_smoke():
         page.locator("#main-tabs").wait_for(state="visible")
         assert page.locator("#pane-bt").count() == 1, "Backtest pane is missing."
 
+        # Confirm the new Analytics account-history view is present and navigable.
+        analytics_tab = page.locator('#main-tabs .tab[onclick*="switchTab(7,\\'ana8\\')"]')
+        assert analytics_tab.count() == 1, "The Analytics navigation tab is missing."
+        analytics_tab.click()
+        page.locator("#pane-ana8").wait_for(state="visible")
+        page.locator("#avbtn-history").wait_for(state="attached")
+        page.locator("#avbtn-history").click()
+        page.locator("#av-history").wait_for(state="visible")
+        assert page.locator("#ah-tbody").count() == 1, "Account transaction ledger table is missing."
+
         # Open Backtest and keep the AI Crash replay manual; do not trigger heavy replay.
         # Target the actual Backtest tab by its handler instead of fuzzy text matching.
         # Assert both the active-tab state and pane visibility so a click/UI regression

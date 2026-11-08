@@ -154,6 +154,9 @@ def account_history():
             page_token=next_token
             if page==MAX_PAGES-1: has_more=True
         summary,rows=build_history_summary(activities,positions,account)
+        # A current equity snapshot cannot be compared to a partial-period cash-flow sum.
+        if date_from or date_to or has_more:
+            summary["equity_less_net_cash_flows"] = None
         return jsonify({
             "source":"Alpaca account activities","account_mode":Config.ALPACA_MODE,
             "summary":summary,"activities":rows,"has_more":has_more,
@@ -161,7 +164,7 @@ def account_history():
             "date_from":date_from or None,"date_to":date_to or None,
             "notes":[
                 "Current invested capital is the cost basis of positions still open.",
-                "Lifetime buys/sells are gross executed trade values and can count repeated turnover.",
+                "Buy/sell totals cover the selected date range and count gross executed trade value, including repeated turnover.",
                 "Realised P&L is a long-only FIFO estimate from available fills; unmatched sells are excluded.",
                 "Equity less net cash flows is an estimate and can be affected by securities transfers or incomplete account history.",
                 "Broker activity records are not a tax statement; confirm tax treatment with official broker documents."
