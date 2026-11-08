@@ -600,6 +600,22 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
 <!-- ── ANALYTICS TAB v9 — Institutional Grade ──────────────────────────── -->
 <div class="pane" id="pane-ana8">
 
+  <!-- Analytics view navigation — kept above the chart so it remains reachable -->
+  <div class="sec" id="analytics-view-controls" style="margin-bottom:14px;position:relative;z-index:10">
+    <div class="sec-hdr">
+      <h2>📊 Live Portfolio Analytics — Open Positions</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-b btn-s" onclick="loadPortfolioAnalytics(true)">🔄 Refresh</button>
+        <span id="an-source-badge" style="font-size:10px;color:#8b949e"></span>
+        <span id="an-spinner" style="display:none;font-size:11px;color:#58a6ff">⏳ Loading…</span>
+        <button class="btn btn-n btn-s" onclick="switchAnalyticsView('portfolio')" id="avbtn-portfolio" style="opacity:1">Live Positions</button>
+        <button class="btn btn-n btn-s" onclick="switchAnalyticsView('closed')" id="avbtn-closed">Closed Orders</button>
+        <button class="btn btn-n btn-s" onclick="switchAnalyticsView('history')" id="avbtn-history">Account History</button>
+      </div>
+    </div>
+  </div>
+
+
 <div class="sec" id="key-levels-section" style="margin-bottom:14px">
   <div class="sec-hdr">
     <h2>🧭 Key Support, Resistance &amp; Liquidity Swings</h2>
@@ -654,7 +670,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
       </table>
     </div>
   </div>
-  <div class="chart-wrap" style="height:360px;margin:4px 0 14px;touch-action:none;position:relative">
+  <div class="chart-wrap" style="height:360px;margin:4px 0 14px;touch-action:none;position:relative;overflow:hidden;isolation:isolate">
     <canvas id="keyLevelChart" role="img" aria-label="Price history with confirmed support and resistance levels"></canvas>
     <button class="btn btn-n btn-s" type="button" onclick="autoRescaleKeyLevelChart()" title="Auto scale price axis" aria-label="Auto scale price axis" style="position:absolute;right:5px;bottom:3px;z-index:5;min-width:25px;padding:3px 7px;border:1px solid #8b949e;background:#161b22;font-weight:700">A</button>
   </div>
@@ -668,20 +684,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
 </div>
 
 
-  <!-- Header Controls -->
-  <div class="sec" style="margin-bottom:14px">
-    <div class="sec-hdr">
-      <h2>📊 Live Portfolio Analytics — Open Positions</h2>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <button class="btn btn-b btn-s" onclick="loadPortfolioAnalytics(true)">🔄 Refresh</button>
-        <span id="an-source-badge" style="font-size:10px;color:#8b949e"></span>
-        <span id="an-spinner" style="display:none;font-size:11px;color:#58a6ff">⏳ Loading…</span>
-        <button class="btn btn-n btn-s" onclick="switchAnalyticsView('portfolio')" id="avbtn-portfolio" style="opacity:1">Live Positions</button>
-        <button class="btn btn-n btn-s" onclick="switchAnalyticsView('closed')" id="avbtn-closed">Closed Orders</button>
-        <button class="btn btn-n btn-s" onclick="switchAnalyticsView('history')" id="avbtn-history">Account History</button>
-      </div>
-    </div>
-  </div>
+
 
   <!-- AI Analysis + Kronos Prediction -->
   <div class="sec" style="margin-bottom:14px">
