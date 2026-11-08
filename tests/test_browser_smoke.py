@@ -93,7 +93,10 @@ def test_deployed_dashboard_and_ai_crash_smoke():
         print("Inline JavaScript parse errors:", parse_errors)
         if parse_errors:
             inline_scripts = page.locator("script").all_text_contents()
+            script_inventory = page.evaluate("""() => Array.from(document.scripts).map((script, index) => ({index, src: script.src, length: script.textContent.length, preview: script.textContent.slice(0, 100)}))""")
+            print("Browser script inventory:", script_inventory)
             cdp = context.new_cdp_session(page)
+            cdp.send("Runtime.enable")
             for script_index, script_text in enumerate(inline_scripts):
                 if not script_text.strip():
                     continue
