@@ -5506,7 +5506,7 @@ async function loadKeyLevels() {
 
 /* ── Alpaca account transaction history ─────────────────────────────── */
 let accountHistoryLoaded=false, accountHistoryData=null;
-const ahMoney=v=>'
+const ahMoney=v=>Number(v||0).toFixed(2);
 function accountHistoryRange(range){
   const now=new Date(),to=new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,10);
   let from='';
