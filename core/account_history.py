@@ -139,7 +139,7 @@ def account_history():
         pr=requests.get(base+"/v2/positions",headers=headers,timeout=8); pr.raise_for_status(); positions=pr.json()
         activities=[]; page_token=None; has_more=False
         for page in range(MAX_PAGES):
-            params={"activity_types":"FILL,TRANS,MISC","page_size":PAGE_SIZE,"direction":"desc"}
+            params={"activity_types":"FILL,TRANS,MISC,DIV,DIVCGL,DIVCGS,DIVNRA,DIVROC,DIVTXEX,DIVFT,DIVTW,DIVPWH","page_size":PAGE_SIZE,"direction":"desc"}
             if date_from: params["after"]=date_from+"T00:00:00Z"
             if date_to: params["until"]=date_to+"T23:59:59Z"
             if page_token: params["page_token"]=page_token
