@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
-      PLAYWRIGHT_TEST_BASE_URL: ${{ inputs.base_url || vars.PLAYWRIGHT_TEST_BASE_URL || 'https://tv-gpt-alp-v2-gpt.onrender.com' }}
+      PLAYWRIGHT_TEST_BASE_URL: ${{ inputs.base_url || vars.PLAYWRIGHT_TEST_BASE_URL || 'https://tv-gpt-alp-v2-gpt3.onrender.com' }}
       PLAYWRIGHT_DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
     steps:
       - name: Check out repository
@@ -32,11 +32,11 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install test-only dependencies
-        run: python -m pip install --disable-pip-version-check pytest playwright numpy pandas requests yfinance
+        run: python -m pip install --disable-pip-version-check pytest playwright numpy pandas requests yfinance flask
       - name: Install Chromium
         run: python -m playwright install --with-deps chromium
       - name: Compile changed Python modules
-        run: python -m py_compile core/market_data.py core/account_history.py tests/test_account_history.py research/ai_crash_warning.py tests/test_ai_crash_baseline.py tests/test_ai_crash_warning_model.py
+        run: python -m py_compile app.py core/market_data.py core/account_history.py tests/test_account_history.py research/ai_crash_warning.py tests/test_ai_crash_baseline.py tests/test_ai_crash_warning_model.py
       - name: Validate Alpaca account-history calculations
         run: python -m pytest -q tests/test_account_history.py
       - name: Validate crash-model scoring and missing-data handling

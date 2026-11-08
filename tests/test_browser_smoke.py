@@ -15,7 +15,7 @@ from playwright.sync_api import sync_playwright
 
 BASE_URL = os.getenv(
     "PLAYWRIGHT_TEST_BASE_URL",
-    "https://tv-gpt-alp-v2-gpt.onrender.com",
+    "https://tv-gpt-alp-v2-gpt3.onrender.com",
 ).rstrip("/")
 PASSWORD = os.getenv("PLAYWRIGHT_DASHBOARD_PASSWORD", "")
 ARTIFACTS = Path("test-results")
