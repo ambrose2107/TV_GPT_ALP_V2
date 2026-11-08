@@ -116,6 +116,8 @@ def run_backtest(
     o, h, l, c = d["Open"].values, d["High"].values, d["Low"].values, d["Close"].values
     atr_vals = d["atr"].values
     signals = d["signal"].values
+    custom_stops = d["custom_stop_price"].to_numpy(dtype=float) if "custom_stop_price" in d.columns else None
+    custom_targets = d["custom_target_price"].to_numpy(dtype=float) if "custom_target_price" in d.columns else None
     idx = d.index
 
     equity = initial_equity
@@ -175,17 +177,36 @@ def run_backtest(
         if position is None and signals[i - 1] != 0:
             side = int(signals[i - 1])
             entry_price = o[i] + (spread_points / 2 + slippage_points) * side
-            stop_dist = atr_mult_sl * atr_vals[i - 1]
-            if stop_dist > 0 and not np.isnan(stop_dist):
-                sl = entry_price - side * stop_dist
-                tp = entry_price + side * stop_dist * r_multiple
-                risk_amount = equity * (risk_pct / 100.0)
-                size = risk_amount / stop_dist
-                position = {
-                    "side": side, "entry_price": entry_price, "sl": sl, "tp": tp,
-                    "size": size, "entry_time": idx[i], "risk_amount": risk_amount,
-                    "r_dist": stop_dist, "breakeven_done": False,
-                }
+            risk_amount = equity * (risk_pct / 100.0)
+
+            # Strategies may provide frozen absolute stop/target levels on the
+            # signal bar. Fills remain at the next bar open, per engine policy.
+            # Existing strategies retain their original ATR-based exits.
+            custom_sl = custom_stops[i - 1] if custom_stops is not None else np.nan
+            custom_tp = custom_targets[i - 1] if custom_targets is not None else np.nan
+            if np.isfinite(custom_sl) and np.isfinite(custom_tp):
+                sl, tp = float(custom_sl), float(custom_tp)
+                stop_dist = side * (entry_price - sl)
+                target_dist = side * (tp - entry_price)
+                min_risk = np.finfo(float).eps * max(abs(entry_price), 1.0)
+                if stop_dist > min_risk and target_dist > 0:
+                    size = risk_amount / stop_dist
+                    position = {
+                        "side": side, "entry_price": entry_price, "sl": sl, "tp": tp,
+                        "size": size, "entry_time": idx[i], "risk_amount": risk_amount,
+                        "r_dist": stop_dist, "breakeven_done": False,
+                    }
+            else:
+                stop_dist = atr_mult_sl * atr_vals[i - 1]
+                if stop_dist > 0 and not np.isnan(stop_dist):
+                    sl = entry_price - side * stop_dist
+                    tp = entry_price + side * stop_dist * r_multiple
+                    size = risk_amount / stop_dist
+                    position = {
+                        "side": side, "entry_price": entry_price, "sl": sl, "tp": tp,
+                        "size": size, "entry_time": idx[i], "risk_amount": risk_amount,
+                        "r_dist": stop_dist, "breakeven_done": False,
+                    }
 
         equity_curve_t.append(str(idx[i]))
         equity_curve_v.append(round(equity, 2))
