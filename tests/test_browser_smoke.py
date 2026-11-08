@@ -64,7 +64,7 @@ def test_deployed_dashboard_and_ai_crash_smoke():
         assert page.locator("#pane-bt").count() == 1, "Backtest pane is missing."
 
         # Confirm the new Analytics account-history view is present and navigable.
-        analytics_tab = page.locator("#main-tabs .tab[onclick*=\\"switchTab(7,'ana8')\\"]")
+        analytics_tab = page.locator("#main-tabs .tab").filter(has_text="Analytics")
         assert analytics_tab.count() == 1, "The Analytics navigation tab is missing."
         analytics_tab.click()
         page.locator("#pane-ana8").wait_for(state="visible")
