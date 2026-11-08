@@ -85,6 +85,13 @@ def test_deployed_dashboard_and_ai_crash_smoke():
         assert analytics_tab.count() == 1, "The Analytics navigation tab is missing."
         analytics_tab.click()
         page.wait_for_timeout(1000)
+        parse_errors = page.evaluate("""() => Array.from(document.scripts).map((script, index) => {
+          if (script.src || !script.textContent.trim()) return null;
+          try { new Function(script.textContent); return null; }
+          catch (error) { return {index, message: error.message, stack: error.stack}; }
+        }).filter(Boolean)""")
+        print("Inline JavaScript parse errors:", parse_errors)
+        assert not parse_errors, "Inline JavaScript syntax errors: " + str(parse_errors)
         assert not page_errors, "Browser JavaScript error after opening Analytics: " + " | ".join(page_errors)
         page.locator("#pane-ana8").wait_for(state="visible")
         page.locator("#avbtn-history").wait_for(state="attached")
