@@ -37,3 +37,21 @@ def test_analytics_template_contains_account_history_view():
     template = Path("dashboard/templates/dashboard.html").read_text(encoding="utf-8")
     for marker in ("avbtn-history", "av-history", "ah-equity", "ah-dividends", "ah-deposits", "ah-withdrawals", "ah-tbody", "loadAccountHistory"):
         assert marker in template, f"Analytics account-history UI is missing: {marker}"
+
+
+def test_alpaca_until_timestamp_is_never_in_the_future():
+    from datetime import datetime, timezone
+    from core.account_history import _alpaca_until
+    future = _alpaca_until("2099-12-31")
+    parsed = datetime.fromisoformat(future.replace("Z", "+00:00"))
+    assert parsed <= datetime.now(timezone.utc)
+    past = _alpaca_until("2020-01-01")
+    assert past == "2020-01-01T23:59:59Z"
+
+
+def test_account_history_template_has_no_duplicate_html_or_trailing_javascript():
+    from pathlib import Path
+    template = Path("dashboard/templates/dashboard.html").read_text(encoding="utf-8")
+    assert template.lower().count("</html>") == 1
+    assert not template.split("</html>", 1)[1].strip()
+    assert template.count("function accountHistoryRange(range)") == 1
