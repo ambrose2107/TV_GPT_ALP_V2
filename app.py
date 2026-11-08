@@ -9,6 +9,7 @@ import os
 from flask import Flask
 
 from core.analytics_routes import analytics_bp
+from core.account_history import account_history_bp
 from core.database import init_db
 from core.logger import get_logger
 from core.scheduler import init_scheduler
@@ -52,6 +53,7 @@ def create_app():
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(mirrorfish_bp)
     app.register_blueprint(analytics_bp)
+    app.register_blueprint(account_history_bp)
     app.register_blueprint(backtest_bp)
     app.register_blueprint(ai_crash_bp)
     app.register_blueprint(portfolio_bp)

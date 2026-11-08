@@ -36,7 +36,9 @@ jobs:
       - name: Install Chromium
         run: python -m playwright install --with-deps chromium
       - name: Compile changed Python modules
-        run: python -m py_compile core/market_data.py research/ai_crash_warning.py tests/test_ai_crash_baseline.py tests/test_ai_crash_warning_model.py
+        run: python -m py_compile core/market_data.py core/account_history.py tests/test_account_history.py research/ai_crash_warning.py tests/test_ai_crash_baseline.py tests/test_ai_crash_warning_model.py
+      - name: Validate Alpaca account-history calculations
+        run: python -m pytest -q tests/test_account_history.py
       - name: Validate crash-model scoring and missing-data handling
         run: python -m pytest -q tests/test_ai_crash_warning_model.py
       - name: Validate checked-in historical baseline
