@@ -1,7 +1,7 @@
 """Alpaca account transaction history for the Analytics dashboard."""
 import os
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, time, timezone
 import requests
 from flask import Blueprint, jsonify, request, session
 from core.config import Config
@@ -31,6 +31,15 @@ def _number(value):
         return result if result == result and abs(result) != float("inf") else 0.0
     except (TypeError, ValueError):
         return 0.0
+
+def _alpaca_until(date_value):
+    """Return an inclusive UTC end timestamp, never later than the current UTC time."""
+    if not date_value:
+        return None
+    selected = datetime.strptime(date_value, "%Y-%m-%d").date()
+    end_of_day = datetime.combine(selected, time(23, 59, 59), tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    return min(end_of_day, now).isoformat().replace("+00:00", "Z")
 
 def _headers():
     key = Config.ALPACA_API_KEY or os.environ.get("APCA_API_KEY_ID", "") or os.environ.get("ALPACA_KEY", "")
@@ -141,7 +150,7 @@ def account_history():
         for page in range(MAX_PAGES):
             params={"activity_types":"FILL,TRANS,MISC,DIV,DIVCGL,DIVCGS,DIVNRA,DIVROC,DIVTXEX,DIVFT,DIVTW,DIVPWH","page_size":PAGE_SIZE,"direction":"desc"}
             if date_from: params["after"]=date_from+"T00:00:00Z"
-            if date_to: params["until"]=date_to+"T23:59:59Z"
+            if date_to: params["until"]=_alpaca_until(date_to)
             if page_token: params["page_token"]=page_token
             response=requests.get(base+"/v2/account/activities",headers=headers,params=params,timeout=8)
             response.raise_for_status(); batch=response.json()
@@ -170,6 +179,11 @@ def account_history():
                 "Broker activity records are not a tax statement; confirm tax treatment with official broker documents."
             ]
         })
+    except requests.HTTPError as exc:
+        response = getattr(exc, "response", None)
+        broker_detail = (getattr(response, "text", "") or "")[:240]
+        logger.warning("Alpaca account history request failed: %s; response=%s", exc, broker_detail)
+        return jsonify({"error":"Alpaca rejected the account-history request.","detail":broker_detail or str(exc)[:240]}),502
     except requests.RequestException as exc:
         logger.warning("Alpaca account history request failed: %s",exc)
         return jsonify({"error":"Could not retrieve Alpaca account history.","detail":str(exc)[:240]}),502
