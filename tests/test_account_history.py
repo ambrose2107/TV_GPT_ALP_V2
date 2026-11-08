@@ -55,3 +55,11 @@ def test_account_history_template_has_no_duplicate_html_or_trailing_javascript()
     assert template.lower().count("</html>") == 1
     assert not template.split("</html>", 1)[1].strip()
     assert template.count("function accountHistoryRange(range)") == 1
+
+
+def test_alpaca_activity_request_excludes_unsupported_divpwh_type():
+    from pathlib import Path
+    source = Path("core/account_history.py").read_text(encoding="utf-8")
+    request_line = next(line for line in source.splitlines() if '"activity_types":' in line)
+    assert "DIVPWH" not in request_line
+    assert "DIVNRA" in request_line and "DIVFT" in request_line and "DIVTW" in request_line
