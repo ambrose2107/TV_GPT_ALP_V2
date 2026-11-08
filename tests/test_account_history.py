@@ -30,3 +30,10 @@ def test_orphan_sell_does_not_create_fictitious_profit():
     summary,_=build_history_summary([{"activity_type":"FILL","symbol":"MSFT","side":"sell","qty":"3","price":"100","transaction_time":"2026-01-03T10:00:00Z"}],[],{"equity":"1000"})
     assert summary["realized_pnl_fifo"]==0.0
     assert summary["realized_fifo_unmatched_sell_qty"]==3.0
+
+
+def test_analytics_template_contains_account_history_view():
+    from pathlib import Path
+    template = Path("dashboard/templates/dashboard.html").read_text(encoding="utf-8")
+    for marker in ("avbtn-history", "av-history", "ah-equity", "ah-dividends", "ah-deposits", "ah-withdrawals", "ah-tbody", "loadAccountHistory"):
+        assert marker in template, f"Analytics account-history UI is missing: {marker}"
