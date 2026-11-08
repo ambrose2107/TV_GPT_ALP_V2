@@ -83,6 +83,8 @@ def test_deployed_dashboard_and_ai_crash_smoke():
         analytics_tab = page.locator("#main-tabs .tab").filter(has_text="Analytics")
         assert analytics_tab.count() == 1, "The Analytics navigation tab is missing."
         analytics_tab.click()
+        page.wait_for_timeout(1000)
+        assert not page_errors, "Browser JavaScript error after opening Analytics: " + " | ".join(page_errors)
         page.locator("#pane-ana8").wait_for(state="visible")
         page.locator("#avbtn-history").wait_for(state="attached")
         page.locator("#avbtn-history").click()
