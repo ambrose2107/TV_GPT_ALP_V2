@@ -797,8 +797,8 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
     <div class="sec" style="margin-bottom:14px">
       <div class="sec-hdr"><h2>🧪 Strategy Backtester — validate before trusting a signal</h2></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 14px">
-        <input type="text" id="bt-sym" placeholder="Symbol e.g. AAPL" style="max-width:130px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:7px 10px;font-size:13px;text-transform:uppercase">
-        <select id="bt-period" style="background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:7px 10px;font-size:13px">
+        <input type="text" id="bt-legacy-sym" placeholder="Symbol e.g. AAPL" style="max-width:130px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:7px 10px;font-size:13px;text-transform:uppercase">
+        <select id="bt-legacy-period" style="background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:7px 10px;font-size:13px">
           <option value="1y">1 year</option>
           <option value="3y" selected>3 years</option>
           <option value="5y">5 years</option>
@@ -1383,6 +1383,26 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
     <div class="row" id="bt-strategy-checks" style="margin-bottom:6px">
       <span class="sub" style="color:#8b949e;font-size:11px">Loading strategies…</span>
     </div>
+
+    <div class="sec" id="agpro-123-settings" style="margin:10px 0;padding:12px;border:1px solid #30363d;background:#0d1117">
+      <div style="font-weight:600;margin-bottom:8px;color:#e6edf3">🔻 AGPro 1-2-3 Reversal — Strategy Parameters</div>
+      <div class="sub" style="margin-bottom:10px">These settings apply to whichever AGPro Breakout, Retest or Both variants you select. Signals use confirmed pivots; entries are evaluated at the next bar open by the backtest engine.</div>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <label class="sub">Pivot left <input id="agpro-left" type="number" min="1" max="15" step="1" value="2" style="width:70px"></label>
+        <label class="sub">Pivot right <input id="agpro-right" type="number" min="1" max="15" step="1" value="2" style="width:70px"></label>
+        <label class="sub">ATR length <input id="agpro-atr" type="number" min="2" max="100" step="1" value="14" style="width:75px"></label>
+        <label class="sub">Min leg (ATR) <input id="agpro-leg" type="number" min="0.1" max="10" step="0.05" value="0.65" style="width:85px"></label>
+        <label class="sub">Min retrace <input id="agpro-min-ret" type="number" min="0.05" max="0.9" step="0.05" value="0.15" style="width:80px"></label>
+        <label class="sub">Max retrace <input id="agpro-max-ret" type="number" min="0.1" max="0.98" step="0.01" value="0.92" style="width:80px"></label>
+        <label class="sub">Structure max bars <input id="agpro-age" type="number" min="20" max="500" step="5" value="160" style="width:90px"></label>
+        <label class="sub">Break buffer ATR <input id="agpro-break" type="number" min="0" max="2" step="0.01" value="0.05" style="width:85px"></label>
+        <label class="sub">Retest pocket ATR <input id="agpro-pocket" type="number" min="0.05" max="3" step="0.05" value="0.30" style="width:85px"></label>
+        <label class="sub">Retest window <input id="agpro-window" type="number" min="5" max="200" step="1" value="40" style="width:80px"></label>
+        <label class="sub">Stop buffer ATR <input id="agpro-stop" type="number" min="0" max="3" step="0.05" value="0.15" style="width:85px"></label>
+        <label class="sub">Target R:R <input id="agpro-rr" type="number" min="0.25" max="10" step="0.25" value="2" style="width:75px"></label>
+      </div>
+    </div>
+
     <div class="row">
       <button class="btn btn-b" id="bt-run-btn" onclick="runBacktestCompare()">▶ Run Backtest</button>
       <span id="bt-status" style="font-size:11px;color:#8b949e"></span>
@@ -3043,8 +3063,8 @@ function _pollSignalScan() {
   }, 5000);
 }
 async function runBacktest() {
-  const sym = ($('bt-sym').value || '').trim().toUpperCase();
-  const period = $('bt-period').value;
+  const sym = ($('bt-legacy-sym').value || '').trim().toUpperCase();
+  const period = $('bt-legacy-period').value;
   const box = $('bt-result-box');
   if(!sym) { alert('Enter a symbol first, e.g. AAPL'); return; }
   box.innerHTML = '⏳ Running backtest…';
@@ -5012,6 +5032,27 @@ async function runBacktestCompare() {
   const initial_equity = parseFloat($('bt-equity').value) || 10000;
   const risk_pct = parseFloat($('bt-risk').value) || 0.5;
   const strategy_ids = Array.from(document.querySelectorAll('.bt-strat-cb:checked')).map(cb => cb.value);
+  const agproParams = {
+    left_bars: Number($('agpro-left').value),
+    right_bars: Number($('agpro-right').value),
+    atr_len: Number($('agpro-atr').value),
+    min_leg_atr: Number($('agpro-leg').value),
+    min_retrace: Number($('agpro-min-ret').value),
+    max_retrace: Number($('agpro-max-ret').value),
+    max_structure_age: Number($('agpro-age').value),
+    break_buffer_atr: Number($('agpro-break').value),
+    pocket_width_atr: Number($('agpro-pocket').value),
+    retest_window: Number($('agpro-window').value),
+    stop_buffer_atr: Number($('agpro-stop').value),
+    reward_risk: Number($('agpro-rr').value),
+  };
+  if (agproParams.min_retrace >= agproParams.max_retrace) {
+    alert('AGPro minimum retrace must be below maximum retrace.'); return;
+  }
+  const params_by_strategy = {};
+  strategy_ids.filter(id => id.startsWith('agpro_123_')).forEach(id => {
+    params_by_strategy[id] = agproParams;
+  });
 
   if(!symbol) { alert('Enter a symbol first (e.g. GC=F for gold futures).'); return; }
   if(!strategy_ids.length) { alert('Select at least one strategy.'); return; }
@@ -5024,7 +5065,7 @@ async function runBacktestCompare() {
 
   try {
     const r = await apiPost('/api/backtest/compare', {
-      symbol, interval, period, strategy_ids, initial_equity, risk_pct,
+      symbol, interval, period, strategy_ids, initial_equity, risk_pct, params_by_strategy,
     });
     if(r.error) throw new Error(r.error);
 
