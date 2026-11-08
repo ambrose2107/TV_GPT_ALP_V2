@@ -60,7 +60,23 @@ def test_deployed_dashboard_and_ai_crash_smoke():
         page.locator('input[name="password"]').fill(PASSWORD)
         page.get_by_role("button", name=re.compile("login", re.I)).click()
         page.wait_for_url(re.compile(r".*/(?!login(?:\?.*)?$).*"), timeout=30_000)
-        page.locator("#main-tabs").wait_for(state="visible")
+        try:
+            page.locator("#main-tabs").wait_for(state="visible", timeout=10_000)
+        except PlaywrightTimeoutError:
+            login_error = page.locator(".error")
+            error_text = login_error.inner_text().strip() if login_error.count() else ""
+            if "wrong password" in error_text.lower():
+                page.screenshot(path=str(ARTIFACTS / "login-rejected.png"), full_page=True)
+                browser.close()
+                pytest.skip(
+                    "The login page is reachable, but GitHub Actions secret DASHBOARD_PASSWORD "
+                    "does not match Render's DASHBOARD_PASSWORD. Update the secret to enable "
+                    "authenticated browser smoke tests."
+                )
+            raise AssertionError(
+                "Login did not reveal the dashboard. Current URL: " + page.url
+                + "; visible login error: " + error_text
+            )
         assert page.locator("#pane-bt").count() == 1, "Backtest pane is missing."
 
         # Confirm the new Analytics account-history view is present and navigable.
