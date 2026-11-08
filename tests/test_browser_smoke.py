@@ -93,6 +93,9 @@ def test_deployed_dashboard_and_ai_crash_smoke():
         print("Inline JavaScript parse errors:", parse_errors)
         if parse_errors:
             inline_scripts = page.locator("script").all_text_contents()
+            for parse_error in parse_errors:
+                script_lines = inline_scripts[parse_error["index"]].splitlines()
+                print("Live script source around parser line:", script_lines[3992:4001])
             script_inventory = page.evaluate("""() => Array.from(document.scripts).map((script, index) => ({index, src: script.src, length: script.textContent.length, preview: script.textContent.slice(0, 100)}))""")
             print("Browser script inventory:", script_inventory)
             cdp = context.new_cdp_session(page)
