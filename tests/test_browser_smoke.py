@@ -35,7 +35,8 @@ def test_deployed_dashboard_and_ai_crash_smoke():
         )
         page = context.new_page()
         page.set_default_timeout(15_000)
-        page.on("pageerror", lambda error: page_errors.append(str(error)))
+        page.on("pageerror", lambda error: page_errors.append(str(error) + " | " + str(getattr(error, "stack", ""))))
+        page.on("console", lambda msg: page_errors.append(msg.text + " | location=" + str(msg.location)) if msg.type == "error" else None
 
         # Render's free service may sleep. Give the cold start time to finish.
         response = page.goto(
