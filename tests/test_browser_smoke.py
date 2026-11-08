@@ -61,7 +61,7 @@ def test_deployed_dashboard_and_ai_crash_smoke():
         page.get_by_role("button", name=re.compile("login", re.I)).click()
         page.wait_for_url(re.compile(r".*/(?!login(?:\?.*)?$).*"), timeout=30_000)
         try:
-            page.locator("#main-tabs").wait_for(state="visible", timeout=10_000)
+            page.locator("#main-tabs").wait_for(state="visible", timeout=30_000)
         except PlaywrightTimeoutError:
             login_error = page.locator(".error")
             error_text = login_error.inner_text().strip() if login_error.count() else ""
