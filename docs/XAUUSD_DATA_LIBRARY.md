@@ -24,22 +24,22 @@ The importer uses pandas, already present in requirements.txt. It accepts CSV, T
 
 Example commands:
 
-    python scripts/xauusd_data_pipeline.py import ./downloads/xauusd_m1.csv --source dukascopy --source-timeframe M1 --source-timezone UTC
+    python scripts/xauusd_data_pipeline.py import ./downloads/xauusd_bid_m1.csv --source dukascopy --source-timeframe M1 --source-timezone UTC --price-side BID
 
-    python scripts/xauusd_data_pipeline.py validate
+    python scripts/xauusd_data_pipeline.py validate --price-side BID
 
 For ForexSB or HistData, change the source name. If timestamps are timezone-naive, supply the timezone selected during export. Never guess the timezone. If a provider offers BID and ASK files, import and retain them separately; never mix price sides silently.
 
 ## Dataset layout
 
-Normalized files are stored as monthly gzip-compressed CSV partitions:
+Normalized files are stored as monthly gzip-compressed CSV partitions. BID, ASK and MID are kept in separate subfolders so importing a second price side cannot overwrite the first:
 
-    market_data/XAUUSD/
+    market_data/XAUUSD/BID/
       normalized/M1/YYYY/XAUUSD_M1_YYYY_MM.csv.gz
       normalized/M5/YYYY/XAUUSD_M5_YYYY_MM.csv.gz
-      normalized/M15/YYYY/XAUUSD_M15_YYYY_MM.csv.gz
       metadata/latest_import.json
       metadata/quality_report.json
+    market_data/XAUUSD/ASK/ (separate dataset when available)
 
 M1 data can be aggregated into M5/M15/M30/H1/H4/D1 using UTC clock boundaries. Coarser source bars are never expanded into fabricated M1 data. Missing bars are not forward-filled. Monthly partitions include SHA-256 checksums in the import manifest.
 
