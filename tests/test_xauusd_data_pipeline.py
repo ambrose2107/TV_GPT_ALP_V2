@@ -57,8 +57,6 @@ class PipelineTests(unittest.TestCase):
             report=validate_library(root); self.assertEqual(report["status"],"PASS")
             self.assertEqual(report["timeframes"][0]["bars"],5)
 
-if __name__=="__main__": unittest.main()
-
 
 class DukascopyDecoderTests(unittest.TestCase):
     def test_decode_bi5_m1_record(self):
@@ -85,3 +83,7 @@ class DukascopyDecoderTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "Malformed BI5"):
             decode_bi5(lzma.compress(b"bad", format=lzma.FORMAT_ALONE), date(2025, 1, 2))
+
+
+if __name__ == "__main__":
+    unittest.main()
