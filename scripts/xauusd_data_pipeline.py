@@ -19,7 +19,7 @@ def _read_csv_text(text):
     delimiter=";" if ";" in first else ","
     first_field=first.split(delimiter,1)[0].strip()
     # HistData Generic ASCII M1 is headerless: YYYYMMDD HHMMSS;O;H;L;C;V.
-    if re.fullmatch(r"\\d{8}\\s+\\d{6}", first_field) and len(first.split(delimiter)) >= 5:
+    if re.fullmatch(r"\d{8}\s+\d{6}", first_field) and len(first.split(delimiter)) >= 5:
         names=["time","open","high","low","close","volume"]
         return pd.read_csv(io.StringIO(text),sep=delimiter,header=None,names=names,engine="python")
     return pd.read_csv(io.StringIO(text),sep=None,engine="python")
