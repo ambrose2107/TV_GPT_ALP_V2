@@ -65,7 +65,7 @@ class DukascopyDecoderTests(unittest.TestCase):
         from datetime import date
         from scripts.download_dukascopy_xauusd import decode_bi5
 
-        record = struct.pack(">5If", 0, 2060100, 2060200, 2060000, 2060150, 3.5)
+        record = struct.pack(">5If", 0, 2060100, 2060150, 2060000, 2060200, 3.5)
         payload = lzma.compress(record, format=lzma.FORMAT_ALONE)
         out = decode_bi5(payload, date(2025, 1, 2))
         self.assertEqual(len(out), 1)
