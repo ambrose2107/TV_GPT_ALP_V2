@@ -50,3 +50,27 @@ Commit monthly compressed partitions only after checking the provider's terms fo
 ## Research caveats
 
 XAUUSD is an OTC market, not one consolidated exchange tape. Provider and broker prices can differ because of bid/ask side, spread, rollover, daylight-saving rules and trading sessions. Forex volume is usually tick volume, not centralized exchange volume. Backtests should record source, price side, timezone, timeframe, spread/slippage assumptions and dataset checksum. Compare overlapping periods from at least two sources before treating a strategy result as robust.
+
+
+## Automated free Dukascopy M1 acquisition
+
+A local downloader is available at `scripts/download_dukascopy_xauusd.py`. It fetches daily XAUUSD M1 BI5 candles over HTTPS, decodes the compressed records, imports monthly UTC partitions, keeps BID and ASK in separate directories, and runs the library validator.
+
+Examples:
+
+```bash
+# Start with a short historical range
+python scripts/download_dukascopy_xauusd.py --from 2025-01-02 --to 2025-01-10 --price-side BID
+
+# Full available history (large download; stable internet and disk required)
+python scripts/download_dukascopy_xauusd.py --from 2003-05-05 --price-side BID
+
+# Download the ASK side separately
+python scripts/download_dukascopy_xauusd.py --from 2003-05-05 --price-side ASK
+```
+
+The script skips missing daily files (normally weekends/holidays) but fails if any request returns a non-404 HTTP error or malformed data. It does not fabricate candles. A multi-decade first run may take hours; start with a short date range and inspect the output first.
+
+**Storage and rights:** downloaded data is written to local `market_data/XAUUSD` and excluded from Git. Dukascopy's official bulk export documents a Requester Pays S3 bucket; this downloader uses the public daily BI5 datafeed endpoint, whose availability and terms may change. Do not redistribute raw data publicly. This repository contains acquisition and normalization code only.
+
+The generated library is not yet wired into the live Render Replay route. It is currently a validated local research library. Connecting it to Replay requires a separate app integration and an agreed private storage location so the public repository does not expose provider data.
