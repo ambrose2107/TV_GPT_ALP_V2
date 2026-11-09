@@ -31,7 +31,7 @@ def _bars_payload(df):
         out.append({"time":pd.Timestamp(ts).isoformat(),
                     "open":float(row["Open"]),"high":float(row["High"]),
                     "low":float(row["Low"]),"close":float(row["Close"]),
-                    "volume":float(row.get("Volume",0) or 0)})
+                    "volume":(_safe_float(row.get("Volume",0)) or 0)})
     return out
 
 def _dataset_frame(raw):
