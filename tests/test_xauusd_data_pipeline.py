@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 import pandas as pd
-from scripts.xauusd_data_pipeline import normalize_frame, resample_ohlc, write_monthly, validate_library, import_files
+from scripts.xauusd_data_pipeline import read_file, normalize_frame, resample_ohlc, write_monthly, validate_library, import_files
 
 class PipelineTests(unittest.TestCase):
     def test_date_time_utc(self):
@@ -10,6 +10,20 @@ class PipelineTests(unittest.TestCase):
           "Open":[2650,2651],"High":[2652,2653],"Low":[2649,2650],"Close":[2651,2652],"Volume":[10,12]})
         out=normalize_frame(raw,"forexsb","UTC")
         self.assertEqual(len(out),2); self.assertEqual(str(out.index.tz),"UTC")
+    def test_histdata_headerless_ascii_m1(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/"DAT_ASCII_XAUUSD_M1_202401.csv"
+            path.write_text(
+                "20240102 000000;2060.10;2060.40;2059.90;2060.20;0\\n"
+                "20240102 000100;2060.20;2060.50;2060.00;2060.30;0\\n",
+                encoding="utf-8")
+            raw=read_file(path)
+            out=normalize_frame(raw,"histdata","Etc/GMT+5")
+            self.assertEqual(len(out),2)
+            self.assertAlmostEqual(out.iloc[0]["open"],2060.10)
+            self.assertEqual(str(out.index.tz),"UTC")
+            self.assertEqual(out.index[0].hour,5)
+
     def test_naive_requires_timezone(self):
         raw=pd.DataFrame({"time":["2025-01-01 00:00:00"],"open":[1],"high":[2],"low":[.5],"close":[1.5]})
         with self.assertRaisesRegex(ValueError,"source-timezone"): normalize_frame(raw,"generic")
