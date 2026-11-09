@@ -172,7 +172,7 @@ def replay_dukascopy_data():
         from scripts.download_dukascopy_xauusd import download_range
         from scripts.xauusd_data_pipeline import RULES, resample_ohlc
 
-        frames, missing = download_range(start, end, side, workers=4)
+        frames, missing = download_range(start, end, side, workers=2)
         if not frames:
             return jsonify({"error": "Dukascopy returned no candles for this date range."}), 404
         raw = pd.concat(frames, ignore_index=True).drop_duplicates("time", keep="last")
