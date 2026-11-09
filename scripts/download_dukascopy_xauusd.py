@@ -11,7 +11,9 @@ This script uses the public daily BI5 candle endpoint; availability can vary.
 from __future__ import annotations
 
 import argparse
+import calendar
 import concurrent.futures
+import json
 import lzma
 import logging
 import struct
@@ -153,25 +155,65 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     LOG.info("Downloading %s XAUUSD M1 candles: %s to %s UTC",
              args.price_side, args.start, args.end)
-    frames, missing = download_range(args.start, args.end, args.price_side, args.workers)
-    if not frames:
-        raise RuntimeError("No candle files were returned; no dataset was written")
+    total_bars = 0
+    missing_days = 0
+    first_utc = None
+    last_utc = None
+    outputs = {tf: [] for tf in ("M1", "M5", "M15", "M30", "H1", "H4", "D1")}
+    cursor = args.start.replace(day=1)
+    args.out.mkdir(parents=True, exist_ok=True)
+
+    # Process one calendar month at a time so a 20+ year download stays memory-bounded.
     with tempfile.TemporaryDirectory(prefix="optitrade_xauusd_") as tmp:
-        temp_files = []
-        for number, frame in enumerate(frames):
-            path = Path(tmp) / f"dukascopy_{number:05d}.csv"
-            frame.to_csv(path, index=False)
-            temp_files.append(path)
-        meta = import_files(
-            temp_files, "dukascopy", args.out, "UTC", "M1", args.price_side
-        )
+        while cursor <= args.end:
+            month_last = date(cursor.year, cursor.month, calendar.monthrange(cursor.year, cursor.month)[1])
+            month_start = max(args.start, cursor)
+            month_end = min(args.end, month_last)
+            LOG.info("Fetching %s through %s", month_start, month_end)
+            frames, missing = download_range(month_start, month_end, args.price_side, args.workers)
+            missing_days += missing
+            if frames:
+                frame = pd.concat(frames, ignore_index=True).sort_values("time")
+                frame = frame.drop_duplicates("time", keep="last")
+                source_file = Path(tmp) / f"dukascopy_{cursor.year:04d}_{cursor.month:02d}.csv"
+                frame.to_csv(source_file, index=False)
+                month_meta = import_files(
+                    [source_file], "dukascopy", args.out, "UTC", "M1", args.price_side
+                )
+                total_bars += month_meta["bars"]
+                first_utc = first_utc or month_meta["start_utc"]
+                last_utc = month_meta["end_utc"]
+                for tf, entries in month_meta["outputs"].items():
+                    outputs.setdefault(tf, []).extend(entries)
+            cursor = (cursor.replace(day=28) + timedelta(days=4)).replace(day=1)
+
+    if total_bars == 0:
+        raise RuntimeError("No candle files were returned; no dataset was written")
     root = args.out / args.price_side
+    metadata_dir = root / "metadata"
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+    manifest = {
+        "instrument": SYMBOL,
+        "source": "dukascopy",
+        "source_timeframe": "M1",
+        "canonical_timezone": "UTC",
+        "price_side": args.price_side,
+        "requested_start_utc": args.start.isoformat(),
+        "requested_end_utc": args.end.isoformat(),
+        "start_utc": first_utc,
+        "end_utc": last_utc,
+        "bars": total_bars,
+        "missing_or_empty_daily_files": missing_days,
+        "volume_semantics": "provider tick volume; not centralized exchange volume",
+        "outputs": outputs,
+    }
+    (metadata_dir / "latest_import.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     report = validate_library(root)
     if report["status"] != "PASS":
         raise RuntimeError(f"Post-import library validation failed: {report}")
     LOG.info(
         "PASS: %s bars, %s to %s UTC; %s empty/missing daily files; outputs: %s",
-        meta["bars"], meta["start_utc"], meta["end_utc"], missing, args.out
+        total_bars, first_utc, last_utc, missing_days, args.out
     )
     return 0
 
