@@ -268,6 +268,54 @@ def optimizer_snapshot():
     save_optimizer_snapshot(encoded)
     return jsonify({"saved": True, "saved_at": snapshot["saved_at"]})
 
+
+@bp.route("/api/xauusd-research-v2/agpro-123", methods=["POST"])
+def run_agpro_123_research():
+    """Run AGPro 1-2-3 on the Strategy Lab's Alpaca-first 5m data pipeline."""
+    if not session.get("logged_in"):
+        return jsonify({"error": "Unauthorized"}), 401
+    body = request.get_json(silent=True) or {}
+    symbol = str(body.get("symbol", "GLD")).strip().upper()
+    strategy_id = str(body.get("strategy_id", "agpro_123_both")).strip().lower()
+    allowed_ids = {"agpro_123_breakout", "agpro_123_retest", "agpro_123_both"}
+    if strategy_id not in allowed_ids:
+        return jsonify({"error": "Choose Breakout, Retest, or Breakout + Retest."}), 400
+    try:
+        n_bars = max(500, min(12000, int(body.get("n_bars", 5000))))
+        risk_pct = max(0.01, min(5.0, float(body.get("risk_pct", 0.5))))
+        from research.strategies import get_strategy
+        from research.backtest_engine import run_backtest
+        strategy = get_strategy(strategy_id)
+        if strategy is None:
+            return jsonify({"error": "AGPro strategy is not registered."}), 500
+        raw_params = body.get("params") or {}
+        if not isinstance(raw_params, dict):
+            return jsonify({"error": "Parameters must be an object."}), 400
+        allowed_params = set((strategy.get("param_schema") or {}).keys())
+        params = {k: v for k, v in raw_params.items() if k in allowed_params}
+        df, source = _intraday(symbol, n_bars)
+        result = run_backtest(df, strategy_id, params=params,
+                              initial_equity=10000.0, risk_pct=risk_pct)
+        metrics = dict(result.get("metrics") or {})
+        metrics["total_R"] = round(sum(float(t.get("R") or 0) for t in result.get("trades", [])), 3)
+        curve = result.get("equity_curve") or {}
+        pnl_curve = []
+        for ts, equity in zip(curve.get("t", []), curve.get("v", [])):
+            equity = float(equity)
+            pnl_curve.append({"timestamp": str(ts), "equity": equity,
+                              "pnl": round(equity - 10000.0, 2),
+                              "return_pct": round((equity / 10000.0 - 1.0) * 100.0, 4)})
+        return jsonify(_safe({
+            "strategy_id": strategy_id, "strategy_name": result.get("strategy_name"),
+            "symbol": symbol, "data_source": source, "bars": result.get("num_bars"),
+            "data_range": result.get("data_range"), "params_used": result.get("params_used"),
+            "metrics": metrics, "trades": result.get("trades", []), "pnl_curve": pnl_curve,
+            "note": "Research backtest only. Signals execute at the next 5m bar open."
+        }))
+    except Exception as exc:
+        return jsonify({"error": f"{type(exc).__name__}: {exc}"}), 500
+
+
 @bp.route("/api/xauusd-research-v2/status", methods=["GET"])
 def status():
     if not session.get("logged_in"):
