@@ -6,7 +6,7 @@ dataset supplied by the browser.
 """
 import io
 import csv
-from datetime import datetime
+from datetime import datetime, date, timedelta
 import pandas as pd
 from flask import Blueprint, jsonify, request, session, render_template
 from research.strategies import list_strategies, get_strategy
@@ -137,3 +137,71 @@ def replay_run_backtest():
         return jsonify(result)
     except Exception as exc:
         return jsonify({"error":str(exc)}),400
+
+@replay_bp.route("/api/backtest/replay/dukascopy", methods=["POST"])
+def replay_dukascopy_data():
+    """Fetch a bounded XAUUSD date slice directly from Dukascopy for browser replay."""
+    err = _auth()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    interval_map = {
+        "1m": "M1", "5m": "M5", "15m": "M15", "30m": "M30",
+        "1h": "H1", "4h": "H4", "1d": "D1",
+    }
+    interval = str(body.get("interval", "5m"))
+    if interval not in interval_map:
+        return jsonify({"error": "Dukascopy supports 1m, 5m, 15m, 30m, 1h, 4h and 1d. 2m is not available."}), 400
+    side = str(body.get("price_side", "BID")).upper()
+    if side not in {"BID", "ASK"}:
+        return jsonify({"error": "price_side must be BID or ASK."}), 400
+    try:
+        start = date.fromisoformat(str(body.get("start", "")))
+        end = date.fromisoformat(str(body.get("end", "")))
+        if end < start:
+            return jsonify({"error": "End date must be on or after start date."}), 400
+        if end > datetime.utcnow().date():
+            return jsonify({"error": "End date cannot be in the future (UTC)."}), 400
+        max_days = 8 if interval == "1m" else 31
+        if (end - start).days + 1 > max_days:
+            return jsonify({
+                "error": f"Keep this request to {max_days} calendar days or fewer. "
+                         "Fetch the historical range in smaller date chunks."
+            }), 400
+
+        from scripts.download_dukascopy_xauusd import download_range
+        from scripts.xauusd_data_pipeline import RULES, resample_ohlc
+
+        frames, missing = download_range(start, end, side, workers=4)
+        if not frames:
+            return jsonify({"error": "Dukascopy returned no candles for this date range."}), 404
+        raw = pd.concat(frames, ignore_index=True).drop_duplicates("time", keep="last")
+        raw = raw.sort_values("time").set_index("time")
+        timeframe = interval_map[interval]
+        if timeframe != "M1":
+            raw = resample_ohlc(raw, RULES[timeframe])
+        if raw.empty:
+            return jsonify({"error": "No candles remain after timeframe aggregation."}), 404
+        if len(raw) > 12000:
+            return jsonify({"error": "The selected range exceeds the 12,000-bar Replay limit. Reduce the date range."}), 400
+        replay_df = raw.rename(columns={
+            "open": "Open", "high": "High", "low": "Low",
+            "close": "Close", "volume": "Volume",
+        })
+        bars = _bars_payload(replay_df)
+        return jsonify({
+            "symbol": "XAUUSD",
+            "interval": interval,
+            "source": f"Dukascopy {side} historical candles",
+            "price_side": side,
+            "bars": bars,
+            "data_range": {"start": str(replay_df.index[0]), "end": str(replay_df.index[-1])},
+            "count": len(bars),
+            "missing_or_empty_days": missing,
+            "storage_note": "Fetched on demand; saved only in this browser's Replay IndexedDB.",
+        })
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Dukascopy download failed: {exc}"}), 502
+
