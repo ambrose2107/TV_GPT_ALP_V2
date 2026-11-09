@@ -107,12 +107,26 @@ table{width:100%;border-collapse:collapse}th,td{padding:7px;border-bottom:1px so
 <p><button class="primary" onclick="runOne('aroon_money_flow')">▶ Run Aroon + Money Flow V2</button> <a class="detail-link" href="/xauusd-research-v2/aroon_money_flow">📊 Open Detailed Chart</a></p>
 <div id="metrics-aroon_money_flow" class="empty">No result yet.</div><div id="pnl-aroon_money_flow" class="empty">P&amp;L trend will appear after the run.</div><div id="trades-aroon_money_flow"></div></div></details>
 
-<details class="card" open><summary><span>7. Trend Target Ribbon V2</span><span class="badge">ALMA + ATR + Deviation + Targets</span><span class="status" id="status-trend_ribbon">Ready</span></summary>
-<div class="body"><div class="muted">BOSWaves-derived ALMA trend flip with slope/deviation confirmation, structure/ATR stop and 1R–4R target diagnostics. P&L is plotted against time below.</div>
+<details class="card" open><summary><span>7. Trend Target Ribbon V2</span><span class="badge">ALMA + ATR + Deviation + Targets</span><span class="status" id="status-trend_ribbon">Ready</span></summary><div class="body"><div class="muted">BOSWaves-derived ALMA trend flip with slope/deviation confirmation, structure/ATR stop and 1R–4R target diagnostics. P&L is plotted against time below.</div>
 <p><button class="primary" onclick="runOne('trend_ribbon')">▶ Run Trend Target Ribbon V2</button> <a class="detail-link" href="/xauusd-research-v2/trend_ribbon">📊 Open Detailed Chart</a></p>
 <div id="metrics-trend_ribbon" class="empty">No result yet.</div>
 <div id="pnl-trend_ribbon" class="empty">P&amp;L trend will appear after the run.</div>
 <div id="trades-trend_ribbon"></div></div></details>
+
+<details class="card" open><summary><span>8. AGPro 1-2-3 Reversal</span><span class="badge">Confirmed pivots · Neckline break / retest</span><span class="status" id="status-agpro_123">Ready</span></summary>
+<div class="body">
+ <div class="muted">Three-pivot reversal structure with ATR-filtered legs, neckline confirmation, invalidation, structural stop and configurable R-multiple target. Uses 5-minute Alpaca data (default GLD); isolated from the existing seven strategies.</div>
+ <div class="controls" style="margin:10px 0">
+  <label>Entry <select id="agproVariant"><option value="agpro_123_both" selected>Breakout + Retest</option><option value="agpro_123_breakout">Breakout only</option><option value="agpro_123_retest">Retest only</option></select></label>
+  <label>Pivot L/R <input id="agproPivot" type="number" min="1" max="15" value="2"></label>
+  <label>Reward / risk <input id="agproRR" type="number" min=".25" max="10" step=".25" value="2"></label>
+  <button class="primary" id="runAgpro">▶ Run AGPro 1-2-3</button>
+ </div>
+ <div class="muted">Uses the ticker, 5m bar count and Risk % from the toolbar. The request is capped at 12,000 bars to protect the Render worker.</div>
+ <div id="metrics-agpro_123" class="empty">No result yet.</div>
+ <div id="pnl-agpro_123" class="empty">Equity curve will appear after the run.</div>
+ <div id="trades-agpro_123"></div>
+</div></details>
 </div>
 
 <script>
@@ -125,7 +139,8 @@ const defs={
  williams:{name:'Williams %R Mean Reversion',url:'/api/xauusd-research-v2/williams'},
  cci:{name:'CCI Oversold Recovery',url:'/api/xauusd-research-v2/cci'},
  aroon_money_flow:{name:'Aroon + Money Flow Confluence V2',url:'/api/xauusd-research-v2/aroon_money_flow'},
- trend_ribbon:{name:'Trend Target Ribbon V2',url:'/api/xauusd-research-v2/trend_ribbon'}
+ trend_ribbon:{name:'Trend Target Ribbon V2',url:'/api/xauusd-research-v2/trend_ribbon'},
+ agpro_123:{name:'AGPro 1-2-3 Reversal',url:'/api/xauusd-research-v2/agpro-123'}
 };
 function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function num(v){return typeof v==='number'&&isFinite(v)?v.toFixed(2):'—';}
@@ -136,6 +151,7 @@ $('symbol').onchange=()=>{if($('symbol').value)$('customSymbol').value='';};
 $('days').oninput=()=>{$('bars').value=Math.min(60000,Math.max(100,Math.round((Number($('days').value)||200)*78)));};
 function payload(k){
  const risk=Number($('risk').value)||.5;
+ if(k==='agpro_123') return {symbol:selectedSymbol(),n_bars:Math.min(12000,bars()),risk_pct:risk,strategy_id:$('agproVariant').value,params:{left_bars:Number($('agproPivot').value)||2,right_bars:Number($('agproPivot').value)||2,reward_risk:Number($('agproRR').value)||2}};
  if(['triple','williams','cci'].includes(k)) return {symbol:selectedSymbol(),daily_bars:Math.max(250,Number($('days').value)||1000),config:{risk_pct:risk}};
  return {symbol:selectedSymbol(),n_bars:bars(),config:{risk_pct:risk}};
 }
@@ -257,8 +273,7 @@ function downloadResultsCsv(){
 async function saveOptimizerSnapshot(snapshot){
  try{
   await fetch('/api/xauusd-research-v2/optimizer-snapshot',{
-   method:'POST',credentials:'same-origin',cache:'no-store',
-   headers:{'Content-Type':'application/json'},
+   method:'POST',credentials:'same-origin',cache:'no-store',   headers:{'Content-Type':'application/json'},
    body:JSON.stringify({snapshot})
   });
  }catch(_){/* optimizer results remain usable even if persistence is temporarily unavailable */}
@@ -479,6 +494,7 @@ async function exportMarketDataWithTrades(){
  }catch(e){$('exportStatus').innerHTML='<span class="bad">Export error: '+esc(e.message)+'</span>';}
  finally{btn.disabled=false;}
 }
+$('runAgpro').onclick=()=>runOne('agpro_123');
 $('runAll').onclick=runAll;$('runOptimizer').onclick=runOptimizer;$('exportOptimizerJson').onclick=exportOptimizerJson;$('validateBestLong').onclick=validateBestLong;$('restoreOptimizer').onclick=()=>restoreOptimizerSnapshot();
 restoreOptimizerSnapshot();$('downloadCsv').onclick=downloadResultsCsv;$('downloadJson').onclick=downloadResultsJson;$('exportExcel').onclick=exportExcel;$('exportMarketTrades').onclick=exportMarketDataWithTrades;
 $('clear').onclick=()=>{
