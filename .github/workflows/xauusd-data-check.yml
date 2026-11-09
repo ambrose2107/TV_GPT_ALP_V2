@@ -7,6 +7,8 @@ on:
       - 'scripts/xauusd_data_pipeline.py'
       - 'scripts/download_dukascopy_xauusd.py'
       - 'docs/XAUUSD_DATA_LIBRARY.md'
+      - 'research/backtest_replay_routes.py'
+      - 'dashboard/templates/backtest_replay.html'
       - 'tests/test_xauusd_data_pipeline.py'
       - '.github/workflows/xauusd-data-check.yml'
   pull_request:
@@ -27,6 +29,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install pandas==2.2.2 requests==2.32.3
+      - run: python -m compileall -q scripts research/backtest_replay_routes.py
       - run: python -m unittest tests.test_xauusd_data_pipeline -v
       - name: Live Dukascopy source smoke test (two historical days)
         run: python scripts/download_dukascopy_xauusd.py --from 2025-01-02 --to 2025-01-03 --price-side BID --out /tmp/xauusd-smoke
