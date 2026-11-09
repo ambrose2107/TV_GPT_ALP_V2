@@ -1211,6 +1211,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
       <button class="btn btn-n btn-s bt-stab" onclick="btSub('strategy',1)">🧪 Strategy Backtest</button>
       <button class="btn btn-n btn-s bt-stab" onclick="btSub('portfolio',2)">🛡️ Portfolio Manager</button>
       <button class="btn btn-n btn-s bt-stab" onclick="btSub('early-signal',3)">🔎 Early-Signal Scanner</button>
+      <button class="btn btn-n btn-s bt-stab" onclick="window.location.href='/backtest-replay'">📼 TV Bar Replay</button>
     </div>
     <div id="bt-substatus" class="sub" style="margin-top:7px">US Market & AI Crash Early-Warning Terminal</div>
   </div>
@@ -1404,7 +1405,7 @@ select{background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6ed
     </div>
 
     <div class="row">
-      <button class="btn btn-b" id="bt-run-btn" onclick="runBacktestCompare()">▶ Run Backtest</button>
+      <button class="btn btn-b" id="bt-run-btn" onclick="runBacktestCompare()">▶ Run Backtest</button> <button class="btn btn-y" onclick="window.location.href='/backtest-replay'">📼 Open TV Replay</button>
       <span id="bt-status" style="font-size:11px;color:#8b949e"></span>
     </div>
   </div>
