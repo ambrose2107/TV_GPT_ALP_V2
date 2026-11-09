@@ -1,0 +1,2 @@
+# Historical provider datasets are generated locally and must not be committed.
+/market_data/XAUUSD/
