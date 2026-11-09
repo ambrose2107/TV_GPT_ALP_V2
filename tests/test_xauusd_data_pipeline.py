@@ -58,3 +58,30 @@ class PipelineTests(unittest.TestCase):
             self.assertEqual(report["timeframes"][0]["bars"],5)
 
 if __name__=="__main__": unittest.main()
+
+
+class DukascopyDecoderTests(unittest.TestCase):
+    def test_decode_bi5_m1_record(self):
+        import lzma
+        import struct
+        from datetime import date
+        from scripts.download_dukascopy_xauusd import decode_bi5
+
+        record = struct.pack(">5If", 0, 2060100, 2060200, 2060000, 2060150, 3.5)
+        payload = lzma.compress(record, format=lzma.FORMAT_ALONE)
+        out = decode_bi5(payload, date(2025, 1, 2))
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out.iloc[0]["time"], pd.Timestamp("2025-01-02T00:00:00Z"))
+        self.assertAlmostEqual(out.iloc[0]["open"], 2060.1)
+        self.assertAlmostEqual(out.iloc[0]["high"], 2060.2)
+        self.assertAlmostEqual(out.iloc[0]["low"], 2060.0)
+        self.assertAlmostEqual(out.iloc[0]["close"], 2060.15)
+        self.assertAlmostEqual(out.iloc[0]["volume"], 3.5)
+
+    def test_decode_rejects_truncated_record(self):
+        import lzma
+        from datetime import date
+        from scripts.download_dukascopy_xauusd import decode_bi5
+
+        with self.assertRaisesRegex(ValueError, "Malformed BI5"):
+            decode_bi5(lzma.compress(b"bad", format=lzma.FORMAT_ALONE), date(2025, 1, 2))
