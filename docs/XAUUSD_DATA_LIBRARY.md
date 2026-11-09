@@ -74,3 +74,10 @@ The script skips missing daily files (normally weekends/holidays) but fails if a
 **Storage and rights:** downloaded data is written to local `market_data/XAUUSD` and excluded from Git. Dukascopy's official bulk export documents a Requester Pays S3 bucket; this downloader uses the public daily BI5 datafeed endpoint, whose availability and terms may change. Do not redistribute raw data publicly. This repository contains acquisition and normalization code only.
 
 The generated library is not yet wired into the live Render Replay route. It is currently a validated local research library. Connecting it to Replay requires a separate app integration and an agreed private storage location so the public repository does not expose provider data.
+
+
+## Replay integration
+
+The Bar Replay page now has a **Fetch XAUUSD from Dukascopy** control with UTC start/end dates and BID/ASK selection. It calls the authenticated `/api/backtest/replay/dukascopy` endpoint, aggregates M1 candles to the selected timeframe, and saves the returned slice into the browser's existing IndexedDB dataset store. The normal Replay analyze/backtest buttons then use that selected dataset.
+
+To protect the Render free service and respect the Replay API's 12,000-bar payload limit, one on-demand request is capped at 8 calendar days for 1m and 31 calendar days for 5m or higher. For longer history, fetch adjacent date chunks one at a time; each new fetch replaces the current Replay dataset in IndexedDB. This endpoint does not persist provider data on Render or publish it in GitHub.
