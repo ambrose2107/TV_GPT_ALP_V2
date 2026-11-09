@@ -73,7 +73,7 @@ The script skips missing daily files (normally weekends/holidays) but fails if a
 
 **Storage and rights:** downloaded data is written to local `market_data/XAUUSD` and excluded from Git. Dukascopy's official bulk export documents a Requester Pays S3 bucket; this downloader uses the public daily BI5 datafeed endpoint, whose availability and terms may change. Do not redistribute raw data publicly. This repository contains acquisition and normalization code only.
 
-The generated library is not yet wired into the live Render Replay route. It is currently a validated local research library. Connecting it to Replay requires a separate app integration and an agreed private storage location so the public repository does not expose provider data.
+The full multi-decade local archive is not uploaded to Render or GitHub. Replay instead fetches bounded date slices on demand from the provider, so no persistent server-side dataset or paid storage is required.
 
 
 ## Replay integration
