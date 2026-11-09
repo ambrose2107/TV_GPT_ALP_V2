@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 import pandas as pd
-from scripts.xauusd_data_pipeline import normalize_frame, resample_ohlc, write_monthly, validate_library
+from scripts.xauusd_data_pipeline import normalize_frame, resample_ohlc, write_monthly, validate_library, import_files
 
 class PipelineTests(unittest.TestCase):
     def test_date_time_utc(self):
@@ -22,6 +22,19 @@ class PipelineTests(unittest.TestCase):
         out=resample_ohlc(df,"5min"); self.assertEqual(len(out),2)
         self.assertEqual(out.iloc[0]["open"],1); self.assertEqual(out.iloc[0]["close"],5.5)
         self.assertEqual(out.iloc[0]["volume"],5)
+    def test_bid_ask_imports_do_not_overwrite(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            source=root/"sample.csv"
+            pd.DataFrame({"time":["2025-01-01T00:00:00Z"],"open":[1],"high":[2],"low":[.5],"close":[1.5]}).to_csv(source,index=False)
+            import_files([source],"dukascopy",root/"XAUUSD",None,"M1","BID")
+            pd.DataFrame({"time":["2025-01-01T00:00:00Z"],"open":[1.1],"high":[2.1],"low":[.6],"close":[1.6]}).to_csv(source,index=False)
+            import_files([source],"dukascopy",root/"XAUUSD",None,"M1","ASK")
+            bid=root/"XAUUSD"/"BID"/"normalized"/"M1"/"2025"/"XAUUSD_M1_2025_01.csv.gz"
+            ask=root/"XAUUSD"/"ASK"/"normalized"/"M1"/"2025"/"XAUUSD_M1_2025_01.csv.gz"
+            self.assertTrue(bid.exists()); self.assertTrue(ask.exists())
+            self.assertNotEqual(pd.read_csv(bid,compression="gzip").iloc[0]["open"],
+                                pd.read_csv(ask,compression="gzip").iloc[0]["open"])
     def test_monthly_validate(self):
         idx=pd.date_range("2025-01-31 23:58",periods=5,freq="min",tz="UTC")
         df=pd.DataFrame({"open":[1]*5,"high":[2]*5,"low":[.5]*5,"close":[1.5]*5,"volume":[10]*5},index=idx)
