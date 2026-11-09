@@ -72,23 +72,25 @@ def write_monthly(df, timeframe, out_dir):
                         "start_utc":part.index[0].isoformat(),"end_utc":part.index[-1].isoformat()})
     return outputs
 
-def import_files(files,source,out_dir,source_timezone,source_timeframe):
+def import_files(files,source,out_dir,source_timezone,source_timeframe,price_side="UNKNOWN"):
+    if price_side not in {"BID","ASK","MID","UNKNOWN"}: raise ValueError("price_side must be BID, ASK, MID or UNKNOWN")
+    dataset_dir=out_dir/price_side if price_side!="UNKNOWN" else out_dir
     frames=[normalize_frame(read_file(p),source,source_timezone) for p in files]
     base=pd.concat(frames).sort_index()
     base=base[~base.index.duplicated(keep="last")]
     if source_timeframe not in RULES: raise ValueError("Unsupported source timeframe")
-    written={source_timeframe:write_monthly(base,source_timeframe,out_dir)}
+    written={source_timeframe:write_monthly(base,source_timeframe,dataset_dir)}
     if source_timeframe=="M1":
         for tf in ("M5","M15","M30","H1","H4","D1"):
-            written[tf]=write_monthly(resample_ohlc(base,RULES[tf]),tf,out_dir)
+            written[tf]=write_monthly(resample_ohlc(base,RULES[tf]),tf,dataset_dir)
     meta={"instrument":"XAUUSD","source":source,"source_timeframe":source_timeframe,
           "canonical_timezone":"UTC","source_timezone":source_timezone,
-          "price_side":"record BID/ASK/MID in source notes; not inferred",
+          "price_side":price_side,
           "volume_semantics":"provider-specific; commonly tick volume, not centralized exchange volume",
           "imported_at_utc":datetime.now(timezone.utc).isoformat(),"source_files":[str(p) for p in files],
           "bars":len(base),"start_utc":base.index[0].isoformat(),"end_utc":base.index[-1].isoformat(),"outputs":written}
-    (out_dir/"metadata").mkdir(parents=True,exist_ok=True)
-    (out_dir/"metadata"/"latest_import.json").write_text(json.dumps(meta,indent=2),encoding="utf-8")
+    (dataset_dir/"metadata").mkdir(parents=True,exist_ok=True)
+    (dataset_dir/"metadata"/"latest_import.json").write_text(json.dumps(meta,indent=2),encoding="utf-8")
     return meta
 
 def validate_library(out_dir):
@@ -120,11 +122,12 @@ def main():
     i=sub.add_parser("import"); i.add_argument("files",nargs="+",type=Path)
     i.add_argument("--source",choices=("dukascopy","forexsb","histdata","generic"),required=True)
     i.add_argument("--source-timeframe",choices=tuple(RULES),default="M1")
-    i.add_argument("--source-timezone",default=None); i.add_argument("--out",type=Path,default=DEFAULT_OUT)
-    v=sub.add_parser("validate"); v.add_argument("--out",type=Path,default=DEFAULT_OUT)
+    i.add_argument("--source-timezone",default=None); i.add_argument("--price-side",choices=("BID","ASK","MID","UNKNOWN"),default="UNKNOWN"); i.add_argument("--out",type=Path,default=DEFAULT_OUT)
+    v=sub.add_parser("validate"); v.add_argument("--price-side",choices=("BID","ASK","MID","UNKNOWN"),default="UNKNOWN"); v.add_argument("--out",type=Path,default=DEFAULT_OUT)
     a=p.parse_args()
     try:
-        result=import_files(a.files,a.source,a.out,a.source_timezone,a.source_timeframe) if a.cmd=="import" else validate_library(a.out)
+        root=a.out/a.price_side if a.price_side!="UNKNOWN" else a.out
+        result=import_files(a.files,a.source,a.out,a.source_timezone,a.source_timeframe,a.price_side) if a.cmd=="import" else validate_library(root)
         print(json.dumps(result,indent=2)); return 0
     except Exception as exc:
         print(f"ERROR: {exc}",file=sys.stderr); return 1
