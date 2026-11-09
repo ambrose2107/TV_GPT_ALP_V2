@@ -13,3 +13,5 @@ from . import rsi_meanreversion  # noqa: F401
 
 from . import gold_aroon_money_flow_v2  # noqa: F401
 from . import agpro_123_reversal  # noqa: F401
+
+from . import fibonacci_golden_box  # noqa: F401
