@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Normalize provider-supplied XAUUSD OHLC files for reproducible research."""
 from __future__ import annotations
-import argparse, hashlib, json, re, sys, zipfile
+import argparse, gzip, hashlib, io, json, re, sys, zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 import pandas as pd
@@ -14,16 +14,29 @@ ALIASES={"timestamp":"time","datetime":"time","date_time":"time","time_utc":"tim
 "close":"close","c":"close","volume":"volume","vol":"volume","tickvol":"volume",
 "tick_volume":"volume","gmt_time":"time"}
 
+def _read_csv_text(text):
+    first=next((line for line in text.splitlines() if line.strip()), "")
+    delimiter=";" if ";" in first else ","
+    first_field=first.split(delimiter,1)[0].strip()
+    # HistData Generic ASCII M1 is headerless: YYYYMMDD HHMMSS;O;H;L;C;V.
+    if re.fullmatch(r"\\d{8}\\s+\\d{6}", first_field) and len(first.split(delimiter)) >= 5:
+        names=["time","open","high","low","close","volume"]
+        return pd.read_csv(io.StringIO(text),sep=delimiter,header=None,names=names,engine="python")
+    return pd.read_csv(io.StringIO(text),sep=None,engine="python")
+
 def read_file(path):
     if path.suffix.lower()==".zip":
         frames=[]
         with zipfile.ZipFile(path) as z:
             for name in z.namelist():
                 if name.lower().endswith((".csv",".txt")):
-                    with z.open(name) as f: frames.append(pd.read_csv(f,sep=None,engine="python"))
+                    with z.open(name) as f:
+                        frames.append(_read_csv_text(f.read().decode("utf-8-sig")))
         if not frames: raise ValueError("ZIP contains no CSV/TXT files")
         return pd.concat(frames,ignore_index=True)
-    return pd.read_csv(path,compression="gzip" if path.suffix.lower()==".gz" else None,sep=None,engine="python")
+    if path.suffix.lower()==".gz":
+        with gzip.open(path,"rt",encoding="utf-8-sig") as f: return _read_csv_text(f.read())
+    return _read_csv_text(path.read_text(encoding="utf-8-sig"))
 
 def normalize_frame(raw, source, source_timezone=None):
     df=raw.copy()
