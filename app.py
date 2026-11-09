@@ -16,6 +16,7 @@ from core.scheduler import init_scheduler
 from dashboard.routes import dashboard_bp
 from mirrorfish.routes import mirrorfish_bp
 from research.backtest_routes import backtest_bp
+from research.backtest_replay_routes import replay_bp
 from research.ai_crash_routes import ai_crash_bp
 from research.portfolio_manager_routes import portfolio_bp
 from research.early_signal_routes import early_signal_bp
@@ -55,6 +56,7 @@ def create_app():
     app.register_blueprint(analytics_bp)
     app.register_blueprint(account_history_bp)
     app.register_blueprint(backtest_bp)
+    app.register_blueprint(replay_bp)
     app.register_blueprint(ai_crash_bp)
     app.register_blueprint(portfolio_bp)
     app.register_blueprint(early_signal_bp)
