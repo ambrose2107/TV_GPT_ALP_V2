@@ -18,7 +18,6 @@ import lzma
 import logging
 import struct
 import tempfile
-import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -123,7 +122,7 @@ def download_range(start: date, end: date, side: str, workers: int = 4) -> tuple
     frames: list[pd.DataFrame] = []
     missing = 0
     failures = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(workers, 6))) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(workers, 4))) as pool:
         futures = [pool.submit(_fetch_one, (day, side)) for day in days]
         for future in concurrent.futures.as_completed(futures):
             day, frame, error = future.result()
