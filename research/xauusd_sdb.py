@@ -1,9 +1,9 @@
-"""Isolated ICT-style Standard Deviation (SDB) research engine for GLD.
+"""XAUUSD ICT-style SDB research engine for Replay-supplied 5m candles.
 
-This is an explicitly documented research approximation, not a claim to reproduce
-every TradingView/ICT deviation tool. It uses real Alpaca GLD 5m stock bars,
-never synthetic data. All higher-timeframe context is derived from completed
-5m bars. Signals are entered at the next bar open in the backtest.
+The Replay path uses the exact user-supplied XAUUSD OHLC data. The legacy GLD
+loader remains isolated for backwards compatibility and is not used by Replay.
+Deviation targets are explicit range projections, not statistical sigma levels
+or a verified clone of any proprietary TradingView/ICT indicator.
 """
 from __future__ import annotations
 
@@ -109,10 +109,13 @@ def _resample(ohlc: pd.DataFrame, rule: str) -> pd.DataFrame:
 def build_sdb_signals(data: pd.DataFrame, sweep_lookback: int = 12,
                       mss_lookback: int = 3, mss_window: int = 6,
                       h1_ema_len: int = 20, atr_len: int = 14,
-                      stop_buffer_atr: float = 0.15) -> pd.DataFrame:
+                      stop_buffer_atr: float = 0.15,
+                      h1_bias_mode: str = "aligned") -> pd.DataFrame:
     """Return 5m rows with non-lookahead signals, structural stops and SD targets."""
     if data is None or data.empty:
-        raise ValueError("No gold bars supplied.")
+        raise ValueError("No XAUUSD bars supplied.")
+    if h1_bias_mode not in {"aligned", "neutral_or_aligned", "off"}:
+        raise ValueError("h1_bias_mode must be aligned, neutral_or_aligned or off.")
     d = data.copy().sort_index()
     d = d[~d.index.duplicated(keep="last")]
     for c in ("Open", "High", "Low", "Close"):
@@ -174,6 +177,17 @@ def build_sdb_signals(data: pd.DataFrame, sweep_lookback: int = 12,
             events.append({"time": t, "side": -1, "extreme": float(row["High"]),
                            "level": float(row["prior_high"]), "range": float(row["High"] - row["Low"])})
     events.sort(key=lambda x: x["time"])
+    diagnostics = {
+        "h1_bias_mode": h1_bias_mode,
+        "bull_sweeps": int(sum(1 for ev in events if ev["side"] == 1)),
+        "bear_sweeps": int(sum(1 for ev in events if ev["side"] == -1)),
+        "sweep_events": int(len(events)),
+        "bars_checked_after_sweep": 0,
+        "blocked_by_h1_bias": 0,
+        "mss_confirmations": 0,
+        "blocked_by_atr_warmup": 0,
+        "signals": 0,
+    }
     used = set()
     for ev in events:
         start = idx.searchsorted(ev["time"], side="left")
@@ -184,13 +198,21 @@ def build_sdb_signals(data: pd.DataFrame, sweep_lookback: int = 12,
             if j in used:
                 continue
             row = five.iloc[j]
-            if int(row["bias"]) != ev["side"]:
+            diagnostics["bars_checked_after_sweep"] += 1
+            bias = int(row["bias"])
+            if ((h1_bias_mode == "aligned" and bias != ev["side"]) or
+                    (h1_bias_mode == "neutral_or_aligned" and bias not in (0, ev["side"]))):
+                diagnostics["blocked_by_h1_bias"] += 1
                 continue
             if ev["side"] == 1:
                 mss = pd.notna(prior5_high.iloc[j]) and row["Close"] > prior5_high.iloc[j]
             else:
                 mss = pd.notna(prior5_low.iloc[j]) and row["Close"] < prior5_low.iloc[j]
-            if not mss or not np.isfinite(row["atr"]):
+            if not mss:
+                continue
+            diagnostics["mss_confirmations"] += 1
+            if not np.isfinite(row["atr"]):
+                diagnostics["blocked_by_atr_warmup"] += 1
                 continue
             entry_ref = float(row["Close"])
             # Explicit research convention: project positive range multiples in trade direction.
@@ -213,7 +235,9 @@ def build_sdb_signals(data: pd.DataFrame, sweep_lookback: int = 12,
             five.iloc[j, five.columns.get_loc("leg_range")] = leg
             five.iloc[j, five.columns.get_loc("mss_level")] = float(prior5_high.iloc[j] if ev["side"] == 1 else prior5_low.iloc[j])
             used.add(j)
+            diagnostics["signals"] += 1
             break
+    five.attrs["diagnostics"] = diagnostics
     return five
 
 
@@ -225,6 +249,7 @@ def run_backtest(data: pd.DataFrame, initial_equity: float = 10000.0,
     if not (0 < risk_pct <= 2.0):
         raise ValueError("risk_pct must be > 0 and <= 2.")
     d = build_sdb_signals(data, **signal_params)
+    diagnostics = dict(d.attrs.get("diagnostics", {}))
     equity = float(initial_equity)
     peak = equity
     max_dd = 0.0
@@ -338,7 +363,7 @@ def run_backtest(data: pd.DataFrame, initial_equity: float = 10000.0,
         "max_drawdown_pct": round(max_dd * 100, 2),
         "final_equity": round(equity, 2),
         "data_start": str(d.index.min()), "data_end": str(d.index.max()),
-        "data_source": "Alpaca GLD 5m ETF bars (gold ETF proxy; not spot XAUUSD)",
+        "data_source": "Replay-supplied XAUUSD 5m OHLC candles",
     }
     serial_trades = []
     for t in trades[-500:]:
@@ -348,5 +373,6 @@ def run_backtest(data: pd.DataFrame, initial_equity: float = 10000.0,
         x["equity_after"] = round(float(x.get("equity_after", equity)), 2)
         serial_trades.append(x)
     return {"metrics": metrics, "trades": serial_trades,
+            "diagnostics": diagnostics,
             "signals": d[d["signal"] != 0].tail(500).reset_index().rename(columns={"index": "time"}).replace({np.nan: None}).to_dict("records"),
             "equity_curve": curve[-2000:]}
