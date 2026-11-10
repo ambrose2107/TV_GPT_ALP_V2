@@ -4700,7 +4700,7 @@ function drawAICrashCrossAssetCharts(payload){
   ];
   function lineChart(spec,series){
     const canvas=document.getElementById(spec.id),source=document.getElementById(spec.sourceId),pts=filtered(series&&series.points);
-    if(source)source.textContent=(series&&series.source?series.source:'Source unavailable')+' · '+pts.length+' observations'+(event?' · '+event.label:'');
+    if(source){const stale=series&&series.is_stale;const age=series&&Number.isFinite(Number(series.age_days))?(' · latest '+(series.latest_date||'unknown')+' · '+series.age_days+'d old'):'';source.textContent=(series&&series.source?series.source:'Source unavailable')+' · '+pts.length+' observations'+age+(stale?' · STALE DATA — verify before relying on this chart':'')+(event?' · '+event.label:'');source.style.color=stale?'#d29922':'';}
     if(!canvas)return;destroy(spec.id);
     if(!window.Chart||pts.length<2){canvas.style.display='none';if(source)source.textContent=(series&&series.source?series.source:'Source unavailable')+' · no observations in selected window';return;}
     const values={};pts.forEach(p=>values[p.t]=+p.v);
