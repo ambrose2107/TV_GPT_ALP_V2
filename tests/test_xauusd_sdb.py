@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 
 from research.xauusd_sdb import _resample, build_sdb_signals, load_gold_data, run_backtest
+from research.backtest_replay_routes import replay_bp
 
 
 def sample_bars(periods=1152):
@@ -63,6 +64,43 @@ class SDBTests(unittest.TestCase):
     def test_insufficient_higher_timeframe_history_fails_clearly(self):
         with self.assertRaisesRegex(ValueError, "Insufficient"):
             build_sdb_signals(sample_bars(120))
+
+    def test_replay_sdb_endpoint_uses_submitted_xauusd_bars(self):
+        app = Flask(__name__)
+        app.secret_key = "unit-test-only"
+        app.register_blueprint(replay_bp)
+        client = app.test_client()
+        with client.session_transaction() as sess:
+            sess["logged_in"] = True
+        frame = sample_bars()
+        bars = [{
+            "time": ts.isoformat(), "open": float(row.Open), "high": float(row.High),
+            "low": float(row.Low), "close": float(row.Close), "volume": float(row.Volume)
+        } for ts, row in frame.iterrows()]
+        response = client.post("/api/backtest/replay/sdb", json={
+            "symbol": "XAUUSD", "interval": "5m", "bars": bars,
+            "source": "unit-test supplied dataset", "risk_pct": 0.5,
+            "spread_points": 0.3, "slippage_points": 0.05, "commission_pct": 0.0005
+        })
+        self.assertEqual(response.status_code, 200, response.get_json())
+        payload = response.get_json()
+        self.assertEqual(payload["symbol"], "XAUUSD")
+        self.assertEqual(payload["interval"], "5m")
+        self.assertEqual(payload["data_source"], "unit-test supplied dataset")
+        self.assertEqual(payload["metrics"]["bars"], len(bars))
+
+    def test_replay_sdb_endpoint_rejects_gld_proxy(self):
+        app = Flask(__name__)
+        app.secret_key = "unit-test-only"
+        app.register_blueprint(replay_bp)
+        client = app.test_client()
+        with client.session_transaction() as sess:
+            sess["logged_in"] = True
+        response = client.post("/api/backtest/replay/sdb", json={
+            "symbol": "GLD", "interval": "5m", "bars": []
+        })
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("GLD proxy", response.get_json()["error"])
 
     def test_sdb_api_rejects_unauthenticated_requests(self):
         app = Flask(__name__)
