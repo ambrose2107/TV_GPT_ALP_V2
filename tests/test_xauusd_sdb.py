@@ -8,7 +8,7 @@ from research.xauusd_sdb_routes import xauusd_sdb_bp
 import numpy as np
 import pandas as pd
 
-from research.xauusd_sdb import _resample, build_sdb_signals, load_gold_data
+from research.xauusd_sdb import _resample, build_sdb_signals, load_gold_data, run_backtest
 
 
 def sample_bars(periods=1152):
