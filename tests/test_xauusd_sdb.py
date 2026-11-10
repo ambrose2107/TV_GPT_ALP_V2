@@ -99,6 +99,9 @@ class SDBTests(unittest.TestCase):
         self.assertEqual(payload["symbol"], "XAUUSD")
         self.assertEqual(payload["interval"], "5m")
         self.assertEqual(payload["data_source"], "unit-test supplied dataset")
+        self.assertEqual(payload["metrics"]["data_source"], "Replay-supplied XAUUSD 5m OHLC candles")
+        self.assertIn("diagnostics", payload)
+        self.assertEqual(payload["diagnostics"]["signals"], len(payload["signals"]))
         self.assertEqual(payload["metrics"]["bars"], len(bars))
 
     def test_replay_sdb_endpoint_rejects_gld_proxy(self):
