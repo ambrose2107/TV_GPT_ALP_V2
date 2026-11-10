@@ -27,7 +27,10 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from scripts.xauusd_data_pipeline import import_files, validate_library
+try:
+    from scripts.xauusd_data_pipeline import import_files, validate_library
+except ModuleNotFoundError:  # Direct execution puts scripts/ rather than the repo root on sys.path.
+    from xauusd_data_pipeline import import_files, validate_library
 
 BASE_URL = "https://datafeed.dukascopy.com/datafeed"
 SYMBOL = "XAUUSD"
