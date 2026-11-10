@@ -1338,7 +1338,14 @@ def _cross_asset_charts(px, fred):
     spy_points=merge_points(spy_base,spy_stooq,spy_yahoo,spy_live)
     spy_source=("SPY history (live + online + repository baseline)" if spy_live or spy_stooq or spy_yahoo
                 else "SPY repository historical baseline" if spy_base else "Unavailable")
-    out["spy"]={"source":spy_source,"unit":"USD","points":spy_points}
+    def freshness(points):
+        latest=points[-1].get("t") if points else None
+        try:
+            age=(pd.Timestamp.now(tz="UTC").normalize()-pd.Timestamp(latest,tz="UTC").normalize()).days
+        except Exception:
+            age=None
+        return {"latest_date":latest,"age_days":age,"is_stale":age is None or age>10}
+    out["spy"]={"source":spy_source,"unit":"USD","points":spy_points,**freshness(spy_points)}
 
     # QQQ is shown alongside SPY so users can compare the Nasdaq-100 growth-stock
     # proxy with the broad market on exactly the same calendar axis.
@@ -1350,7 +1357,7 @@ def _cross_asset_charts(px, fred):
     qqq_points=merge_points(qqq_base,qqq_stooq,qqq_yahoo,qqq_live)
     qqq_source=("QQQ history (live + online + repository baseline)" if qqq_live or qqq_stooq or qqq_yahoo
                 else "QQQ repository historical baseline" if qqq_base else "Unavailable")
-    out["qqq"]={"source":qqq_source,"unit":"USD","points":qqq_points}
+    out["qqq"]={"source":qqq_source,"unit":"USD","points":qqq_points,**freshness(qqq_points)}
 
     vix_series=px.get("^VIX") if hasattr(px,"get") else None
     vix_live=series_points(vix_series)
