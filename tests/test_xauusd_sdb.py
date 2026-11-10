@@ -61,6 +61,18 @@ class SDBTests(unittest.TestCase):
         self.assertEqual(result["trades"][0]["next_target"], 4)
         self.assertAlmostEqual(result["trades"][0]["remaining"], 0.0)
 
+    def test_signal_funnel_diagnostics_and_bias_modes(self):
+        bars = sample_bars()
+        strict = build_sdb_signals(bars, h1_bias_mode="aligned")
+        relaxed = build_sdb_signals(bars, h1_bias_mode="neutral_or_aligned")
+        off = build_sdb_signals(bars, h1_bias_mode="off")
+        for frame in (strict, relaxed, off):
+            diag = frame.attrs["diagnostics"]
+            self.assertEqual(diag["sweep_events"], diag["bull_sweeps"] + diag["bear_sweeps"])
+            self.assertEqual(diag["signals"], int((frame["signal"] != 0).sum()))
+            self.assertIn(diag["h1_bias_mode"], {"aligned", "neutral_or_aligned", "off"})
+        self.assertGreaterEqual(int((off["signal"] != 0).sum()), int((strict["signal"] != 0).sum()))
+
     def test_insufficient_higher_timeframe_history_fails_clearly(self):
         with self.assertRaisesRegex(ValueError, "Insufficient"):
             build_sdb_signals(sample_bars(120))
