@@ -18,6 +18,7 @@ import lzma
 import logging
 import struct
 import tempfile
+import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -38,10 +39,10 @@ LOG = logging.getLogger("dukascopy_xauusd")
 def build_session() -> requests.Session:
     session = requests.Session()
     retry = Retry(
-        total=4,
-        connect=4,
-        read=4,
-        status=4,
+        total=2,
+        connect=2,
+        read=0,
+        status=2,
         backoff_factor=1.0,
         status_forcelist=(429, 500, 502, 503, 504),
         allowed_methods=("GET",),
@@ -89,11 +90,29 @@ def download_day(day: date, side: str, session: requests.Session) -> pd.DataFram
         f"{BASE_URL}/{SYMBOL}/{day.year}/{day.month - 1:02d}/{day.day:02d}/"
         f"{side}_candles_min_1.bi5"
     )
-    response = session.get(url, timeout=(10, 45))
-    if response.status_code == 404:
-        return None
-    response.raise_for_status()
-    return decode_bi5(response.content, day)
+    # The public Dukascopy feed has recently exhibited intermittent stalls.
+    # Retry each day explicitly with a long read timeout; never treat a timeout
+    # as an empty/weekend file.
+    last_error = None
+    for attempt in range(4):
+        try:
+            response = session.get(url, timeout=(15, 90))
+            if response.status_code == 404:
+                return None
+            response.raise_for_status()
+            return decode_bi5(response.content, day)
+        except requests.exceptions.RequestException as exc:
+            last_error = exc
+            if attempt == 3:
+                break
+            delay = min(3 * (2 ** attempt), 24)
+            LOG.warning("Dukascopy request for %s failed (%s); retry %s/3 in %ss",
+                        day, exc.__class__.__name__, attempt + 1, delay)
+            time.sleep(delay)
+    raise RuntimeError(
+        f"Dukascopy timed out or failed for {day} after 4 attempts. "
+        "The provider feed is intermittently unavailable; retry this date later."
+    ) from last_error
 
 
 def _fetch_one(args):
@@ -108,7 +127,7 @@ def _fetch_one(args):
         session.close()
 
 
-def download_range(start: date, end: date, side: str, workers: int = 4) -> tuple[list[pd.DataFrame], int]:
+def download_range(start: date, end: date, side: str, workers: int = 1) -> tuple[list[pd.DataFrame], int]:
     if end < start:
         raise ValueError("--to must be on or after --from")
     if side not in {"BID", "ASK"}:
@@ -122,7 +141,7 @@ def download_range(start: date, end: date, side: str, workers: int = 4) -> tuple
     frames: list[pd.DataFrame] = []
     missing = 0
     failures = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(workers, 4))) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(workers, 2))) as pool:
         futures = [pool.submit(_fetch_one, (day, side)) for day in days]
         for future in concurrent.futures.as_completed(futures):
             day, frame, error = future.result()
