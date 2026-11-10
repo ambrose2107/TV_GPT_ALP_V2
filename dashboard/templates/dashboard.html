@@ -4677,12 +4677,13 @@ function drawAICrashCrossAssetCharts(payload){
   const latestCandidates=[];
   ['spy','qqq','vix','dxy','gold','credit'].forEach(k=>(payload[k]&&payload[k].points||[]).forEach(p=>latestCandidates.push(p.t)));
   Object.values((payload.yields||{}).series||{}).forEach(points=>(points||[]).forEach(p=>latestCandidates.push(p.t)));
-  const latestDate=latestCandidates.length?new Date(latestCandidates.sort().slice(-1)[0]+'T00:00:00Z'):new Date();
+  const parseCrossAssetDate=value=>{const s=String(value||'');return new Date(/^\d{4}-\d{2}-\d{2}$/.test(s)?s+'T00:00:00Z':s);};
+  const latestDate=latestCandidates.length?parseCrossAssetDate(latestCandidates.sort().slice(-1)[0]):new Date();
   const cutoff=new Date(latestDate);cutoff.setUTCDate(cutoff.getUTCDate()-days);
   const startEvent=eventDate?new Date(eventDate.getTime()-120*86400000):null;
   const endEvent=eventDate?new Date(eventDate.getTime()+90*86400000):null;
   function destroy(id){if(aiCrashCrossCharts[id]){aiCrashCrossCharts[id].destroy();delete aiCrashCrossCharts[id];}}
-  function filtered(points){return (points||[]).filter(p=>{const d=new Date(p.t+'T00:00:00Z');return event?(d>=startEvent&&d<=endEvent):d>=cutoff&&d<=latestDate;});}
+  function filtered(points){return (points||[]).filter(p=>{const d=parseCrossAssetDate(p.t);return Number.isFinite(d.getTime())&&(event?(d>=startEvent&&d<=endEvent):d>=cutoff&&d<=latestDate);});}
   // Every panel shares the same ordered date labels. Holidays and missing observations
   // remain null, avoiding visually shifted x-axes between market and macro series.
   const sharedLabels=Array.from(new Set([
