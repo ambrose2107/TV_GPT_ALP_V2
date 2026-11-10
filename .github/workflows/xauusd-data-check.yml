@@ -8,7 +8,10 @@ on:
       - 'scripts/download_dukascopy_xauusd.py'
       - 'docs/XAUUSD_DATA_LIBRARY.md'
       - 'research/backtest_replay_routes.py'
+      - 'research/xauusd_sdb.py'
+      - 'tests/test_xauusd_sdb.py'
       - 'dashboard/templates/backtest_replay.html'
+      - 'dashboard/templates/dashboard.html'
       - 'tests/test_xauusd_data_pipeline.py'
       - '.github/workflows/xauusd-data-check.yml'
   pull_request:
@@ -18,7 +21,10 @@ on:
       - 'scripts/download_dukascopy_xauusd.py'
       - 'docs/XAUUSD_DATA_LIBRARY.md'
       - 'research/backtest_replay_routes.py'
+      - 'research/xauusd_sdb.py'
+      - 'tests/test_xauusd_sdb.py'
       - 'dashboard/templates/backtest_replay.html'
+      - 'dashboard/templates/dashboard.html'
       - 'tests/test_xauusd_data_pipeline.py'
       - '.github/workflows/xauusd-data-check.yml'
 
@@ -38,4 +44,9 @@ jobs:
           node --check /tmp/replay.js
       - run: python -m unittest tests.test_xauusd_data_pipeline -v
       - name: Live Dukascopy source smoke test (two historical days)
+        id: dukascopy-live-smoke
+        continue-on-error: true
         run: python scripts/download_dukascopy_xauusd.py --from 2025-01-02 --to 2025-01-03 --price-side BID --out /tmp/xauusd-smoke
+      - name: Report live provider availability
+        if: steps.dukascopy-live-smoke.outcome == 'failure'
+        run: echo '::warning::Unit tests passed, but the optional live Dukascopy smoke test timed out or failed. This is a provider-availability warning, not a parser/unit-test failure.'
