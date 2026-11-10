@@ -41,6 +41,25 @@ class SDBTests(unittest.TestCase):
             if row["sweep_time"]:
                 self.assertGreaterEqual(timestamp, pd.Timestamp(row["sweep_time"]))
 
+    def test_all_targets_crossed_in_one_bar_are_filled_in_sequence(self):
+        idx = pd.date_range("2026-01-05 00:00:00", periods=3, freq="5min", tz="UTC")
+        frame = pd.DataFrame({
+            "Open": [100.0, 100.0, 100.0], "High": [101.0, 101.0, 109.0],
+            "Low": [99.5, 99.5, 100.5], "Close": [100.0, 100.0, 108.0],
+            "Volume": [1.0, 1.0, 1.0], "signal": [1, 0, 0],
+            "stop": [99.0, np.nan, np.nan], "sd1": [102.0, np.nan, np.nan],
+            "sd2": [104.0, np.nan, np.nan], "sd25": [105.0, np.nan, np.nan],
+            "sd4": [108.0, np.nan, np.nan], "setup": ["test", "", ""],
+            "sweep_time": ["2026-01-05T00:00:00+00:00", "", ""],
+            "leg_range": [2.0, np.nan, np.nan],
+        }, index=idx)
+        with patch("research.xauusd_sdb.build_sdb_signals", return_value=frame):
+            result = run_backtest(frame, risk_pct=0.5, spread_points=0, slippage_points=0, commission_pct=0)
+        self.assertEqual(result["metrics"]["trades"], 1)
+        self.assertEqual(result["trades"][0]["exit_reason"], "all_targets")
+        self.assertEqual(result["trades"][0]["next_target"], 4)
+        self.assertAlmostEqual(result["trades"][0]["remaining"], 0.0)
+
     def test_insufficient_higher_timeframe_history_fails_clearly(self):
         with self.assertRaisesRegex(ValueError, "Insufficient"):
             build_sdb_signals(sample_bars(120))

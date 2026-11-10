@@ -10,6 +10,7 @@ on:
   push:
     branches:
       - "feature/xauusd-sdb"
+      - "GPTver_confluence_v4"
     paths:
       - "research/xauusd_sdb.py"
       - "research/xauusd_sdb_routes.py"

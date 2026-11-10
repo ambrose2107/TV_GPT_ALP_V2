@@ -254,18 +254,28 @@ def run_backtest(data: pd.DataFrame, initial_equity: float = 10000.0,
                 active["exit_time"] = str(ts)
                 active["exit_reason"] = "stop"
             elif target_hit:
-                target = targets[next_target]
-                px = target - side * (spread_points / 2 + slippage_points)
-                frac = min(0.25, active["remaining"])
-                pnl = (px - active["entry"]) * active["units"] * side * frac
-                pnl -= abs(px * active["units"] * frac) * commission_pct
-                equity += pnl
-                active["pnl"] += pnl
-                active["remaining"] -= frac
-                active["next_target"] += 1
-                if active["next_target"] == 1:
-                    active["stop"] = active["entry"]
-                if active["remaining"] < 1e-8:
+                # A single 5m candle can cross multiple projected levels.
+                while active["next_target"] < len(targets):
+                    target = targets[active["next_target"]]
+                    reached = (bar["High"] >= target if side == 1 else bar["Low"] <= target)
+                    if not reached:
+                        break
+                    px = target - side * (spread_points / 2 + slippage_points)
+                    frac = min(0.25, active["remaining"])
+                    pnl = (px - active["entry"]) * active["units"] * side * frac
+                    pnl -= abs(px * active["units"] * frac) * commission_pct
+                    equity += pnl
+                    active["pnl"] += pnl
+                    active["remaining"] -= frac
+                    active["next_target"] += 1
+                    if active["next_target"] == 1:
+                        active["stop"] = active["entry"]
+                    if active["remaining"] < 1e-8:
+                        active["remaining"] = 0.0
+                        active["exit_time"] = str(ts)
+                        active["exit_reason"] = "all_targets"
+                        break
+                if active["remaining"] > 0 and active["next_target"] == len(targets):
                     active["remaining"] = 0.0
                     active["exit_time"] = str(ts)
                     active["exit_reason"] = "all_targets"
@@ -288,10 +298,12 @@ def run_backtest(data: pd.DataFrame, initial_equity: float = 10000.0,
             if not targets:
                 curve.append({"time": str(ts), "equity": equity})
                 continue
+            entry_fee = abs(entry * units) * commission_pct
+            equity -= entry_fee
             active = {
                 "side": side, "entry_time": str(ts), "entry": entry, "stop": stop,
                 "targets": targets, "next_target": 0, "units": units, "remaining": 1.0,
-                "pnl": 0.0, "setup": str(prev.get("setup", "")),
+                "pnl": -entry_fee, "setup": str(prev.get("setup", "")),
                 "sweep_time": str(prev.get("sweep_time", "")),
                 "leg_range": float(prev.get("leg_range", np.nan)),
                 "initial_risk": risk_money, "exit_time": "", "exit_reason": "open",

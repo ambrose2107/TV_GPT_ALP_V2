@@ -211,3 +211,68 @@ def replay_dukascopy_data():
     except Exception as exc:
         return jsonify({"error": f"Dukascopy download failed: {exc}"}), 502
 
+
+
+@replay_bp.route("/api/backtest/replay/sdb", methods=["POST"])
+def replay_run_sdb():
+    """Run SDB on the exact XAUUSD M5 bars supplied by the Replay browser."""
+    err = _auth()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    try:
+        symbol = str(body.get("symbol", "")).strip().upper()
+        interval = str(body.get("interval", ""))
+        if symbol != "XAUUSD":
+            return jsonify({"error": "SDB is restricted to XAUUSD. Set the Replay symbol to XAUUSD; GLD proxy data is not accepted."}), 400
+        if interval != "5m":
+            return jsonify({"error": "ICT SDB requires 5-minute entry bars. Select 5m and load XAUUSD data first."}), 400
+        df = _dataset_frame(body.get("bars"))
+        if len(df) < 500:
+            return jsonify({"error": f"SDB requires at least 500 valid 5-minute XAUUSD bars; received {len(df)}."}), 400
+        params = body.get("params") or {}
+        if not isinstance(params, dict):
+            return jsonify({"error": "SDB parameters must be an object."}), 400
+        allowed = {"sweep_lookback", "mss_lookback", "mss_window", "h1_ema_len", "atr_len", "stop_buffer_atr"}
+        params = {k: v for k, v in params.items() if k in allowed}
+        initial_equity = float(body.get("initial_equity", 10000))
+        risk_pct = float(body.get("risk_pct", 0.5))
+        spread = float(body.get("spread_points", 0.30))
+        slippage = float(body.get("slippage_points", 0.05))
+        commission = float(body.get("commission_pct", 0.0005))
+        if initial_equity <= 0 or not 0 < risk_pct <= 2:
+            return jsonify({"error": "Initial equity must be positive and risk must be greater than 0 and at most 2%."}), 400
+        if not 0 <= spread <= 20 or not 0 <= slippage <= 10 or not 0 <= commission <= 0.02:
+            return jsonify({"error": "Spread, slippage or commission is outside the supported range."}), 400
+        from research.xauusd_sdb import run_backtest
+        result = run_backtest(df, initial_equity=initial_equity, risk_pct=risk_pct,
+                              spread_points=spread, slippage_points=slippage,
+                              commission_pct=commission, **params)
+        result["symbol"] = "XAUUSD"
+        result["interval"] = "5m"
+        result["data_source"] = str(body.get("source", "Replay browser dataset"))
+        result["disclaimer"] = (
+            "Uses the exact 5m bars submitted from this Replay browser dataset. "
+            "Deviation levels remain a documented range-projection approximation, not a verified "
+            "replica of a proprietary ICT/TradingView indicator. Calibrate spread, slippage, "
+            "commission and contract sizing to your broker."
+        )
+        def clean(value):
+            if isinstance(value, dict):
+                return {str(k): clean(v) for k, v in value.items()}
+            if isinstance(value, (list, tuple)):
+                return [clean(v) for v in value]
+            if isinstance(value, (np.integer,)):
+                return int(value)
+            if isinstance(value, (np.floating,)):
+                value = float(value)
+            if isinstance(value, float):
+                return value if np.isfinite(value) else None
+            if isinstance(value, pd.Timestamp):
+                return value.isoformat()
+            return value
+        return jsonify(clean(result))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"SDB Replay backtest failed: {exc}", "type": type(exc).__name__}), 500
