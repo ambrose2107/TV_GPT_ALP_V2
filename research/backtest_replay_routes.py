@@ -234,7 +234,7 @@ def replay_run_sdb():
         params = body.get("params") or {}
         if not isinstance(params, dict):
             return jsonify({"error": "SDB parameters must be an object."}), 400
-        allowed = {"sweep_lookback", "mss_lookback", "mss_window", "h1_ema_len", "atr_len", "stop_buffer_atr"}
+        allowed = {"sweep_lookback", "mss_lookback", "mss_window", "h1_ema_len", "atr_len", "stop_buffer_atr", "h1_bias_mode"}
         params = {k: v for k, v in params.items() if k in allowed}
         initial_equity = float(body.get("initial_equity", 10000))
         risk_pct = float(body.get("risk_pct", 0.5))
