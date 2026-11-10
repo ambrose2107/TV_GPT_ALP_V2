@@ -38,14 +38,33 @@ def test_deployed_dashboard_and_ai_crash_smoke():
         page.on("pageerror", lambda error: page_errors.append(str(error) + " | " + str(getattr(error, "stack", ""))))
         page.on("console", lambda msg: page_errors.append(msg.text + " | location=" + str(msg.location)) if msg.type == "error" else None)
 
-        # Render's free service may sleep. Give the cold start time to finish.
-        response = page.goto(
-            BASE_URL + "/",
-            wait_until="domcontentloaded",
-            timeout=180_000,
+        # Render's free service may sleep or briefly return a gateway 503 while
+        # waking. Retry transient gateway responses, but never accept a persistent 5xx.
+        response = None
+        transient_errors = []
+        for attempt in range(4):
+            try:
+                response = page.goto(
+                    BASE_URL + "/",
+                    wait_until="domcontentloaded",
+                    timeout=180_000,
+                )
+                if response is not None and response.status < 500:
+                    break
+                transient_errors.append(
+                    f"attempt {attempt + 1}: HTTP {response.status if response else 'no response'}"
+                )
+            except Exception as exc:
+                transient_errors.append(f"attempt {attempt + 1}: {type(exc).__name__}: {exc}")
+            if attempt < 3:
+                time.sleep(20)
+        assert response is not None, (
+            "The deployed app returned no navigation response after retries: "
+            + " | ".join(transient_errors)
         )
-        assert response is not None, "The deployed app returned no navigation response."
-        assert response.status < 500, f"Dashboard returned HTTP {response.status}."
+        assert response.status < 500, (
+            f"Dashboard remained unavailable after retries: {transient_errors}"
+        )
         page.screenshot(path=str(ARTIFACTS / "login-mobile.png"), full_page=True)
         assert page.locator('input[name="password"]').count() == 1, (
             "Expected the dashboard login screen; check the deployed URL or routing."
