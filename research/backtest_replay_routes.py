@@ -8,6 +8,7 @@ import io
 import csv
 from datetime import datetime, date, timedelta
 import pandas as pd
+import numpy as np
 from flask import Blueprint, jsonify, request, session, render_template
 from research.strategies import list_strategies, get_strategy
 
