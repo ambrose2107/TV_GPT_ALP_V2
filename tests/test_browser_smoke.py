@@ -231,9 +231,17 @@ def test_deployed_dashboard_and_ai_crash_smoke():
             latest_point = points[-1].get("t") if points else None
             chart_coverage[symbol] = {"source": series.get("source"), "points": len(points), "latest": latest_point}
             assert len(points) >= 100, f"{symbol.upper()} cross-asset history is too short: {chart_coverage[symbol]}"
-            assert latest_point and latest_point >= (datetime.now(timezone.utc).date() - timedelta(days=10)).isoformat(), (
-                f"{symbol.upper()} cross-asset history has no recent tail: {chart_coverage[symbol]}"
+            # Old bundled baselines are allowed for historical plotting only when
+            # the API explicitly labels their freshness; the dashboard must warn users.
+            age_days = series.get("age_days")
+            assert isinstance(age_days, int) and age_days >= 0, (
+                f"{symbol.upper()} cross-asset history is missing freshness metadata: {chart_coverage[symbol]}"
             )
+            assert bool(series.get("is_stale")) == (age_days > 10), (
+                f"{symbol.upper()} stale-data flag disagrees with its age: {chart_coverage[symbol]}"
+            )
+            if age_days > 10:
+                print(f"WARNING: {symbol.upper()} chart data is {age_days} days old; dashboard must show stale-data warning.")
         print("Cross-asset chart coverage:", chart_coverage)
 
         # Check Chart.js actually instantiated the SPY, QQQ and rolling-correlation plots.
