@@ -52,7 +52,17 @@ def normalize_frame(raw, source, source_timezone=None):
         raise ValueError("OHLC columns missing; expected Open, High, Low, Close or O/H/L/C")
     if "time" not in df.columns: raise ValueError("Missing timestamp; expected time/timestamp or Date + Time")
     raw_time=(df["date"].astype(str)+" "+df["time"].astype(str)) if "date" in df.columns else df["time"]
-    parsed=pd.to_datetime(raw_time,errors="coerce")
+    # HistData's headerless ASCII M1 uses compact YYYYMMDD HHMMSS values.
+    # Parse that format explicitly so pandas parser-version inference cannot
+    # silently turn valid timestamps into NaT.
+    if str(source).lower() == "histdata":
+        compact_time = raw_time.astype(str).str.strip()
+        if compact_time.str.fullmatch(r"\d{8}\s+\d{6}").all():
+            parsed=pd.to_datetime(compact_time,format="%Y%m%d %H%M%S",errors="coerce")
+        else:
+            parsed=pd.to_datetime(raw_time,errors="coerce")
+    else:
+        parsed=pd.to_datetime(raw_time,errors="coerce")
     if getattr(parsed.dt,"tz",None) is None:
         if not source_timezone: raise ValueError("Naive timestamps require --source-timezone (for example UTC)")
         parsed=parsed.dt.tz_localize(source_timezone,ambiguous="NaT",nonexistent="NaT")
@@ -79,6 +89,8 @@ def write_monthly(df, timeframe, out_dir):
         folder=out_dir/"normalized"/timeframe/f"{year:04d}"
         folder.mkdir(parents=True,exist_ok=True)
         path=folder/f"XAUUSD_{timeframe}_{year:04d}_{month:02d}.csv.gz"
+        part=part.copy()
+        part.index.name="time"
         part.to_csv(path,compression="gzip",float_format="%.5f")
         outputs.append({"path":str(path.relative_to(out_dir)),"bars":len(part),
                         "sha256":hashlib.sha256(path.read_bytes()).hexdigest(),
