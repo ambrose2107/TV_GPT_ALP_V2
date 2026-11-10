@@ -172,7 +172,7 @@ def replay_dukascopy_data():
         from scripts.download_dukascopy_xauusd import download_range
         from scripts.xauusd_data_pipeline import RULES, resample_ohlc
 
-        frames, missing = download_range(start, end, side, workers=2)
+        frames, missing = download_range(start, end, side, workers=1)
         if not frames:
             return jsonify({"error": "Dukascopy returned no candles for this date range."}), 404
         raw = pd.concat(frames, ignore_index=True).drop_duplicates("time", keep="last")
@@ -202,6 +202,12 @@ def replay_dukascopy_data():
         })
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({
+            "error": f"Dukascopy is temporarily unavailable: {exc}",
+            "retryable": True,
+            "suggestion": "Retry later or select a completed UTC date range ending yesterday."
+        }), 503
     except Exception as exc:
         return jsonify({"error": f"Dukascopy download failed: {exc}"}), 502
 
