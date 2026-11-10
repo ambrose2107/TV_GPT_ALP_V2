@@ -14,8 +14,8 @@ class PipelineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path=Path(tmp)/"DAT_ASCII_XAUUSD_M1_202401.csv"
             path.write_text(
-                "20240102 000000;2060.10;2060.40;2059.90;2060.20;0\\n"
-                "20240102 000100;2060.20;2060.50;2060.00;2060.30;0\\n",
+                "20240102 000000;2060.10;2060.40;2059.90;2060.20;0\n"
+                "20240102 000100;2060.20;2060.50;2060.00;2060.30;0\n",
                 encoding="utf-8")
             raw=read_file(path)
             out=normalize_frame(raw,"histdata","Etc/GMT+5")
