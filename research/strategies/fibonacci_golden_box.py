@@ -173,7 +173,7 @@ register({
         "atr_len": {"type":"int","min":2,"max":100,"step":1},
         "min_leg_atr": {"type":"float","min":0.1,"max":10,"step":0.1},
         "golden_shallow": {"type":"float","min":0.5,"max":0.75,"step":0.001},
-        "golden_deep": {"type":"float","min":0.65,"max":0.9,"step":0.001},
+        "golden_deep": {"type":"float","min":0.5,"max":0.9,"step":0.001},
         "zone_buffer_atr": {"type":"float","min":0,"max":2,"step":0.05},
         "stop_buffer_atr": {"type":"float","min":0,"max":3,"step":0.05},
         "reward_extension": {"type":"float","min":1,"max":3,"step":0.001},
