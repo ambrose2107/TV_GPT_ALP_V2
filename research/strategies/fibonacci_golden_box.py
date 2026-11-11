@@ -108,7 +108,7 @@ def generate_signals(df, params=None):
                     "ai": i1, "bi": i2, "ci": i3, "detected": i,
                     "low": entry_low, "high": entry_high, "stop": stop,
                     "target": target, "fib": fib, "targets": targets,
-                    "target_low": min(target_zone), "target_high": max(target_zone),
+                    "target_low": min(target_zone), "target_high": max(target_zone), "entered": False,
                 }
                 used_c.add(i3)
 
@@ -150,11 +150,11 @@ def generate_signals(df, params=None):
             rejection = cl[i] < active["low"] and cl[i] < op[i]
             if p["confirmation"] == "close_above_previous_high":
                 rejection = rejection and i > 0 and cl[i] < lo[i-1]
-        if touched and rejection:
+        if touched and rejection and not active["entered"]:
             sig[i] = direction
             out["custom_stop_price"][i] = active["stop"]
             out["custom_target_price"][i] = active["target"]
-            active = None
+            active["entered"] = True
 
     d["atr"] = av
     d["signal"] = sig
