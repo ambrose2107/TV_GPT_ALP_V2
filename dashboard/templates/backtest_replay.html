@@ -148,28 +148,28 @@ function draw(){
  ['golden_box_low','golden_box_high','target_box_low','target_box_high','custom_stop_price','target_1272','target_1414','target_1618','target_2000','fib_05','fib_0618','fib_0786'].forEach(k=>{if(Number.isFinite(+s[k]))vals.push(+s[k]);});
  let min=Math.min(...vals),max=Math.max(...vals),pad=(max-min)*.08||max*.005||1;min-=pad;max+=pad;
  const left=12,right=68,top=18,bottom=34,plotW=W-left-right,plotH=H-top-bottom;
- const y=v=>top+(max-v)/(max-min)*plotH,step=plotW/view.length,cw=Math.max(2,Math.min(9,step*.62));
+ const y=v=>top+(max-v)/(max-min)*plotH,step=plotW/view.length,cw=Math.max(2,Math.min(9,step*.62));const valid=v=>v!==null&&v!==undefined&&v!==''&&Number.isFinite(Number(v));
  const xBar=bi=>left+(Number(bi)-start+.5)*step;
  ctx.strokeStyle='#202b38';ctx.lineWidth=1;
  for(let j=0;j<=4;j++){const yy=top+plotH*j/4;ctx.beginPath();ctx.moveTo(left,yy);ctx.lineTo(W-right,yy);ctx.stroke();ctx.fillStyle='#9aa8b8';ctx.font='10px system-ui';ctx.fillText((max-(max-min)*j/4).toFixed(2),W-right+5,yy+3);}
  // 1) A-B Fibonacci retracement, anchored to its real swing candles.
- if(Number.isFinite(+s.fib_a_bar)&&Number.isFinite(+s.fib_b_bar)){
+ if(valid(s.fib_a_bar)&&valid(s.fib_b_bar)){
   const ax=xBar(s.fib_a_bar),bx=xBar(s.fib_b_bar),x1=Math.max(left,Math.min(ax,bx)),x2=Math.min(W-right,Math.max(ax,bx));
   const topP=Math.max(+s.swing_a,+s.swing_b),botP=Math.min(+s.swing_a,+s.swing_b);
   if(x2>=x1){ctx.fillStyle='rgba(150,165,180,.10)';ctx.fillRect(x1,y(topP),x2-x1,y(botP)-y(topP));ctx.strokeStyle='rgba(180,195,210,.4)';ctx.strokeRect(x1,y(topP),x2-x1,y(botP)-y(topP));}
-  [['0.5',s.fib_05],['0.618',s.fib_0618],['0.786',s.fib_0786]].forEach(([lab,v])=>{if(!Number.isFinite(+v))return;const yy=y(+v);ctx.strokeStyle='rgba(190,200,210,.55)';ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(left,yy);ctx.lineTo(W-right,yy);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#d6e2f0';ctx.font='10px system-ui';ctx.fillText(lab,left+4,yy-3);});
+  [['0.5',s.fib_05],['0.618',s.fib_0618],['0.786',s.fib_0786]].forEach(([lab,v])=>{if(!valid(v))return;const yy=y(+v);ctx.strokeStyle='rgba(190,200,210,.55)';ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(left,yy);ctx.lineTo(W-right,yy);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#d6e2f0';ctx.font='10px system-ui';ctx.fillText(lab,left+4,yy-3);});
  }
  const cx=Math.max(left,Math.min(W-right,xBar(s.fib_c_bar)));
  // 2) A-B-C trend-based Fibonacci projection.
- if(Number.isFinite(+s.fib_c_bar)){
-  [['0',s.swing_c],['1.272',s.fib_1272],['1.414',s.fib_1414],['1.618',s.fib_1618],['2.0',s.fib_2000]].forEach(([lab,v])=>{if(!Number.isFinite(+v))return;const yy=y(+v);ctx.strokeStyle='rgba(135,160,185,.65)';ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(cx,yy);ctx.lineTo(W-right,yy);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#b9c8d8';ctx.font='10px system-ui';ctx.fillText(lab+' '+fmt(v,2),Math.max(left,cx+4),yy-3);});
+ if(valid(s.fib_c_bar)){
+  [['0',s.swing_c],['1.272',s.fib_1272],['1.414',s.fib_1414],['1.618',s.fib_1618],['2.0',s.fib_2000]].forEach(([lab,v])=>{if(!valid(v))return;const yy=y(+v);ctx.strokeStyle='rgba(135,160,185,.65)';ctx.setLineDash([4,4]);ctx.beginPath();ctx.moveTo(cx,yy);ctx.lineTo(W-right,yy);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#b9c8d8';ctx.font='10px system-ui';ctx.fillText(lab+' '+fmt(v,2),Math.max(left,cx+4),yy-3);});
  }
  // 3) Entry/prediction pocket, extended from C to the replay edge.
- if(Number.isFinite(+s.entry_box_low)&&Number.isFinite(+s.entry_box_high)){
+ if(valid(s.entry_box_low)&&valid(s.entry_box_high)){
   const y1=y(+s.entry_box_high),y2=y(+s.entry_box_low);ctx.fillStyle='rgba(233,185,73,.24)';ctx.fillRect(cx,Math.min(y1,y2),Math.max(0,W-right-cx),Math.abs(y2-y1));ctx.strokeStyle='#e9b949';ctx.strokeRect(cx,Math.min(y1,y2),Math.max(0,W-right-cx),Math.abs(y2-y1));ctx.fillStyle='#e9b949';ctx.font='10px system-ui';ctx.fillText('ENTRY GOLDEN ZONE',Math.min(W-right-110,cx+4),Math.min(y1,y2)-4);
  }
  // 4) Profit-booking zone, also attached to C and projected right.
- if(Number.isFinite(+s.target_box_low)&&Number.isFinite(+s.target_box_high)){
+ if(valid(s.target_box_low)&&valid(s.target_box_high)){
   const y1=y(+s.target_box_high),y2=y(+s.target_box_low);ctx.fillStyle='rgba(25,195,125,.14)';ctx.fillRect(cx,Math.min(y1,y2),Math.max(0,W-right-cx),Math.abs(y2-y1));ctx.strokeStyle='rgba(25,195,125,.8)';ctx.strokeRect(cx,Math.min(y1,y2),Math.max(0,W-right-cx),Math.abs(y2-y1));ctx.fillStyle='#19c37d';ctx.font='10px system-ui';ctx.fillText('PROFIT ZONE 1.272–1.414',Math.min(W-right-145,cx+4),Math.min(y1,y2)-4);
  }
  view.forEach((b,j)=>{const x=left+(j+.5)*step,up=b.close>=b.open;ctx.strokeStyle=up?'#19c37d':'#ff5c68';ctx.fillStyle=ctx.strokeStyle;ctx.beginPath();ctx.moveTo(x,y(b.high));ctx.lineTo(x,y(b.low));ctx.stroke();const yo=y(Math.max(b.open,b.close)),yh=y(Math.min(b.open,b.close));ctx.fillRect(x-cw/2,yo,cw,Math.max(1,yh-yo));const sg=signals[start+j];if(sg?.signal){ctx.fillStyle=sg.signal>0?'#19c37d':'#ff5c68';ctx.beginPath();ctx.arc(x,sg.signal>0?y(b.low)+8:y(b.high)-8,4,0,Math.PI*2);ctx.fill();}});
