@@ -29,6 +29,7 @@ def generate_signals(df, params=None):
     missing = required.difference(df.columns)
     if missing:
         raise ValueError("Missing OHLC columns: " + ", ".join(sorted(missing)))
+    d = df.copy()
     left, right = max(1, int(p["left_bars"])), max(1, int(p["right_bars"]))
     shallow, deep = float(p["golden_shallow"]), float(p["golden_deep"])
     if not (0 < shallow < deep < 1):
@@ -55,7 +56,6 @@ def generate_signals(df, params=None):
     if ext < 1 or not (1 <= tz0 < tz1 <= 4):
         raise ValueError("Extension target must be >=1 and target zone must be ordered between 1 and 4.")
 
-    d = df.copy()
     op, hi, lo, cl = (d[k].to_numpy(dtype=float) for k in ("Open", "High", "Low", "Close"))
     av = atr(d, max(2, int(p["atr_len"]))).to_numpy(dtype=float)
     n = len(d)
