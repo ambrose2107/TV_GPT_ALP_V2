@@ -43,7 +43,7 @@ def generate_signals(df, params=None):
     sig = np.zeros(n, dtype=int)
     names = ("custom_stop_price", "custom_target_price", "golden_box_low", "golden_box_high",
              "swing_a", "swing_b", "swing_c", "fib_a_bar", "fib_b_bar", "fib_c_bar",
-             "fib_05", "fib_0618", "fib_0786", "fib_1272", "fib_1414", "fib_1618",
+             "fib_05", "fib_0618", "fib_0786", "fib_zone_shallow", "fib_zone_deep", "fib_1272", "fib_1414", "fib_1618",
              "fib_2000", "entry_box_low", "entry_box_high", "target_box_low", "target_box_high",
              "target_1272", "target_1414", "target_1618", "target_2000", "setup_direction")
     out = {k: np.full(n, np.nan) for k in names}
@@ -129,7 +129,7 @@ def generate_signals(df, params=None):
             "swing_a": active["a"], "swing_b": active["b"], "swing_c": active["c"],
             "fib_a_bar": active["ai"], "fib_b_bar": active["bi"], "fib_c_bar": active["ci"],
             "fib_05": active["fib"][0.5], "fib_0618": active["fib"][0.618],
-            "fib_0786": active["fib"][0.786], "fib_1272": active["targets"][1.272],
+            "fib_0786": active["fib"][0.786], "fib_zone_shallow": shallow, "fib_zone_deep": deep, "fib_1272": active["targets"][1.272],
             "fib_1414": active["targets"][1.414], "fib_1618": active["targets"][1.618],
             "fib_2000": active["targets"][2.0], "golden_box_low": active["low"],
             "golden_box_high": active["high"], "entry_box_low": active["low"],
