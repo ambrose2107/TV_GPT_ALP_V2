@@ -120,7 +120,7 @@ def generate_signals(df, params=None):
             continue
         direction = active["dir"]
         # A structure is invalidated only by a close through its C/stop boundary.
-        invalid = cl[i] < active["stop"] if direction == 1 else cl[i] > active["stop"]
+        invalid = lo[i] <= active["stop"] if direction == 1 else hi[i] >= active["stop"]
         if invalid:
             active = None
             continue
