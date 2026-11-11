@@ -145,7 +145,7 @@ function draw(){
  if(!bars.length){ctx.fillStyle='#8b9aaa';ctx.fillText('Fetch or import historical data to begin replay',20,30);return;}
  const end=cursor,start=Math.max(0,end-119),view=bars.slice(start,end+1),s=signals[cursor]||{};
  const vals=view.flatMap(b=>[b.high,b.low]);
- ['golden_box_low','golden_box_high','target_box_low','target_box_high','custom_stop_price','target_1272','target_1414','target_1618','target_2000','fib_05','fib_0618','fib_0786'].forEach(k=>{if(Number.isFinite(+s[k]))vals.push(+s[k]);});
+ ['golden_box_low','golden_box_high','target_box_low','target_box_high','custom_stop_price','target_1272','target_1414','target_1618','target_2000','fib_05','fib_0618','fib_0786'].forEach(k=>{if(valid(s[k]))vals.push(+s[k]);});
  let min=Math.min(...vals),max=Math.max(...vals),pad=(max-min)*.08||max*.005||1;min-=pad;max+=pad;
  const left=12,right=68,top=18,bottom=34,plotW=W-left-right,plotH=H-top-bottom;
  const y=v=>top+(max-v)/(max-min)*plotH,step=plotW/view.length,cw=Math.max(2,Math.min(9,step*.62));const valid=v=>v!==null&&v!==undefined&&v!==''&&Number.isFinite(Number(v));
