@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from research.strategies.fibonacci_golden_box import generate_signals
 
@@ -76,3 +77,17 @@ def test_golden_zone_rejects_reversed_levels():
     import pytest
     with pytest.raises(ValueError, match="Golden levels"):
         generate_signals(bars, {"golden_shallow": 0.618, "golden_deep": 0.5})
+
+
+def test_strict_confirmation_does_not_break_short_side():
+    bars = _sample_bars(900)
+    out = generate_signals(bars, {"strict_confirmation": True, "allow_shorts": True})
+    assert set(out["signal"].unique()).issubset({-1, 0, 1})
+
+
+def test_optional_15m_trend_filter_is_causal_and_valid():
+    bars = _sample_bars(900)
+    out = generate_signals(bars, {"trend_filter": "shorts_only"})
+    assert set(out["signal"].unique()).issubset({-1, 0, 1})
+    with pytest.raises(ValueError, match="trend_filter"):
+        generate_signals(bars, {"trend_filter": "future_data"})
