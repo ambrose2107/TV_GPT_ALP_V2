@@ -7,8 +7,8 @@ def test_backtest_replay_template_has_one_complete_document():
     html = path.read_text(encoding="utf-8")
     assert html.lower().count("</html>") == 1
     assert html.rstrip().lower().endswith("</html>")
-    assert html.lower().count("<script>") == 1
-    assert html.lower().count("</script>") == 1
+    assert html.lower().count("<script") == 2  # Chart.js CDN plus one inline controller
+    assert html.lower().count("</script>") == 2
     # The previous bad append began with a JavaScript expression after </html>.
     assert not re.search(r"</html>\\s*\\+fmt\\(", html, re.IGNORECASE)
 
