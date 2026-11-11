@@ -179,6 +179,7 @@ register({
         "reward_extension": {"type":"float","min":1,"max":3,"step":0.001},
         "max_structure_age": {"type":"int","min":20,"max":500,"step":5},
         "allow_shorts": {"type":"bool"},
+        "confirmation": {"type":"str","options":["directional_rejection","close_above_previous_high"]},
         "target_zone_start": {"type":"float","min":1,"max":3.9,"step":0.001},
         "target_zone_end": {"type":"float","min":1.001,"max":4,"step":0.001},
     },
