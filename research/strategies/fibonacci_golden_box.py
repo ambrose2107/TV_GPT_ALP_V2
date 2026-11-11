@@ -16,7 +16,7 @@ DEFAULTS = {
     "min_leg_atr": 1.0, "golden_shallow": 0.618, "golden_deep": 0.786,
     "zone_buffer_atr": 0.10, "stop_buffer_atr": 0.20,
     "reward_extension": 1.272, "max_structure_age": 180,
-    "allow_shorts": True, "confirmation": "directional_rejection",
+    "allow_shorts": True, "strict_confirmation": False,
     "target_zone_start": 1.272, "target_zone_end": 1.414,
 }
 
@@ -31,6 +31,7 @@ def generate_signals(df, params=None):
     shallow, deep = float(p["golden_shallow"]), float(p["golden_deep"])
     if not (0 < shallow < deep < 1):
         raise ValueError("Golden levels must satisfy 0 < shallow < deep < 1.")
+    strict_confirmation = bool(p.get("strict_confirmation", p.get("confirmation") == "close_above_previous_high"))
     ext = float(p["reward_extension"])
     tz0, tz1 = float(p["target_zone_start"]), float(p["target_zone_end"])
     if ext < 1 or not (1 <= tz0 < tz1 <= 4):
@@ -144,7 +145,7 @@ def generate_signals(df, params=None):
         touched = lo[i] <= active["high"] and hi[i] >= active["low"]
         if direction == 1:
             rejection = cl[i] > active["high"] and cl[i] > op[i]
-            if p["confirmation"] == "close_above_previous_high":
+            if strict_confirmation:
                 rejection = rejection and i > 0 and cl[i] > hi[i-1]
         else:
             rejection = cl[i] < active["low"] and cl[i] < op[i]
@@ -179,7 +180,7 @@ register({
         "reward_extension": {"type":"float","min":1,"max":3,"step":0.001},
         "max_structure_age": {"type":"int","min":20,"max":500,"step":5},
         "allow_shorts": {"type":"bool"},
-        "confirmation": {"type":"str","options":["directional_rejection","close_above_previous_high"]},
+        "strict_confirmation": {"type":"bool"},
         "target_zone_start": {"type":"float","min":1,"max":3.9,"step":0.001},
         "target_zone_end": {"type":"float","min":1.001,"max":4,"step":0.001},
     },
