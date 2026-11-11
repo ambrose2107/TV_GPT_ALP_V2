@@ -11,6 +11,7 @@ on:
       - 'research/xauusd_sdb.py'
       - 'research/strategies/fibonacci_golden_box.py'
       - 'tests/test_fibonacci_golden_box.py'
+      - 'tests/test_backtest_replay_template.py'
       - 'tests/test_xauusd_sdb.py'
       - 'dashboard/templates/backtest_replay.html'
       - 'dashboard/templates/dashboard.html'
@@ -45,7 +46,7 @@ jobs:
           python -c "import re; from pathlib import Path; h=Path('dashboard/templates/backtest_replay.html').read_text(); Path('/tmp/replay.js').write_text(re.findall(r'<script>(.*?)</script>', h, re.S)[-1])"
           node --check /tmp/replay.js
       - run: python -m unittest tests.test_xauusd_data_pipeline -v
-      - run: python -m pytest tests/test_fibonacci_golden_box.py -q
+      - run: python -m pytest tests/test_fibonacci_golden_box.py tests/test_backtest_replay_template.py -q
       - name: Live Dukascopy source smoke test (two historical days)
         id: dukascopy-live-smoke
         continue-on-error: true
