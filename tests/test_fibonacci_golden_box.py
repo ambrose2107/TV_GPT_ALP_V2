@@ -57,3 +57,22 @@ def test_shorts_can_be_disabled():
     bars = _sample_bars(420)
     out = generate_signals(bars, {"allow_shorts": False})
     assert not (out["signal"] < 0).any()
+
+
+def test_shallow_golden_zone_preset_accepts_half_to_618():
+    bars = _sample_bars(900)
+    out = generate_signals(bars, {"golden_shallow": 0.5, "golden_deep": 0.618})
+    assert "fib_zone_shallow" in out.columns
+    assert "fib_zone_deep" in out.columns
+    active = out.dropna(subset=["entry_box_low", "entry_box_high"])
+    if not active.empty:
+        assert (active["fib_zone_shallow"] == 0.5).all()
+        assert (active["fib_zone_deep"] == 0.618).all()
+        assert (active["entry_box_low"] <= active["entry_box_high"]).all()
+
+
+def test_golden_zone_rejects_reversed_levels():
+    bars = _sample_bars(120)
+    import pytest
+    with pytest.raises(ValueError, match="Golden levels"):
+        generate_signals(bars, {"golden_shallow": 0.618, "golden_deep": 0.5})
