@@ -18,6 +18,8 @@ DEFAULTS = {
     "reward_extension": 1.272, "max_structure_age": 180,
     "allow_shorts": True, "strict_confirmation": False,
     "target_zone_start": 1.272, "target_zone_end": 1.414,
+    "trend_filter": "none", "trend_ema_fast": 20, "trend_ema_slow": 50,
+    "sweep_lookback": 20, "require_liquidity_sweep": False,
 }
 
 
@@ -32,6 +34,22 @@ def generate_signals(df, params=None):
     if not (0 < shallow < deep < 1):
         raise ValueError("Golden levels must satisfy 0 < shallow < deep < 1.")
     strict_confirmation = bool(p.get("strict_confirmation", p.get("confirmation") == "close_above_previous_high"))
+    trend_filter = str(p.get("trend_filter", "none"))
+    if trend_filter not in {"none", "shorts_only", "both"}:
+        raise ValueError("trend_filter must be none, shorts_only, or both.")
+    trend_long = trend_short = None
+    if trend_filter != "none":
+        if not isinstance(d.index, __import__("pandas").DatetimeIndex):
+            raise ValueError("15m trend filter requires a DatetimeIndex.")
+        import pandas as pd
+        htf = d.resample("15min", label="right", closed="right").agg({"Open":"first","High":"max","Low":"min","Close":"last"}).dropna()
+        fast = htf["Close"].ewm(span=max(2,int(p["trend_ema_fast"])), adjust=False).mean()
+        slow = htf["Close"].ewm(span=max(3,int(p["trend_ema_slow"])), adjust=False).mean()
+        trend_long = ((htf["Close"] > slow) & (fast > slow)).reindex(d.index, method="ffill").fillna(False).to_numpy()
+        trend_short = ((htf["Close"] < slow) & (fast < slow)).reindex(d.index, method="ffill").fillna(False).to_numpy()
+    sweep_lookback = max(5, int(p.get("sweep_lookback", 20)))
+    prior_low = d["Low"].rolling(sweep_lookback).min().shift(1).to_numpy()
+    prior_high = d["High"].rolling(sweep_lookback).max().shift(1).to_numpy()
     ext = float(p["reward_extension"])
     tz0, tz1 = float(p["target_zone_start"]), float(p["target_zone_end"])
     if ext < 1 or not (1 <= tz0 < tz1 <= 4):
@@ -149,8 +167,15 @@ def generate_signals(df, params=None):
                 rejection = rejection and i > 0 and cl[i] > hi[i-1]
         else:
             rejection = cl[i] < active["low"] and cl[i] < op[i]
-            if p["confirmation"] == "close_above_previous_high":
+            if strict_confirmation:
                 rejection = rejection and i > 0 and cl[i] < lo[i-1]
+        if trend_filter == "both":
+            rejection = rejection and (trend_long[i] if direction == 1 else trend_short[i])
+        elif trend_filter == "shorts_only" and direction == -1:
+            rejection = rejection and trend_short[i]
+        if p.get("require_liquidity_sweep", False):
+            swept = (lo[i] < prior_low[i] and cl[i] > prior_low[i]) if direction == 1 else (hi[i] > prior_high[i] and cl[i] < prior_high[i])
+            rejection = rejection and swept
         if touched and rejection and not active["entered"]:
             sig[i] = direction
             out["custom_stop_price"][i] = active["stop"]
