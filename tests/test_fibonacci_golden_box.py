@@ -20,7 +20,10 @@ def test_golden_box_returns_causal_columns():
     bars = _sample_bars()
     out = generate_signals(bars)
     for col in ("atr", "signal", "custom_stop_price", "custom_target_price",
-                "golden_box_low", "golden_box_high", "swing_a", "swing_b", "swing_c"):
+                "golden_box_low", "golden_box_high", "swing_a", "swing_b", "swing_c",
+                "fib_a_bar", "fib_b_bar", "fib_c_bar", "fib_05", "fib_0618", "fib_0786",
+                "fib_1272", "fib_1414", "fib_1618", "fib_2000", "entry_box_low",
+                "entry_box_high", "target_box_low", "target_box_high", "setup_direction"):
         assert col in out.columns
         assert len(out[col]) == len(bars)
     assert set(out["signal"].unique()).issubset({-1, 0, 1})
@@ -35,3 +38,22 @@ def test_golden_box_has_no_future_bar_dependency():
             full["signal"].iloc[:end+1].reset_index(drop=True),
             prefix["signal"].reset_index(drop=True),
         )
+
+
+def test_long_and_short_setups_are_supported_and_drawings_are_ordered():
+    bars = _sample_bars(900)
+    out = generate_signals(bars, {"allow_shorts": True})
+    assert set(out["signal"].unique()).issubset({-1, 0, 1})
+    active = out.dropna(subset=["entry_box_low", "entry_box_high"])
+    if not active.empty:
+        assert (active["entry_box_low"] <= active["entry_box_high"]).all()
+        assert (active["target_box_low"] <= active["target_box_high"]).all()
+        assert active["fib_a_bar"].notna().all()
+        assert active["fib_b_bar"].notna().all()
+        assert active["fib_c_bar"].notna().all()
+
+
+def test_shorts_can_be_disabled():
+    bars = _sample_bars(420)
+    out = generate_signals(bars, {"allow_shorts": False})
+    assert not (out["signal"] < 0).any()
