@@ -138,27 +138,37 @@ def run_backtest(
             exit_price = exit_reason = None
 
             if side == 1:
-                if l[i] <= sl:
+                if o[i] <= sl:
+                    exit_price, exit_reason = o[i], "SL_GAP"
+                elif o[i] >= tp:
+                    exit_price, exit_reason = o[i], "TP_GAP"
+                elif l[i] <= sl:
                     exit_price, exit_reason = sl, "SL"
                 elif h[i] >= tp:
                     exit_price, exit_reason = tp, "TP"
             else:
-                if h[i] >= sl:
+                if o[i] >= sl:
+                    exit_price, exit_reason = o[i], "SL_GAP"
+                elif o[i] <= tp:
+                    exit_price, exit_reason = o[i], "TP_GAP"
+                elif h[i] >= sl:
                     exit_price, exit_reason = sl, "SL"
                 elif l[i] <= tp:
                     exit_price, exit_reason = tp, "TP"
 
             if exit_price is not None:
-                gross = (exit_price - position["entry_price"]) * position["size"] * side
-                cost = commission_pct * (exit_price * position["size"] + position["entry_price"] * position["size"])
+                # Apply adverse half-spread and slippage on both entry and exit.
+                exit_fill = float(exit_price) - side * (spread_points / 2.0 + slippage_points)
+                gross = (exit_fill - position["entry_price"]) * position["size"] * side
+                cost = commission_pct * (abs(exit_fill * position["size"]) + abs(position["entry_price"] * position["size"]))
                 pnl = gross - cost
                 equity += pnl
-                position.setdefault("events", []).append({"type": exit_reason, "time": str(idx[i]), "price": round(float(exit_price), 5)})
+                position.setdefault("events", []).append({"type": "SL" if exit_reason.startswith("SL") else "TP", "time": str(idx[i]), "price": round(float(exit_price), 5)})
                 trades.append({
                     "entry_time": str(position["entry_time"]), "exit_time": str(idx[i]),
                     "side": "LONG" if side == 1 else "SHORT",
                     "entry_price": round(position["entry_price"], 5),
-                    "exit_price": round(exit_price, 5),
+                    "exit_price": round(exit_fill, 5),
                     "size": round(position["size"], 6),
                     "pnl": round(pnl, 2), "reason": exit_reason,
                     "events": position.get("events", []),
@@ -214,6 +224,27 @@ def run_backtest(
 
         equity_curve_t.append(str(idx[i]))
         equity_curve_v.append(round(equity, 2))
+
+    # Close any still-open trade at the final available close; never omit its P&L.
+    if position is not None:
+        side = position["side"]
+        raw_exit = float(c[-1])
+        exit_fill = raw_exit - side * (spread_points / 2.0 + slippage_points)
+        gross = (exit_fill - position["entry_price"]) * position["size"] * side
+        cost = commission_pct * (abs(exit_fill * position["size"]) + abs(position["entry_price"] * position["size"]))
+        pnl = gross - cost
+        equity += pnl
+        position.setdefault("events", []).append({"type": "EOD", "time": str(idx[-1]), "price": round(raw_exit, 5)})
+        trades.append({
+            "entry_time": str(position["entry_time"]), "exit_time": str(idx[-1]),
+            "side": "LONG" if side == 1 else "SHORT",
+            "entry_price": round(position["entry_price"], 5), "exit_price": round(exit_fill, 5),
+            "size": round(position["size"], 6), "pnl": round(pnl, 2), "reason": "EOD",
+            "events": position.get("events", []),
+            "R": round(pnl / position["risk_amount"], 3) if position["risk_amount"] > 0 else None,
+        })
+        if equity_curve_v:
+            equity_curve_v[-1] = round(equity, 2)
 
     metrics = _compute_metrics(trades, equity_curve_v, initial_equity)
 
