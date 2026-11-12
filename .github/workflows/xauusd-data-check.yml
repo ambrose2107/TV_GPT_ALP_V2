@@ -13,6 +13,7 @@ on:
       - 'research/strategies/fibonacci_golden_box.py'
       - 'tests/test_fibonacci_golden_box.py'
       - 'tests/test_backtest_replay_template.py'
+      - 'tests/test_backtest_engine_execution.py'
       - 'tests/test_xauusd_sdb.py'
       - 'dashboard/templates/backtest_replay.html'
       - 'dashboard/templates/dashboard.html'
