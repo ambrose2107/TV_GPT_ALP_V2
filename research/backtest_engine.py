@@ -93,7 +93,8 @@ def run_backtest(
     initial_equity: float = 10000.0,
     risk_pct: float = 0.5,
     spread_points: float = 0.0,
-    commission_pct: float = 0.0005,
+    commission_pct: float = 0.0,
+    commission_per_unit: float = 0.0,
     slippage_points: float = 0.0,
 ) -> dict:
     strat = get_strategy(strategy_id)
@@ -160,7 +161,8 @@ def run_backtest(
                 # Apply adverse half-spread and slippage on both entry and exit.
                 exit_fill = float(exit_price) - side * (spread_points / 2.0 + slippage_points)
                 gross = (exit_fill - position["entry_price"]) * position["size"] * side
-                cost = commission_pct * (abs(exit_fill * position["size"]) + abs(position["entry_price"] * position["size"]))
+                cost = (commission_pct * (abs(exit_fill * position["size"]) + abs(position["entry_price"] * position["size"]))
+                        + commission_per_unit * position["size"] * 2.0)
                 pnl = gross - cost
                 equity += pnl
                 position.setdefault("events", []).append({"type": "SL" if exit_reason.startswith("SL") else "TP", "time": str(idx[i]), "price": round(float(exit_price), 5)})
@@ -242,7 +244,8 @@ def run_backtest(
                 raw_exit, reason = hit
                 exit_fill = float(raw_exit) - side * (spread_points / 2.0 + slippage_points)
                 gross = (exit_fill - position["entry_price"]) * position["size"] * side
-                cost = commission_pct * (abs(exit_fill * position["size"]) + abs(position["entry_price"] * position["size"]))
+                cost = (commission_pct * (abs(exit_fill * position["size"]) + abs(position["entry_price"] * position["size"]))
+                        + commission_per_unit * position["size"] * 2.0)
                 pnl = gross - cost
                 equity += pnl
                 position.setdefault("events", []).append({"type": reason, "time": str(idx[i]), "price": round(float(raw_exit), 5)})
@@ -265,7 +268,8 @@ def run_backtest(
         raw_exit = float(c[-1])
         exit_fill = raw_exit - side * (spread_points / 2.0 + slippage_points)
         gross = (exit_fill - position["entry_price"]) * position["size"] * side
-        cost = commission_pct * (abs(exit_fill * position["size"]) + abs(position["entry_price"] * position["size"]))
+        cost = (commission_pct * (abs(exit_fill * position["size"]) + abs(position["entry_price"] * position["size"]))
+                        + commission_per_unit * position["size"] * 2.0)
         pnl = gross - cost
         equity += pnl
         position.setdefault("events", []).append({"type": "EOD", "time": str(idx[-1]), "price": round(raw_exit, 5)})
