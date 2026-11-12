@@ -43,7 +43,9 @@ def generate_signals(df, params=None):
         if not isinstance(d.index, __import__("pandas").DatetimeIndex):
             raise ValueError("15m trend filter requires a DatetimeIndex.")
         import pandas as pd
-        htf = d.resample("15min", label="right", closed="right").agg({"Open":"first","High":"max","Low":"min","Close":"last"}).dropna()
+        # CSV timestamps are candle-open times. Make completed 15m values available only at their close.
+        htf = d.resample("15min", label="left", closed="left").agg({"Open":"first","High":"max","Low":"min","Close":"last"}).dropna()
+        htf.index = htf.index + __import__("pandas").Timedelta(minutes=15)
         fast = htf["Close"].ewm(span=max(2,int(p["trend_ema_fast"])), adjust=False).mean()
         slow = htf["Close"].ewm(span=max(3,int(p["trend_ema_slow"])), adjust=False).mean()
         trend_long = ((htf["Close"] > slow) & (fast > slow)).reindex(d.index, method="ffill").fillna(False).to_numpy()
@@ -64,10 +66,12 @@ def generate_signals(df, params=None):
              "swing_a", "swing_b", "swing_c", "fib_a_bar", "fib_b_bar", "fib_c_bar",
              "fib_05", "fib_0618", "fib_0786", "fib_zone_shallow", "fib_zone_deep", "fib_1272", "fib_1414", "fib_1618",
              "fib_2000", "entry_box_low", "entry_box_high", "target_box_low", "target_box_high",
-             "target_1272", "target_1414", "target_1618", "target_2000", "setup_direction")
+             "target_1272", "target_1414", "target_1618", "target_2000", "setup_direction", "setup_status")
     out = {k: np.full(n, np.nan) for k in names}
     piv_t, piv_i, piv_p = [], [], []
     active = None
+    last_structure = None
+    last_status = 0
     used_c = set()
 
     def add_pivot(kind, bar, price):
@@ -89,7 +93,6 @@ def generate_signals(df, params=None):
         a_atr = av[i]
         if not np.isfinite(a_atr) or a_atr <= 0:
             continue
-        # A pivot at pb is only used after right-side candles have closed.
         pb = i - right
         changed = False
         if pb >= left:
@@ -111,13 +114,10 @@ def generate_signals(df, params=None):
                      and shallow <= retrace <= deep
                      and i-i3 <= int(p["max_structure_age"]))
             if valid and i3 not in used_c:
-                # Retracement levels are measured from B back toward A.
                 fib = {r: q2 - direction * leg * r for r in (0.5, 0.618, 0.786)}
                 z1 = q2 - direction * leg * deep
                 z2 = q2 - direction * leg * shallow
-                # Entry pocket boundaries are ordered numerically.
                 entry_low, entry_high = min(z1, z2), max(z1, z2)
-                # Stop beyond C, buffered by ATR known at confirmation.
                 stop = q3 - direction * a_atr * float(p["stop_buffer_atr"])
                 targets = {r: projected(q3, leg, direction, r) for r in (1.272, 1.414, 1.618, 2.0)}
                 target = projected(q3, leg, direction, ext)
@@ -129,37 +129,46 @@ def generate_signals(df, params=None):
                     "target": target, "fib": fib, "targets": targets,
                     "target_low": min(target_zone), "target_high": max(target_zone), "entered": False,
                 }
+                last_structure = active.copy()
+                last_status = 1
                 used_c.add(i3)
 
-        if not active:
-            continue
-        age = i - active["detected"]
-        if age > int(p["max_structure_age"]):
-            active = None
+        if active:
+            age = i - active["detected"]
+            if age > int(p["max_structure_age"]):
+                active = None
+                last_status = 0
+            else:
+                direction = active["dir"]
+                invalid = lo[i] <= active["stop"] if direction == 1 else hi[i] >= active["stop"]
+                if invalid:
+                    active = None
+                    last_status = -1
+
+        # Preserve the last confirmed ABC for inspection after invalidation/expiry.
+        display = active if active is not None else last_structure
+        if display is not None:
+            vals = {
+                "swing_a": display["a"], "swing_b": display["b"], "swing_c": display["c"],
+                "fib_a_bar": display["ai"], "fib_b_bar": display["bi"], "fib_c_bar": display["ci"],
+                "fib_05": display["fib"][0.5], "fib_0618": display["fib"][0.618],
+                "fib_0786": display["fib"][0.786], "fib_zone_shallow": shallow, "fib_zone_deep": deep,
+                "fib_1272": display["targets"][1.272], "fib_1414": display["targets"][1.414],
+                "fib_1618": display["targets"][1.618], "fib_2000": display["targets"][2.0],
+                "golden_box_low": display["low"], "golden_box_high": display["high"],
+                "entry_box_low": display["low"], "entry_box_high": display["high"],
+                "target_box_low": display["target_low"], "target_box_high": display["target_high"],
+                "target_1272": display["targets"][1.272], "target_1414": display["targets"][1.414],
+                "target_1618": display["targets"][1.618], "target_2000": display["targets"][2.0],
+                "setup_direction": display["dir"], "setup_status": last_status,
+                "custom_stop_price": display["stop"], "custom_target_price": display["target"],
+            }
+            for key, value in vals.items():
+                out[key][i] = value
+
+        if active is None:
             continue
         direction = active["dir"]
-        # A structure is invalidated only by a close through its C/stop boundary.
-        invalid = lo[i] <= active["stop"] if direction == 1 else hi[i] >= active["stop"]
-        if invalid:
-            active = None
-            continue
-
-        vals = {
-            "swing_a": active["a"], "swing_b": active["b"], "swing_c": active["c"],
-            "fib_a_bar": active["ai"], "fib_b_bar": active["bi"], "fib_c_bar": active["ci"],
-            "fib_05": active["fib"][0.5], "fib_0618": active["fib"][0.618],
-            "fib_0786": active["fib"][0.786], "fib_zone_shallow": shallow, "fib_zone_deep": deep, "fib_1272": active["targets"][1.272],
-            "fib_1414": active["targets"][1.414], "fib_1618": active["targets"][1.618],
-            "fib_2000": active["targets"][2.0], "golden_box_low": active["low"],
-            "golden_box_high": active["high"], "entry_box_low": active["low"],
-            "entry_box_high": active["high"], "target_box_low": active["target_low"],
-            "target_box_high": active["target_high"], "target_1272": active["targets"][1.272],
-            "target_1414": active["targets"][1.414], "target_1618": active["targets"][1.618],
-            "target_2000": active["targets"][2.0], "setup_direction": direction,
-        }
-        for key, value in vals.items():
-            out[key][i] = value
-
         touched = lo[i] <= active["high"] and hi[i] >= active["low"]
         if direction == 1:
             rejection = cl[i] > active["high"] and cl[i] > op[i]
@@ -178,9 +187,10 @@ def generate_signals(df, params=None):
             rejection = rejection and swept
         if touched and rejection and not active["entered"]:
             sig[i] = direction
-            out["custom_stop_price"][i] = active["stop"]
-            out["custom_target_price"][i] = active["target"]
             active["entered"] = True
+            last_structure = active.copy()
+            last_status = 2
+            out["setup_status"][i] = 2
 
     d["atr"] = av
     d["signal"] = sig
