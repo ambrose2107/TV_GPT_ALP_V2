@@ -203,6 +203,8 @@ function draw(){
   if(valid(s.entry_box_low)&&valid(s.entry_box_high)){const y1=y(+s.entry_box_high),y2=y(+s.entry_box_low);ctx.fillStyle='rgba(233,185,73,.20)';ctx.fillRect(cx,Math.min(y1,y2),Math.max(0,W-right-cx),Math.abs(y2-y1));ctx.strokeStyle='#e9b949';ctx.strokeRect(cx,Math.min(y1,y2),Math.max(0,W-right-cx),Math.abs(y2-y1));ctx.fillStyle='#e9b949';ctx.font='10px system-ui';ctx.fillText('ENTRY ZONE',Math.min(W-right-85,cx+4),Math.min(y1,y2)-4);}
   if(valid(s.target_box_low)&&valid(s.target_box_high)){const y1=y(+s.target_box_high),y2=y(+s.target_box_low);ctx.fillStyle='rgba(25,195,125,.12)';ctx.fillRect(cx,Math.min(y1,y2),Math.max(0,W-right-cx),Math.abs(y2-y1));ctx.strokeStyle='rgba(25,195,125,.8)';ctx.strokeRect(cx,Math.min(y1,y2),Math.max(0,W-right-cx),Math.abs(y2-y1));}
  }
+ // Candles on top of structure overlays.
+ view.forEach((b,j)=>{const x=left+(j+.5)*step,up=b.close>=b.open;ctx.strokeStyle=up?'#19c37d':'#ff5c68';ctx.fillStyle=ctx.strokeStyle;ctx.beginPath();ctx.moveTo(x,y(b.high));ctx.lineTo(x,y(b.low));ctx.stroke();const yo=y(Math.max(b.open,b.close)),yh=y(Math.min(b.open,b.close));ctx.fillRect(x-cw/2,yo,cw,Math.max(1,yh-yo));const sg=signals[start+j];if(sg?.signal){ctx.fillStyle=sg.signal>0?'#19c37d':'#ff5c68';ctx.beginPath();ctx.arc(x,sg.signal>0?y(b.low)+8:y(b.high)-8,4,0,Math.PI*2);ctx.fill();}});
  // Trade lifecycle markers are taken from actual backtest execution records, not inferred from signal dots.
  if($('showTrades')?.checked&&lastResult?.trades){
   const timeToIndex=new Map(bars.map((b,i)=>[Date.parse(b.time),i]));
@@ -214,8 +216,6 @@ function draw(){
    events.forEach(ev=>{const bi=timeToIndex.get(Date.parse(ev.time));if(bi==null||bi<start||bi>end)return;const b=bars[bi],xx=left+(bi-start+.5)*step,price=valid(ev.price)?+ev.price:b.close,yy=y(price),type=String(ev.type||'').toUpperCase(),entry=type==='ENTRY',loss=type==='SL'||type==='STOP';ctx.fillStyle=entry?'#4c9aff':loss?'#ff5c68':'#19c37d';ctx.strokeStyle=ctx.fillStyle;ctx.beginPath();if(entry){ctx.moveTo(xx,yy-7);ctx.lineTo(xx-6,yy+5);ctx.lineTo(xx+6,yy+5);}else{ctx.arc(xx,yy,5,0,Math.PI*2);}ctx.closePath();ctx.fill();ctx.font='bold 9px system-ui';ctx.fillText(type==='ENTRY'?'ENTRY':type,Math.min(W-right-34,xx+5),Math.max(top+10,yy-7));});
   });
  }
- // Candles on top of structure overlays.
- view.forEach((b,j)=>{const x=left+(j+.5)*step,up=b.close>=b.open;ctx.strokeStyle=up?'#19c37d':'#ff5c68';ctx.fillStyle=ctx.strokeStyle;ctx.beginPath();ctx.moveTo(x,y(b.high));ctx.lineTo(x,y(b.low));ctx.stroke();const yo=y(Math.max(b.open,b.close)),yh=y(Math.min(b.open,b.close));ctx.fillRect(x-cw/2,yo,cw,Math.max(1,yh-yo));const sg=signals[start+j];if(sg?.signal){ctx.fillStyle=sg.signal>0?'#19c37d':'#ff5c68';ctx.beginPath();ctx.arc(x,sg.signal>0?y(b.low)+8:y(b.high)-8,4,0,Math.PI*2);ctx.fill();}});
  const xcur=left+(view.length-.5)*step;ctx.strokeStyle='#d6e2f0';ctx.setLineDash([3,4]);ctx.beginPath();ctx.moveTo(xcur,top);ctx.lineTo(xcur,top+plotH);ctx.stroke();ctx.setLineDash([]);
  ctx.fillStyle='#d6e2f0';ctx.font='11px system-ui';ctx.fillText(new Date(bars[cursor].time).toLocaleString(),left,H-10);
  ctx.fillStyle='#9aa8b8';ctx.fillText((+s.setup_direction>0?'LONG':+s.setup_direction<0?'SHORT':'—')+' · A '+fmt(s.swing_a,2)+' B '+fmt(s.swing_b,2)+' C '+fmt(s.swing_c,2),left+170,H-10);
