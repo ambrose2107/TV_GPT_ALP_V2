@@ -105,3 +105,33 @@ def test_backtest_closes_open_position_at_end_of_data():
         assert result["metrics"]["final_equity"] > 10000
     finally:
         STRATEGY_REGISTRY.pop(sid, None)
+
+
+def test_replay_engine_checks_stop_or_target_on_entry_bar():
+    import pandas as pd
+    from research.backtest_engine import run_backtest
+    from research.strategies.base import STRATEGY_REGISTRY
+
+    def generate(df, params):
+        out = df.copy()
+        out["atr"] = 1.0
+        out["signal"] = [1] + [0] * (len(out) - 1)
+        out["custom_stop_price"] = 98.0
+        out["custom_target_price"] = 110.0
+        return out
+
+    sid = "_test_entry_bar_stop"
+    STRATEGY_REGISTRY[sid] = {"id":sid,"name":"Test","description":"Test",
+        "default_params":{},"param_schema":{},"generate_signals":generate}
+    try:
+        rows=[(100,101,99,100),(100,101,97,98),(98,99,97,98)]
+        bars=pd.DataFrame(rows,columns=["Open","High","Low","Close"],
+            index=pd.date_range("2026-01-01",periods=3,freq="5min",tz="UTC"))
+        bars["Volume"]=100
+        result=run_backtest(bars,sid,initial_equity=10000,risk_pct=1,
+            spread_points=0,commission_pct=0,slippage_points=0)
+        assert result["trades"][0]["reason"]=="SL"
+        assert result["trades"][0]["entry_time"]==result["trades"][0]["exit_time"]
+        assert [e["type"] for e in result["trades"][0]["events"]]==["ENTRY","SL"]
+    finally:
+        STRATEGY_REGISTRY.pop(sid,None)
