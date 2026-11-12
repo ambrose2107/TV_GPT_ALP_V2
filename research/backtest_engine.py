@@ -93,7 +93,7 @@ def run_backtest(
     initial_equity: float = 10000.0,
     risk_pct: float = 0.5,
     spread_points: float = 0.0,
-    commission_pct: float = 0.0,
+    commission_pct: float = 0.0005,
     commission_per_unit: float = 0.0,
     slippage_points: float = 0.0,
 ) -> dict:
