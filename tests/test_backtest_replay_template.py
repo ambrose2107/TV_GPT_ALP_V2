@@ -10,7 +10,7 @@ def test_backtest_replay_template_has_one_complete_document():
     assert html.lower().count("<script") == 2  # Chart.js CDN plus one inline controller
     assert html.lower().count("</script>") == 2
     # The previous bad append began with a JavaScript expression after </html>.
-    assert not re.search(r"</html>\\s*\\+fmt\\(", html, re.IGNORECASE)
+    assert not re.search(r"</html>\s*\+fmt\(", html, re.IGNORECASE)
 
 
 def test_bar_replay_controls_are_wired_and_cursor_is_bounded():
@@ -26,5 +26,5 @@ def test_bar_replay_controls_are_wired_and_cursor_is_bounded():
 def test_chart_validity_helper_is_defined_before_first_use():
     path = Path(__file__).resolve().parents[1] / "dashboard" / "templates" / "backtest_replay.html"
     html = path.read_text(encoding="utf-8")
-    draw = html[html.index("function draw(){"):html.index("\\nfunction render()", html.index("function draw(){"))]
+    draw = html[html.index("function draw(){"):html.index("\nfunction render()", html.index("function draw(){"))]
     assert draw.index("const valid=") < draw.index("forEach(k=>{if(valid(s[k]))")
