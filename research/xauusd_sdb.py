@@ -278,6 +278,7 @@ def run_backtest(data: pd.DataFrame, initial_equity: float = 10000.0,
                 active["remaining"] = 0.0
                 active["exit_time"] = str(ts)
                 active["exit_reason"] = "stop"
+                active.setdefault("events", []).append({"type": "SL", "time": str(ts), "price": float(active["stop"])})
             elif target_hit:
                 # A single 5m candle can cross multiple projected levels.
                 while active["next_target"] < len(targets):
@@ -293,6 +294,7 @@ def run_backtest(data: pd.DataFrame, initial_equity: float = 10000.0,
                     active["pnl"] += pnl
                     active["remaining"] -= frac
                     active["next_target"] += 1
+                    active.setdefault("events", []).append({"type": f"TP{active['next_target']}", "time": str(ts), "price": float(target)})
                     if active["next_target"] == 1:
                         active["stop"] = active["entry"]
                     if active["remaining"] < 1e-8:
@@ -329,6 +331,7 @@ def run_backtest(data: pd.DataFrame, initial_equity: float = 10000.0,
                 "side": side, "entry_time": str(ts), "entry": entry, "stop": stop,
                 "targets": targets, "next_target": 0, "units": units, "remaining": 1.0,
                 "pnl": -entry_fee, "setup": str(prev.get("setup", "")),
+                "events": [{"type": "ENTRY", "time": str(ts), "price": float(entry)}],
                 "sweep_time": str(prev.get("sweep_time", "")),
                 "leg_range": float(prev.get("leg_range", np.nan)),
                 "initial_risk": risk_money, "exit_time": "", "exit_reason": "open",
@@ -347,6 +350,7 @@ def run_backtest(data: pd.DataFrame, initial_equity: float = 10000.0,
         active["pnl"] += pnl
         active["exit_time"] = str(d.index[-1])
         active["exit_reason"] = "end_of_data"
+        active.setdefault("events", []).append({"type": "EOD", "time": str(d.index[-1]), "price": float(px)})
         active["remaining"] = 0.0
         active["equity_after"] = equity
         trades.append(active.copy())
