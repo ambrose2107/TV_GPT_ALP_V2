@@ -153,6 +153,7 @@ def run_backtest(
                 cost = commission_pct * (exit_price * position["size"] + position["entry_price"] * position["size"])
                 pnl = gross - cost
                 equity += pnl
+                position.setdefault("events", []).append({"type": exit_reason, "time": str(idx[i]), "price": round(float(exit_price), 5)})
                 trades.append({
                     "entry_time": str(position["entry_time"]), "exit_time": str(idx[i]),
                     "side": "LONG" if side == 1 else "SHORT",
@@ -160,6 +161,7 @@ def run_backtest(
                     "exit_price": round(exit_price, 5),
                     "size": round(position["size"], 6),
                     "pnl": round(pnl, 2), "reason": exit_reason,
+                    "events": position.get("events", []),
                     "R": round(pnl / position["risk_amount"], 3) if position["risk_amount"] > 0 else None,
                 })
                 position = None
@@ -195,6 +197,7 @@ def run_backtest(
                         "side": side, "entry_price": entry_price, "sl": sl, "tp": tp,
                         "size": size, "entry_time": idx[i], "risk_amount": risk_amount,
                         "r_dist": stop_dist, "breakeven_done": False,
+                        "events": [{"type": "ENTRY", "time": str(idx[i]), "price": round(float(entry_price), 5)}],
                     }
             else:
                 stop_dist = atr_mult_sl * atr_vals[i - 1]
@@ -206,6 +209,7 @@ def run_backtest(
                         "side": side, "entry_price": entry_price, "sl": sl, "tp": tp,
                         "size": size, "entry_time": idx[i], "risk_amount": risk_amount,
                         "r_dist": stop_dist, "breakeven_done": False,
+                        "events": [{"type": "ENTRY", "time": str(idx[i]), "price": round(float(entry_price), 5)}],
                     }
 
         equity_curve_t.append(str(idx[i]))
