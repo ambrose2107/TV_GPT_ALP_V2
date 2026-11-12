@@ -39,3 +39,69 @@ def test_replay_chart_exposes_structure_and_trade_hit_layers():
         assert marker in html
     assert "lastResult?.trades" in html
     assert "fib_a_bar" in html and "swing_c" in html
+
+
+def test_backtest_execution_events_and_costs_are_recorded():
+    import pandas as pd
+    from research.backtest_engine import run_backtest
+    from research.strategies.base import STRATEGY_REGISTRY
+
+    def generate(df, params):
+        out = df.copy()
+        out["atr"] = 1.0
+        out["signal"] = [1] + [0] * (len(out) - 1)
+        out["custom_stop_price"] = 98.0
+        out["custom_target_price"] = 110.0
+        return out
+
+    sid = "_test_fixed_event_strategy"
+    STRATEGY_REGISTRY[sid] = {
+        "id": sid, "name": "Test", "description": "Test only",
+        "default_params": {}, "param_schema": {}, "generate_signals": generate,
+    }
+    try:
+        rows = [(100,101,99,100),(100,102,99,101),(100,101,99,100),(97,99,96,98)]
+        bars = pd.DataFrame(rows, columns=["Open","High","Low","Close"],
+                            index=pd.date_range("2026-01-01", periods=4, freq="5min", tz="UTC"))
+        bars["Volume"] = 100
+        result = run_backtest(bars, sid, initial_equity=10000, risk_pct=1,
+                              spread_points=0.4, commission_pct=0, slippage_points=0.1)
+        trade = result["trades"][0]
+        assert trade["reason"] == "SL_GAP"
+        assert [event["type"] for event in trade["events"]] == ["ENTRY", "SL"]
+        assert trade["exit_price"] < 97
+    finally:
+        STRATEGY_REGISTRY.pop(sid, None)
+
+
+def test_backtest_closes_open_position_at_end_of_data():
+    import pandas as pd
+    from research.backtest_engine import run_backtest
+    from research.strategies.base import STRATEGY_REGISTRY
+
+    def generate(df, params):
+        out = df.copy()
+        out["atr"] = 1.0
+        out["signal"] = [1] + [0] * (len(out) - 1)
+        out["custom_stop_price"] = 90.0
+        out["custom_target_price"] = 110.0
+        return out
+
+    sid = "_test_open_position_eod"
+    STRATEGY_REGISTRY[sid] = {
+        "id": sid, "name": "Test", "description": "Test only",
+        "default_params": {}, "param_schema": {}, "generate_signals": generate,
+    }
+    try:
+        rows = [(100,101,99,100),(100,102,99,101),(101,103,100,102)]
+        bars = pd.DataFrame(rows, columns=["Open","High","Low","Close"],
+                            index=pd.date_range("2026-01-01", periods=3, freq="5min", tz="UTC"))
+        bars["Volume"] = 100
+        result = run_backtest(bars, sid, initial_equity=10000, risk_pct=1,
+                              spread_points=0, commission_pct=0, slippage_points=0)
+        assert result["metrics"]["num_trades"] == 1
+        assert result["trades"][0]["reason"] == "EOD"
+        assert [event["type"] for event in result["trades"][0]["events"]] == ["ENTRY", "EOD"]
+        assert result["metrics"]["final_equity"] > 10000
+    finally:
+        STRATEGY_REGISTRY.pop(sid, None)
