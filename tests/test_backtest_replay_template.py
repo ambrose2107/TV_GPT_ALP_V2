@@ -21,3 +21,10 @@ def test_bar_replay_controls_are_wired_and_cursor_is_bounded():
     assert "function replayStep()" in html
     assert "function togglePlay()" in html
     assert "function setCursor(i)" in html
+
+
+def test_chart_validity_helper_is_defined_before_first_use():
+    path = Path(__file__).resolve().parents[1] / "dashboard" / "templates" / "backtest_replay.html"
+    html = path.read_text(encoding="utf-8")
+    draw = html[html.index("function draw(){"):html.index("\\nfunction render()", html.index("function draw(){"))]
+    assert draw.index("const valid=") < draw.index("forEach(k=>{if(valid(s[k]))")
