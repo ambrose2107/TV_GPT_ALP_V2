@@ -28,3 +28,14 @@ def test_chart_validity_helper_is_defined_before_first_use():
     html = path.read_text(encoding="utf-8")
     draw = html[html.index("function draw(){"):html.index("\nfunction render()", html.index("function draw(){"))]
     assert draw.index("const valid=") < draw.index("forEach(k=>{if(valid(s[k]))")
+
+
+def test_replay_chart_exposes_structure_and_trade_hit_layers():
+    path = Path(__file__).resolve().parents[1] / "dashboard" / "templates" / "backtest_replay.html"
+    html = path.read_text(encoding="utf-8")
+    for control in ("showABC", "showSR", "showFVG", "showTrades"):
+        assert f'id="{control}"' in html
+    for marker in ("Bull FVG", "Bear FVG", "ENTRY", "TP1", "SL"):
+        assert marker in html
+    assert "lastResult?.trades" in html
+    assert "fib_a_bar" in html and "swing_c" in html
