@@ -1,0 +1,54 @@
+name: XAUUSD Dukascopy Tick Data Pull (one-day research sample)
+
+on:
+  push:
+    branches:
+      - GPTver_confluence_v4
+    paths:
+      - .github/workflows/xauusd-data-pull-once.yml
+
+permissions:
+  contents: read
+
+jobs:
+  pull-xauusd-ticks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Download one UTC day of XAUUSD ticks
+        run: |
+          mkdir -p ./xauusd-research-data
+          npx --yes dukascopy-node@latest \
+            -i xauusd \
+            -from 2026-11-10 \
+            -to 2026-11-11 \
+            -t tick \
+            -f csv \
+            -v \
+            --retries 5 \
+            --rate-limit-retries 5 \
+            --batch-size 1 \
+            --batch-pause 2000 \
+            --cache \
+            --directory ./xauusd-research-data
+      - name: Validate downloaded CSV
+        run: |
+          set -e
+          FILE=$(find ./xauusd-research-data -type f -name '*.csv' | head -n 1)
+          test -n "$FILE"
+          echo "DATA_FILE=$FILE" >> "$GITHUB_ENV"
+          echo "Rows: $(($(wc -l < "$FILE") - 1))"
+          head -n 3 "$FILE"
+          test "$(head -n 1 "$FILE")" = "timestamp,askPrice,bidPrice,askVolume,bidVolume"
+          test "$(wc -l < "$FILE")" -gt 100
+      - name: Upload raw research data as workflow artifact (not committed to Git)
+        uses: actions/upload-artifact@v4
+        with:
+          name: xauusd-dukascopy-ticks-2026-11-10
+          path: xauusd-research-data/*.csv
+          if-no-files-found: error
+          retention-days: 14
