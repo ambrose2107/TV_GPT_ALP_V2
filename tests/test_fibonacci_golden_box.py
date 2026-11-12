@@ -91,3 +91,24 @@ def test_optional_15m_trend_filter_is_causal_and_valid():
     assert set(out["signal"].unique()).issubset({-1, 0, 1})
     with pytest.raises(ValueError, match="trend_filter"):
         generate_signals(bars, {"trend_filter": "future_data"})
+
+
+def test_last_confirmed_abc_remains_visible_after_invalidation():
+    bars = _sample_bars(900)
+    out = generate_signals(bars)
+    assert "setup_status" in out.columns
+    invalidated = out["setup_status"] == -1
+    assert invalidated.any()
+    assert out.loc[invalidated, ["fib_a_bar", "fib_b_bar", "fib_c_bar"]].notna().all().all()
+    assert out.loc[invalidated, ["swing_a", "swing_b", "swing_c"]].notna().all().all()
+
+
+def test_15m_trend_filter_does_not_use_incomplete_future_15m_bar():
+    bars = _sample_bars(900)
+    full = generate_signals(bars, {"trend_filter": "both"})
+    for end in (80, 110, 145, 179, 320):
+        prefix = generate_signals(bars.iloc[:end+1], {"trend_filter": "both"})
+        pd.testing.assert_series_equal(
+            full["signal"].iloc[:end+1].reset_index(drop=True),
+            prefix["signal"].reset_index(drop=True),
+        )
