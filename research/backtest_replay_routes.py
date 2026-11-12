@@ -104,7 +104,7 @@ def replay_analyze():
         allowed=set((strat.get("param_schema") or {}).keys())
         params={k:v for k,v in params.items() if k in allowed}
         signaled=strat["generate_signals"](df,params)
-        cols=["signal","custom_stop_price","custom_target_price","golden_box_low","golden_box_high","swing_a","swing_b","swing_c","fib_a_bar","fib_b_bar","fib_c_bar","fib_05","fib_0618","fib_0786","fib_zone_shallow","fib_zone_deep","fib_1272","fib_1414","fib_1618","fib_2000","entry_box_low","entry_box_high","target_box_low","target_box_high","target_1272","target_1414","target_1618","target_2000","setup_direction"]
+        cols=["signal","custom_stop_price","custom_target_price","golden_box_low","golden_box_high","swing_a","swing_b","swing_c","fib_a_bar","fib_b_bar","fib_c_bar","fib_05","fib_0618","fib_0786","fib_zone_shallow","fib_zone_deep","fib_1272","fib_1414","fib_1618","fib_2000","entry_box_low","entry_box_high","target_box_low","target_box_high","target_1272","target_1414","target_1618","target_2000","setup_direction","setup_status"]
         rows=[]
         for i,ts in enumerate(signaled.index):
             item={"time":pd.Timestamp(ts).isoformat()}
@@ -132,7 +132,8 @@ def replay_run_backtest():
                             initial_equity=float(body.get("initial_equity",10000)),
                             risk_pct=float(body.get("risk_pct",0.5)),
                             spread_points=float(body.get("spread_points",0.0)),
-                            commission_pct=float(body.get("commission_pct",0.0005)),
+                            commission_pct=float(body.get("commission_pct",0.0)),
+                            commission_per_unit=float(body.get("commission_per_unit",0.0)),
                             slippage_points=float(body.get("slippage_points",0)))
         result["symbol"]=str(body.get("symbol","CUSTOM")).upper()
         result["interval"]=str(body.get("interval","5m"))
