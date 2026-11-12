@@ -126,7 +126,7 @@ def test_replay_engine_checks_stop_or_target_on_entry_bar():
     try:
         rows=[(100,101,99,100),(100,101,97,98),(98,99,97,98),(98,99,97,98),(98,99,97,98),(98,99,97,98)]
         bars=pd.DataFrame(rows,columns=["Open","High","Low","Close"],
-            index=pd.date_range("2026-01-01",periods=3,freq="5min",tz="UTC"))
+            index=pd.date_range("2026-01-01",periods=len(rows),freq="5min",tz="UTC"))
         bars["Volume"]=100
         result=run_backtest(bars,sid,initial_equity=10000,risk_pct=1,
             spread_points=0,commission_pct=0,slippage_points=0)
