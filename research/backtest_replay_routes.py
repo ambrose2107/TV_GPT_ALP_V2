@@ -132,7 +132,7 @@ def replay_run_backtest():
                             initial_equity=float(body.get("initial_equity",10000)),
                             risk_pct=float(body.get("risk_pct",0.5)),
                             spread_points=float(body.get("spread_points",0.0)),
-                            commission_pct=float(body.get("commission_pct",0.0)),
+                            commission_pct=float(body.get("commission_pct",0.0005)),
                             commission_per_unit=float(body.get("commission_per_unit",0.0)),
                             slippage_points=float(body.get("slippage_points",0)))
         result["symbol"]=str(body.get("symbol","CUSTOM")).upper()
