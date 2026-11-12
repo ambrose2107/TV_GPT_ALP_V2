@@ -1,0 +1,50 @@
+name: XAUUSD Dukascopy M5 History Pull
+
+on:
+  push:
+    branches:
+      - GPTver_confluence_v4
+    paths:
+      - .github/workflows/xauusd-bars-pull.yml
+
+permissions:
+  contents: read
+
+jobs:
+  pull-xauusd-m5:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Download BID and ASK M5 candles with volume
+        run: |
+          mkdir -p ./xauusd-m5-data
+          npx --yes dukascopy-node@latest -i xauusd -from 2023-01-01 -to 2026-11-12 -t m5 -p bid -f csv -v --retries 5 --rate-limit-retries 5 --batch-size 4 --batch-pause 1000 --cache --directory ./xauusd-m5-data
+          npx --yes dukascopy-node@latest -i xauusd -from 2023-01-01 -to 2026-11-12 -t m5 -p ask -f csv -v --retries 5 --rate-limit-retries 5 --batch-size 4 --batch-pause 1000 --cache --directory ./xauusd-m5-data
+      - name: Validate both datasets
+        run: |
+          set -e
+          BID=$(find ./xauusd-m5-data -type f -name '*-bid-*.csv' | head -n 1)
+          ASK=$(find ./xauusd-m5-data -type f -name '*-ask-*.csv' | head -n 1)
+          test -n "$BID"
+          test -n "$ASK"
+          echo "BID=$BID"
+          echo "ASK=$ASK"
+          echo "BID rows: $(($(wc -l < "$BID") - 1))"
+          echo "ASK rows: $(($(wc -l < "$ASK") - 1))"
+          head -n 2 "$BID"
+          head -n 2 "$ASK"
+          test "$(head -n 1 "$BID")" = "timestamp,open,high,low,close,volume"
+          test "$(head -n 1 "$ASK")" = "timestamp,open,high,low,close,volume"
+          test "$(wc -l < "$BID")" -gt 100000
+          test "$(wc -l < "$ASK")" -gt 100000
+      - name: Upload historical bars as research artifact (not committed to Git)
+        uses: actions/upload-artifact@v4
+        with:
+          name: xauusd-dukascopy-m5-bid-ask-2023-2026
+          path: xauusd-m5-data/*.csv
+          if-no-files-found: error
+          retention-days: 14
