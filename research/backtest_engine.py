@@ -222,6 +222,40 @@ def run_backtest(
                         "events": [{"type": "ENTRY", "time": str(idx[i]), "price": round(float(entry_price), 5)}],
                     }
 
+        # The entry bar's remaining OHLC range is tradable after the next-open fill.
+        # If both stop and target are touched in this bar, use conservative stop-first ordering.
+        if position is not None and position["entry_time"] == idx[i]:
+            side = position["side"]
+            sl, tp = position["sl"], position["tp"]
+            hit = None
+            if side == 1:
+                if l[i] <= sl:
+                    hit = (sl, "SL")
+                elif h[i] >= tp:
+                    hit = (tp, "TP")
+            else:
+                if h[i] >= sl:
+                    hit = (sl, "SL")
+                elif l[i] <= tp:
+                    hit = (tp, "TP")
+            if hit is not None:
+                raw_exit, reason = hit
+                exit_fill = float(raw_exit) - side * (spread_points / 2.0 + slippage_points)
+                gross = (exit_fill - position["entry_price"]) * position["size"] * side
+                cost = commission_pct * (abs(exit_fill * position["size"]) + abs(position["entry_price"] * position["size"]))
+                pnl = gross - cost
+                equity += pnl
+                position.setdefault("events", []).append({"type": reason, "time": str(idx[i]), "price": round(float(raw_exit), 5)})
+                trades.append({
+                    "entry_time": str(position["entry_time"]), "exit_time": str(idx[i]),
+                    "side": "LONG" if side == 1 else "SHORT",
+                    "entry_price": round(position["entry_price"], 5), "exit_price": round(exit_fill, 5),
+                    "size": round(position["size"], 6), "pnl": round(pnl, 2), "reason": reason,
+                    "events": position.get("events", []),
+                    "R": round(pnl / position["risk_amount"], 3) if position["risk_amount"] > 0 else None,
+                })
+                position = None
+
         equity_curve_t.append(str(idx[i]))
         equity_curve_v.append(round(equity, 2))
 
