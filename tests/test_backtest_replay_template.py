@@ -144,6 +144,7 @@ def test_replay_auto_loads_abc_and_displays_setup_status():
     assert "INVALIDATED" in html and "ENTRY TRIGGERED" in html
     assert 'id="commissionPerUnit"' in html
     assert "commission_per_unit" in html
+    assert "trades[-2000:]" in (Path(__file__).resolve().parents[1] / "research" / "backtest_engine.py").read_text(encoding="utf-8")
 
 
 def test_backtest_engine_supports_fixed_commission_per_unit():
