@@ -302,7 +302,7 @@ def run_backtest(
         "params_used": merged_params,
         "metrics": metrics,
         "equity_curve": {"t": ds_t, "v": ds_v},
-        "trades": trades[-200:],  # cap payload
+        "trades": trades[-2000:],  # retain chart event history across the replay window
         "num_bars": len(d),
         "data_range": {"start": str(idx[0]), "end": str(idx[-1])},
     }
