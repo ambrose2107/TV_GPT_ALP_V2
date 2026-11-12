@@ -135,3 +135,45 @@ def test_replay_engine_checks_stop_or_target_on_entry_bar():
         assert [e["type"] for e in result["trades"][0]["events"]]==["ENTRY","SL"]
     finally:
         STRATEGY_REGISTRY.pop(sid,None)
+
+
+def test_replay_auto_loads_abc_and_displays_setup_status():
+    path = Path(__file__).resolve().parents[1] / "dashboard" / "templates" / "backtest_replay.html"
+    html = path.read_text(encoding="utf-8")
+    assert "try{await analyze();}" in html
+    assert "INVALIDATED" in html and "ENTRY TRIGGERED" in html
+    assert 'id="commissionPerUnit"' in html
+    assert "commission_per_unit" in html
+
+
+def test_backtest_engine_supports_fixed_commission_per_unit():
+    import pandas as pd
+    from research.backtest_engine import run_backtest
+    from research.strategies.base import STRATEGY_REGISTRY
+
+    def generate(df, params):
+        out = df.copy()
+        out["atr"] = 1.0
+        out["signal"] = [1] + [0] * (len(out) - 1)
+        out["custom_stop_price"] = 90.0
+        out["custom_target_price"] = 120.0
+        return out
+
+    sid = "_test_fixed_commission_unit"
+    STRATEGY_REGISTRY[sid] = {
+        "id": sid, "name": "Test", "description": "Test",
+        "default_params": {}, "param_schema": {}, "generate_signals": generate,
+    }
+    try:
+        rows = [(100,101,99,100),(100,102,99,101),(101,103,100,102),
+                (102,104,101,103),(103,105,102,104),(104,106,103,105)]
+        bars = pd.DataFrame(rows, columns=["Open","High","Low","Close"],
+            index=pd.date_range("2026-01-01", periods=len(rows), freq="5min", tz="UTC"))
+        bars["Volume"] = 100
+        free = run_backtest(bars, sid, initial_equity=10000, risk_pct=1,
+            commission_pct=0, commission_per_unit=0, spread_points=0, slippage_points=0)
+        charged = run_backtest(bars, sid, initial_equity=10000, risk_pct=1,
+            commission_pct=0, commission_per_unit=0.10, spread_points=0, slippage_points=0)
+        assert charged["metrics"]["final_equity"] < free["metrics"]["final_equity"]
+    finally:
+        STRATEGY_REGISTRY.pop(sid, None)
