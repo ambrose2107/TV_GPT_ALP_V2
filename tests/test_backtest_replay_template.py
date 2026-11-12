@@ -62,7 +62,7 @@ def test_backtest_execution_events_and_costs_are_recorded():
     try:
         rows = [(100,101,99,100),(100,102,99,101),(100,101,99,100),(97,99,96,98),(98,99,97,98),(98,99,97,98)]
         bars = pd.DataFrame(rows, columns=["Open","High","Low","Close"],
-                            index=pd.date_range("2026-01-01", periods=4, freq="5min", tz="UTC"))
+                            index=pd.date_range("2026-01-01", periods=len(rows), freq="5min", tz="UTC"))
         bars["Volume"] = 100
         result = run_backtest(bars, sid, initial_equity=10000, risk_pct=1,
                               spread_points=0.4, commission_pct=0, slippage_points=0.1)
@@ -95,7 +95,7 @@ def test_backtest_closes_open_position_at_end_of_data():
     try:
         rows = [(100,101,99,100),(100,102,99,101),(101,103,100,102),(102,104,101,103),(103,105,102,104),(104,106,103,105)]
         bars = pd.DataFrame(rows, columns=["Open","High","Low","Close"],
-                            index=pd.date_range("2026-01-01", periods=3, freq="5min", tz="UTC"))
+                            index=pd.date_range("2026-01-01", periods=len(rows), freq="5min", tz="UTC"))
         bars["Volume"] = 100
         result = run_backtest(bars, sid, initial_equity=10000, risk_pct=1,
                               spread_points=0, commission_pct=0, slippage_points=0)
