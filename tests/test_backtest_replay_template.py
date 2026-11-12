@@ -35,7 +35,7 @@ def test_replay_chart_exposes_structure_and_trade_hit_layers():
     html = path.read_text(encoding="utf-8")
     for control in ("showABC", "showSR", "showFVG", "showTrades"):
         assert f'id="{control}"' in html
-    for marker in ("Bull FVG", "Bear FVG", "ENTRY", "TP1", "SL"):
+    for marker in ("Bull FVG", "Bear FVG", "ENTRY", "SL", "events.forEach"):
         assert marker in html
     assert "lastResult?.trades" in html
     assert "fib_a_bar" in html and "swing_c" in html
