@@ -1604,7 +1604,7 @@ function switchTab(idx, name) {
   }
   if(name==='mf')   loadMirrorFish();
   if(name==='calc') calcOnOpen();
-  if(name==='bt')   { btSub('crash',0); loadBacktestStrategies(); loadAICrashDashboard(false); }
+  if(name==='bt')   { btSub('strategy',1); loadBacktestStrategies(); }
 }
 function anaSub(name, idx) {
   ['signals','charts','ema','bb','compare'].forEach(n=>{
@@ -1634,7 +1634,7 @@ function btSub(name, idx) {
   const labels={crash:'AI Crash Early-Warning Terminal',strategy:'Strategy Backtest and comparison engine',portfolio:'Institutional portfolio risk and profit-taking review','early-signal':'Research-only volume, momentum, news and attention scanner'};
   if($('bt-substatus')) $('bt-substatus').textContent=labels[name]||'';
   if(name==='portfolio' && !pmLastData) pmLoad(false);
-  if(name==='crash') loadAICrashDashboard(false);
+  if(name==='crash' && $('ai-crash-terminal') && $('ai-crash-terminal').style.display!=='none') loadAICrashDashboard(false);
   if(name==='strategy') loadBacktestStrategies();
   if(name==='early-signal') { earlySignalLoad(false); setTimeout(marketNewsPopulateSymbols,150); }
 }
