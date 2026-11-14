@@ -21,6 +21,8 @@
     <div class="card"><div class="label">Current holdings market value</div><div class="value" id="pt-market-value">—</div></div>
     <div class="card"><div class="label">Cash balance</div><div class="value" id="pt-cash">—</div></div>
     <div class="card"><div class="label">Unrealized P&L</div><div class="value" id="pt-unrealized">—</div></div>
+    <div class="card"><div class="label">Lifetime gross purchases</div><div class="value" id="pt-gross-buys">—</div></div>
+    <div class="card"><div class="label">Lifetime gross sales</div><div class="value" id="pt-gross-sells">—</div></div>
   </div>
   <div class="small muted" id="pt-capital-note">Loading broker equity history and account activity…</div>
   <div style="height:300px;position:relative;margin-top:12px"><canvas id="pt-equity-chart" aria-label="Broker-reported portfolio equity over time"></canvas></div>
@@ -67,20 +69,11 @@ function ptSet(id,value,cls) {
 }
 async function loadTerminal(force=false) {
   const qs=force?'?refresh=1':'';
-  try {
-    const responses=await Promise.all([
-      fetch('/api/portfolio-manager/terminal'+qs),
-      fetch('/api/portfolio-manager/market-pulse'+qs)
-    ]);
-    const data=await Promise.all(responses.map(async r=>{const d=await r.json();if(!r.ok)throw Error(d.error||'Terminal data request failed');return d;}));
-    renderTerminalCapital(data[0]);
-    renderMarketPulse(data[1]);
-  } catch(e) {
-    const n=document.getElementById('pt-capital-note');
-    if(n)n.textContent='Terminal data error: '+e.message;
-    const m=document.getElementById('pt-market-meta');
-    if(m)m.textContent='Market data unavailable: '+e.message;
-  }
+  const jobs=[
+    fetch('/api/portfolio-manager/terminal'+qs).then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.error||'Portfolio history request failed');renderTerminalCapital(d);}).catch(e=>{const n=document.getElementById('pt-capital-note');if(n)n.textContent='Portfolio history unavailable: '+e.message;}),
+    fetch('/api/portfolio-manager/market-pulse'+qs).then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.error||'Market pulse request failed');renderMarketPulse(d);}).catch(e=>{const m=document.getElementById('pt-market-meta');if(m)m.textContent='Market data unavailable: '+e.message;})
+  ];
+  await Promise.all(jobs);
 }
 function renderTerminalCapital(d) {
   const a=d.account||{}, c=d.capital||{};
@@ -90,6 +83,8 @@ function renderTerminalCapital(d) {
   ptSet('pt-market-value',ptMoney(c.current_positions_market_value));
   ptSet('pt-cash',ptMoney(a.cash));
   ptSet('pt-unrealized',ptMoney(a.unrealized_pl),ptColor(a.unrealized_pl));
+  ptSet('pt-gross-buys',ptMoney(c.gross_lifetime_buys));
+  ptSet('pt-gross-sells',ptMoney(c.gross_lifetime_sells));
   const note=document.getElementById('pt-capital-note');
   if(note)note.textContent='Source: '+(d.source||'Alpaca')+' · '+(c.activity_count||0)+' activity records'+(c.activity_history_complete?' · activity history complete for returned window':' · activity history may be partial')+(d.warnings&&d.warnings.length?' · '+d.warnings.join(' '):'');
   const curve=d.equity_history||[];

@@ -29,6 +29,7 @@ STOCK_UNIVERSE = [
     "COIN","HOOD","RBLX","ROKU","SOFI","RIVN","F","GM","DIS","ABNB",
     "LITE","CIEN","COHR","SNDK","WDC","STX","CRWV","NBIS","VRT","ETN",
 ]
+STOCK_UNIVERSE = list(dict.fromkeys(STOCK_UNIVERSE))
 SECTOR_PROXIES = {
     "Broad technology": ["XLK", "IYW"],
     "Semiconductors": ["SOXX", "SMH", "XSD"],
@@ -103,7 +104,6 @@ def portfolio_terminal_data():
     now = time.time()
     if not force and _TERMINAL_CACHE["payload"] and now - _TERMINAL_CACHE["at"] < CACHE_SECONDS:
         return jsonify(_TERMINAL_CACHE["payload"])
-    headers = _headers()
     base = Config.ALPACA_BASE_URL.rstrip("/")
     warnings = []
     payload = {
@@ -115,6 +115,7 @@ def portfolio_terminal_data():
         "warnings": warnings,
     }
     try:
+        headers = _headers()
         account_response = requests.get(base + "/v2/account", headers=headers, timeout=10)
         account_response.raise_for_status()
         account = account_response.json()
