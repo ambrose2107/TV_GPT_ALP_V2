@@ -1,12 +1,47 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Portfolio Manager | OptiTrade</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0d1117;color:#e6edf3;font:13px system-ui,-apple-system,sans-serif}a{color:#58a6ff;text-decoration:none}.wrap{max-width:1450px;margin:auto;padding:18px}.top{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}.top h1{font-size:21px;margin:0 0 5px}.muted{color:#8b949e}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px;margin:16px 0}.card,.panel{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:14px;margin-bottom:12px}.label{color:#8b949e;font-size:11px}.value{font-size:21px;font-weight:650;margin-top:5px}.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:12px}.panel h2{font-size:14px;margin:0 0 12px}.btn{border:0;border-radius:6px;padding:8px 12px;background:#1f6feb;color:white;cursor:pointer;font-weight:600}.btn.secondary{background:#30363d}.btn:disabled{opacity:.5}table{border-collapse:collapse;width:100%;font-size:12px}th,td{text-align:left;padding:8px;border-bottom:1px solid #30363d;white-space:nowrap}th{color:#8b949e;font-weight:500} .scroll{overflow:auto}.good{color:#3fb950}.bad{color:#f85149}.warn{color:#d29922}.tag{padding:3px 6px;border-radius:4px;background:#30363d}.meter{height:7px;background:#30363d;border-radius:4px;overflow:hidden;min-width:70px}.meter span{display:block;height:100%;background:#d29922}.notice{padding:10px;background:#1c2128;border-radius:6px;color:#c9d1d9;margin:8px 0}.small{font-size:11px}.loading{padding:24px;text-align:center;color:#8b949e}@media(max-width:600px){.wrap{padding:10px}.value{font-size:18px}}
 </style></head><body><main class="wrap">
 <div class="top"><div><h1>🛡️ Portfolio Manager</h1><div class="muted">Exposure · Correlation · Drawdown scenarios · Profit-taking watchlist</div></div><div><a href="/">← Dashboard</a> &nbsp; <button class="btn" id="refresh" onclick="load(true)">Refresh portfolio</button></div></div>
 <div id="status" class="notice">Loading live Alpaca positions and historical daily prices…</div>
 <div id="app"><div class="loading">Loading…</div></div>
+
+<section class="panel" id="terminal-capital">
+  <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">
+    <div><h2>Portfolio equity & capital tracker</h2><div class="muted small">Broker-reported daily account equity. Deposits are shown separately from investment returns.</div></div>
+    <button class="btn secondary" onclick="loadTerminal(true)">Refresh terminal data</button>
+  </div>
+  <div class="cards" id="terminal-capital-cards">
+    <div class="card"><div class="label">Current account equity</div><div class="value" id="pt-equity">—</div></div>
+    <div class="card"><div class="label">Net cash contributed</div><div class="value" id="pt-contributions">—</div></div>
+    <div class="card"><div class="label">Cost basis still invested</div><div class="value" id="pt-cost">—</div></div>
+    <div class="card"><div class="label">Current holdings market value</div><div class="value" id="pt-market-value">—</div></div>
+    <div class="card"><div class="label">Cash balance</div><div class="value" id="pt-cash">—</div></div>
+    <div class="card"><div class="label">Unrealized P&L</div><div class="value" id="pt-unrealized">—</div></div>
+  </div>
+  <div class="small muted" id="pt-capital-note">Loading broker equity history and account activity…</div>
+  <div style="height:300px;position:relative;margin-top:12px"><canvas id="pt-equity-chart" aria-label="Broker-reported portfolio equity over time"></canvas></div>
+  <div class="small muted" id="pt-equity-note" style="margin-top:8px">The line is actual broker equity history, not a cumulative trading P&L curve.</div>
+</section>
+<section class="panel" id="terminal-market">
+  <div><h2>US stock market movers</h2><div class="muted small" id="pt-market-meta">Loading latest trading-session data…</div></div>
+  <div class="grid2" style="margin-top:12px">
+    <div class="panel"><h2>Biggest gainers · Latest session</h2><div class="scroll" id="pt-gainers-today">Loading…</div></div>
+    <div class="panel"><h2>Biggest decliners · Latest session</h2><div class="scroll" id="pt-losers-today">Loading…</div></div>
+    <div class="panel"><h2>Biggest gainers · 5 trading days</h2><div class="scroll" id="pt-gainers-5d">Loading…</div></div>
+    <div class="panel"><h2>Biggest decliners · 5 trading days</h2><div class="scroll" id="pt-losers-5d">Loading…</div></div>
+  </div>
+  <div class="small muted" id="pt-market-source" style="margin-top:8px"></div>
+</section>
+<section class="panel" id="terminal-sectors">
+  <h2>Technology sector & theme heatmap</h2>
+  <div class="muted small">ETF proxies grouped by investable technology themes. Returns are equal-weighted within each group; these are market proxies, not official GICS sector indices.</div>
+  <div id="pt-sector-heatmap" class="grid2" style="margin-top:12px">Loading technology themes…</div>
+</section>
+
 <section class="panel"><h2>AI Risk Review (optional)</h2><p class="muted">Uses a configured Ollama-compatible endpoint only. The quantitative analysis remains available if AI is offline.</p><button class="btn secondary" id="ai-btn" onclick="runAI()" disabled>Generate AI commentary</button><div id="ai-result" class="notice" style="display:none;white-space:pre-wrap"></div></section>
 <section class="panel"><h2>Quick guide: profit-taking and buyback</h2>
 <p>Use the watchlist as a review queue, not an instruction to sell. A large unrealized gain alone is not a pullback signal. Consider partial profit-taking only when the position is oversized or multiple independent signals weaken; define the re-entry trigger before selling.</p>
@@ -14,10 +49,100 @@
 <p class="muted small">Technical readings use adjusted daily prices and are lagging indicators. This tool does not place orders or forecast a guaranteed top.</p></section>
 </main><script>
 let SNAP=null;
+
+let ptEquityChart = null;
+function ptMoney(v) {
+  if (v === null || v === undefined || !isFinite(Number(v))) return '—';
+  return Number(v).toLocaleString('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0});
+}
+function ptPct(v) {
+  if (v === null || v === undefined || !isFinite(Number(v))) return '—';
+  return (Number(v)>0?'+':'')+Number(v).toFixed(2)+'%';
+}
+function ptColor(v) { return Number(v)>=0?'good':'bad'; }
+function ptSet(id,value,cls) {
+  const el=document.getElementById(id); if(!el)return;
+  el.textContent=value;
+  if(cls)el.className='value '+cls;
+}
+async function loadTerminal(force=false) {
+  const qs=force?'?refresh=1':'';
+  try {
+    const responses=await Promise.all([
+      fetch('/api/portfolio-manager/terminal'+qs),
+      fetch('/api/portfolio-manager/market-pulse'+qs)
+    ]);
+    const data=await Promise.all(responses.map(async r=>{const d=await r.json();if(!r.ok)throw Error(d.error||'Terminal data request failed');return d;}));
+    renderTerminalCapital(data[0]);
+    renderMarketPulse(data[1]);
+  } catch(e) {
+    const n=document.getElementById('pt-capital-note');
+    if(n)n.textContent='Terminal data error: '+e.message;
+    const m=document.getElementById('pt-market-meta');
+    if(m)m.textContent='Market data unavailable: '+e.message;
+  }
+}
+function renderTerminalCapital(d) {
+  const a=d.account||{}, c=d.capital||{};
+  ptSet('pt-equity',ptMoney(a.equity));
+  ptSet('pt-contributions',ptMoney(c.net_cash_contributions));
+  ptSet('pt-cost',ptMoney(c.open_positions_cost_basis));
+  ptSet('pt-market-value',ptMoney(c.current_positions_market_value));
+  ptSet('pt-cash',ptMoney(a.cash));
+  ptSet('pt-unrealized',ptMoney(a.unrealized_pl),ptColor(a.unrealized_pl));
+  const note=document.getElementById('pt-capital-note');
+  if(note)note.textContent='Source: '+(d.source||'Alpaca')+' · '+(c.activity_count||0)+' activity records'+(c.activity_history_complete?' · activity history complete for returned window':' · activity history may be partial')+(d.warnings&&d.warnings.length?' · '+d.warnings.join(' '):'');
+  const curve=d.equity_history||[];
+  const canvas=document.getElementById('pt-equity-chart');
+  if(canvas&&typeof Chart!=='undefined') {
+    if(ptEquityChart)ptEquityChart.destroy();
+    ptEquityChart=new Chart(canvas,{
+      type:'line',
+      data:{labels:curve.map(x=>x.date),datasets:[{
+        label:'Account equity (USD)',data:curve.map(x=>x.equity),
+        borderColor:'#58a6ff',backgroundColor:'rgba(88,166,255,.12)',
+        fill:true,tension:.18,pointRadius:curve.length>100?0:2,borderWidth:2
+      }]},
+      options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'Equity: '+ptMoney(c.parsed.y)}}},
+        scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:12},grid:{color:'#21262d'}},
+          y:{ticks:{color:'#8b949e',callback:v=>ptMoney(v)},grid:{color:'#21262d'}}}}
+    });
+  }
+  const foot=document.getElementById('pt-equity-note');
+  if(foot)foot.textContent=curve.length?'Actual daily account equity · '+curve.length+' observations · '+curve[0].date+' to '+curve[curve.length-1].date+(d.history_source?' · '+d.history_source:''):(d.warnings||[]).join(' ');
+}
+function ptMoverTable(rows,period) {
+  if(!rows||!rows.length)return '<div class="muted small">No price data returned.</div>';
+  return '<table><thead><tr><th>Symbol</th><th>Last</th><th>Change</th><th>Session</th></tr></thead><tbody>'+
+    rows.map(x=>'<tr><td><b>'+x.symbol+'</b></td><td>'+ptMoney(x.price)+'</td><td class="'+ptColor(period==='day'?x.day_pct:x.five_day_pct)+'">'+ptPct(period==='day'?x.day_pct:x.five_day_pct)+'</td><td>'+x.session+'</td></tr>').join('')+
+    '</tbody></table>';
+}
+function renderMarketPulse(d) {
+  const meta=document.getElementById('pt-market-meta');
+  if(meta)meta.textContent='Latest trading session: '+(d.latest_session||'—')+' · '+(d.universe_count||0)+' tracked stocks · 5D = five trading sessions';
+  document.getElementById('pt-gainers-today').innerHTML=ptMoverTable(d.gainers_today,'day');
+  document.getElementById('pt-losers-today').innerHTML=ptMoverTable(d.losers_today,'day');
+  document.getElementById('pt-gainers-5d').innerHTML=ptMoverTable(d.gainers_5d,'5d');
+  document.getElementById('pt-losers-5d').innerHTML=ptMoverTable(d.losers_5d,'5d');
+  const source=document.getElementById('pt-market-source');
+  if(source)source.textContent=(d.source||'')+' · '+(d.universe_note||'')+((d.warnings||[]).length?' · '+d.warnings.join(' '):'');
+  const sectors=document.getElementById('pt-sector-heatmap');
+  if(sectors)sectors.innerHTML=(d.sectors||[]).map(s=>{
+    const day=Number(s.day_pct||0),five=s.five_day_pct;
+    const color=five===null?'#30363d':five>=0?'rgba(35,134,54,'+Math.min(.9,.18+Math.abs(five)/20)+')':'rgba(218,54,51,'+Math.min(.9,.18+Math.abs(five)/20)+')';
+    return '<div style="background:'+color+';border:1px solid #30363d;border-radius:8px;padding:12px">'+
+      '<div style="font-weight:650">'+s.sector+'</div>'+
+      '<div style="display:flex;justify-content:space-between;gap:8px;margin-top:8px"><span>Today</span><b class="'+ptColor(day)+'">'+ptPct(day)+'</b></div>'+
+      '<div style="display:flex;justify-content:space-between;gap:8px"><span>5 trading days</span><b class="'+ptColor(five)+'">'+ptPct(five)+'</b></div>'+
+      '<div class="small muted" style="margin-top:6px">Proxies: '+s.proxies.join(', ')+'</div></div>';
+  }).join('')||'<div class="muted small">No sector proxy data returned.</div>';
+}
+
 const money=n=>Number(n||0).toLocaleString('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0});
 const pct=n=>(Number(n||0)).toFixed(1)+'%';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-async function load(force=false){const b=document.getElementById('refresh');b.disabled=true;document.getElementById('status').textContent='Fetching live account and daily prices…';try{let r=await fetch('/api/portfolio-manager'+(force?'?refresh=1':''));let d=await r.json();if(!r.ok)throw Error((d.error||'API failed')+(d.detail?' — '+d.detail:'')+(d.configured?' [API base: '+d.configured.api_base+'; key present: '+d.configured.alpaca_key_present+'; secret present: '+d.configured.alpaca_secret_present+']':''));SNAP=d;render(d);document.getElementById('status').textContent='Updated '+new Date(d.as_of).toLocaleString()+' · No orders will be placed by this page.';document.getElementById('ai-btn').disabled=false;}catch(e){document.getElementById('status').textContent='Load failed: '+e.message;document.getElementById('app').innerHTML='<div class="notice">Check login session, Alpaca credentials, and Render logs.</div>';}finally{b.disabled=false}}
+async function load(force=false){const b=document.getElementById('refresh');b.disabled=true;document.getElementById('status').textContent='Fetching live account and daily prices…';try{let r=await fetch('/api/portfolio-manager'+(force?'?refresh=1':''));let d=await r.json();if(!r.ok)throw Error((d.error||'API failed')+(d.detail?' — '+d.detail:'')+(d.configured?' [API base: '+d.configured.api_base+'; key present: '+d.configured.alpaca_key_present+'; secret present: '+d.configured.alpaca_secret_present+']':''));SNAP=d;render(d);loadTerminal(false);document.getElementById('status').textContent='Updated '+new Date(d.as_of).toLocaleString()+' · No orders will be placed by this page.';document.getElementById('ai-btn').disabled=false;}catch(e){document.getElementById('status').textContent='Load failed: '+e.message;document.getElementById('app').innerHTML='<div class="notice">Check login session, Alpaca credentials, and Render logs.</div>';}finally{b.disabled=false}}
 function render(d){const s=d.summary||{},p=d.positions||[],t=d.technical||{};let top=p.slice().sort((a,b)=>b.weight_pct-a.weight_pct).slice(0,8);
 let cards=[['Account equity',money(d.account?.equity)],['Cash',money(d.account?.cash)],['Open positions',s.position_count],['Gross market value',money(s.market_value)],['Invested / equity',pct(s.invested_pct)],['Unrealized P&L',money(s.unrealized_pl)],['Top 5 weight',pct(s.top5_weight_pct)],['Beta-weighted SPY −20% scenario',money(s.beta_minus20_estimate)]];
 let html='<div class="cards">'+cards.map(c=>'<div class="card"><div class="label">'+c[0]+'</div><div class="value">'+c[1]+'</div></div>').join('')+'</div>';

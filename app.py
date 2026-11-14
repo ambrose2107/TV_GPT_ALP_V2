@@ -19,6 +19,7 @@ from research.backtest_routes import backtest_bp
 from research.backtest_replay_routes import replay_bp
 from research.ai_crash_routes import ai_crash_bp
 from research.portfolio_manager_routes import portfolio_bp
+from research.portfolio_terminal_routes import terminal_bp
 from research.early_signal_routes import early_signal_bp
 from research.xauusd_confluence_v4_routes import xauusd_confluence_v4_bp
 from research.xauusd_fib_mtf_routes import xauusd_fib_mtf_bp
@@ -59,6 +60,7 @@ def create_app():
     app.register_blueprint(replay_bp)
     app.register_blueprint(ai_crash_bp)
     app.register_blueprint(portfolio_bp)
+    app.register_blueprint(terminal_bp)
     app.register_blueprint(early_signal_bp)
     app.register_blueprint(xauusd_v3_bp)
     app.register_blueprint(xauusd_sdb_bp)
