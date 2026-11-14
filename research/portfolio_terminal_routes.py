@@ -65,6 +65,31 @@ def _num(value):
         return None
 
 
+def _price_metrics(symbol, items):
+    rows = []
+    for item in items or []:
+        close = _num(item.get("c"))
+        if close is None or close <= 0:
+            continue
+        rows.append({
+            "date": str(item.get("t", ""))[:10],
+            "close": close,
+            "volume": _num(item.get("v")),
+        })
+    rows.sort(key=lambda row: row["date"])
+    if len(rows) < 2:
+        return None
+    last, previous = rows[-1], rows[-2]
+    day_return = (last["close"] / previous["close"] - 1) * 100
+    five_day = (last["close"] / rows[-6]["close"] - 1) * 100 if len(rows) >= 6 else None
+    return {
+        "symbol": symbol, "price": round(last["close"], 4),
+        "day_pct": round(day_return, 2),
+        "five_day_pct": round(five_day, 2) if five_day is not None else None,
+        "volume": last["volume"], "session": last["date"],
+    }
+
+
 def _load_activities(headers, base):
     rows, token, has_more = [], None, False
     for page in range(10):
@@ -225,30 +250,7 @@ def portfolio_market_pulse():
         bars = body.get("bars") if isinstance(body, dict) else None
         if not isinstance(bars, dict):
             raise ValueError("Alpaca market-data response did not contain a bars map.")
-        metrics = {}
-        for symbol, items in bars.items():
-            rows = []
-            for item in items or []:
-                close = _num(item.get("c"))
-                if close is None or close <= 0:
-                    continue
-                rows.append({
-                    "date": str(item.get("t", ""))[:10],
-                    "close": close,
-                    "volume": _num(item.get("v")),
-                })
-            rows.sort(key=lambda row: row["date"])
-            if len(rows) < 2:
-                continue
-            last, previous = rows[-1], rows[-2]
-            day_return = (last["close"] / previous["close"] - 1) * 100
-            five_day = (last["close"] / rows[-6]["close"] - 1) * 100 if len(rows) >= 6 else None
-            metrics[symbol] = {
-                "symbol": symbol, "price": round(last["close"], 4),
-                "day_pct": round(day_return, 2),
-                "five_day_pct": round(five_day, 2) if five_day is not None else None,
-                "volume": last["volume"], "session": last["date"],
-            }
+        metrics = {symbol: result for symbol, items in bars.items() if (result := _price_metrics(symbol, items)) is not None}
         stocks = [metrics[s] for s in STOCK_UNIVERSE if s in metrics]
         day_sorted = sorted(stocks, key=lambda row: row["day_pct"])
         five_sorted = sorted([x for x in stocks if x["five_day_pct"] is not None], key=lambda row: row["five_day_pct"])
