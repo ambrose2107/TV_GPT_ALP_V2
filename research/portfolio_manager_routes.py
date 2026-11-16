@@ -437,11 +437,17 @@ def portfolio_ai():
                     "sentiment_score": article.get("sentiment_score"),
                     "snippet": (article.get("snippet") or "")[:350], "url": article.get("url"),
                 })
+        latest_by_symbol = {}
+        for filing in (research.get("filings") or []):
+            symbol = filing.get("symbol")
+            current = latest_by_symbol.get(symbol)
+            if current is None or (current.get("form") == "8-K" and filing.get("form") in ("10-Q", "10-K")):
+                latest_by_symbol[symbol] = filing
         sec_filings = [{
             "ticker": f.get("symbol"), "form": f.get("form"),
             "filing_date": f.get("filing_date"), "url": f.get("url"),
-            "excerpt": (f.get("text_excerpt") or "")[:900],
-        } for f in (research.get("filings") or [])[:24]]
+            "excerpt": (f.get("text_excerpt") or "")[:1100],
+        } for f in list(latest_by_symbol.values())[:24]]
         context = {
             "portfolio_snapshot": snapshot,
             "market_news": news_rows,
