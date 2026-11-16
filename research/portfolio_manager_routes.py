@@ -366,6 +366,32 @@ def portfolio_data():
                                       "alpaca_secret_present":bool(_headers().get("APCA-API-SECRET-KEY")),
                                       "api_base":(Config.ALPACA_BASE_URL or "").rstrip("/")}}), 503
 
+@portfolio_bp.route("/api/portfolio-manager/research-status")
+def portfolio_research_status():
+    err = _auth_json()
+    if err: return err
+    try:
+        from research.portfolio_research import load_sec_research
+        research = load_sec_research()
+        news = research.get("news") or {}
+        sector = research.get("sector_rotation") or {}
+        return jsonify({
+            "status": research.get("status", "not_started"),
+            "as_of": research.get("as_of"),
+            "filing_count": research.get("filing_count", len(research.get("filings") or [])),
+            "symbols_checked": len(research.get("symbols_checked") or []),
+            "analysis_available": bool(research.get("analysis")),
+            "news_configured": bool(news.get("configured")),
+            "news_articles": sum(len(v.get("articles") or []) for v in (news.get("results") or {}).values()),
+            "sector_rotation_available": bool(sector.get("available")),
+            "errors": (research.get("errors") or [])[:6],
+            "message": research.get("message"),
+        })
+    except Exception as exc:
+        logger.warning("Portfolio research status unavailable: %s", exc)
+        return jsonify({"status":"unavailable","message":"Research status could not be loaded."})
+
+
 @portfolio_bp.route("/api/portfolio-manager/ai", methods=["POST"])
 def portfolio_ai():
     err = _auth_json()
