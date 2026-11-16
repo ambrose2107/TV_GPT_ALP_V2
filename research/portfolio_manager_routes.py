@@ -383,6 +383,7 @@ def portfolio_research_status():
             "analysis_available": bool(research.get("analysis")),
             "news_configured": bool(news.get("configured")),
             "news_articles": sum(len(v.get("articles") or []) for v in (news.get("results") or {}).values()),
+            "market_candidates": len(research.get("market_candidates") or []),
             "sector_rotation_available": bool(sector.get("available")),
             "errors": (research.get("errors") or [])[:6],
             "message": research.get("message"),
@@ -446,6 +447,7 @@ def portfolio_ai():
             "news_provider": news.get("provider") or ("MarketAux" if news.get("configured") else "unavailable"),
             "sec_research_status": research.get("status"),
             "sec_filings": sec_filings,
+            "market_candidates": (research.get("market_candidates") or [])[:8],
             "sec_filing_ai_analysis": (research.get("analysis") or "")[:6500],
             "sector_rotation": sector,
             "data_as_of": {
@@ -463,8 +465,8 @@ def portfolio_ai():
             "2. HOLDINGS ACTION TABLE: every material holding; label HOLD / TRIM / EXIT REVIEW / ADD ON WEAKNESS. "
             "Show evidence, confidence (low/medium/high), and the trigger that would change the view. "
             "Never recommend an exit solely because unrealized P&L is negative.\n"
-            "3. BUY WATCHLIST: up to 3 non-held candidates only when sector leadership, relative strength, "
-            "news and filing evidence support them. If evidence is insufficient, say NO NEW BUY. "
+            "3. BUY WATCHLIST: up to 3 non-held candidates only when the supplied technical scanner score, sector leadership, relative strength, "
+            "news and filing evidence support them. Prefer scanner score >=60, positive 1M sector-relative strength and a non-negative catalyst read. If evidence is insufficient, say NO NEW BUY. "
             "Give an entry condition, invalidation/risk, and why it is better than adding to an existing holding.\n"
             "4. SECTOR ROTATION: strongest and weakest sectors over 5D/1M/3M relative to SPY; "
             "state clearly if data is unavailable.\n"
