@@ -189,8 +189,10 @@ def refresh_sec_research():
     base = (Config.ALPACA_BASE_URL or "https://paper-api.alpaca.markets").rstrip("/")
     positions_response = requests.get(base + "/v2/positions", headers=headers, timeout=12)
     positions_response.raise_for_status()
+    live_positions = positions_response.json()
+    live_positions.sort(key=lambda p: abs(float(p.get("market_value") or 0)), reverse=True)
     symbols = list(dict.fromkeys(
-        str(p.get("symbol") or "").upper() for p in positions_response.json()
+        str(p.get("symbol") or "").upper() for p in live_positions
         if p.get("symbol")
     ))[:24]
     ticker_map = _load_ticker_map()
@@ -229,11 +231,19 @@ def refresh_sec_research():
             from mirrorfish.engine import chat, get_provider_status
             providers = get_provider_status()
             if any(v.get("configured") for v in providers.values()):
+                # Prefer the latest periodic report per company; fall back to
+                # an 8-K only when no recent 10-Q/10-K was found.
+                preferred_filings = {}
+                for filing in filings:
+                    symbol = filing["symbol"]
+                    current = preferred_filings.get(symbol)
+                    if current is None or (current["form"] == "8-K" and filing["form"] in ("10-Q", "10-K")):
+                        preferred_filings[symbol] = filing
                 evidence = [{
                     "ticker": f["symbol"], "form": f["form"],
                     "filing_date": f["filing_date"], "url": f["url"],
-                    "excerpt": f["text_excerpt"][:1000],
-                } for f in filings[:18]]
+                    "excerpt": f["text_excerpt"][:850],
+                } for f in list(preferred_filings.values())[:20]]
                 prompt = (
                     "You are a forensic public-equity analyst. Analyse only the SEC filing "
                     "evidence below. For each ticker identify material positives, negatives, "
