@@ -119,6 +119,7 @@ def _filings_for_ticker(ticker, cik, now):
     url = "https://data.sec.gov/submissions/CIK%s.json" % cik
     response = requests.get(url, headers=SEC_HEADERS, timeout=15)
     response.raise_for_status()
+    time.sleep(0.12)  # Keep SEC submissions + Archives requests below the fair-access rate.
     recent = (response.json().get("filings") or {}).get("recent") or {}
     forms = recent.get("form") or []
     dates = recent.get("filingDate") or []
