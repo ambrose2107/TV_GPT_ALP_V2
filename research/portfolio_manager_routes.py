@@ -373,26 +373,107 @@ def portfolio_ai():
     body = request.get_json(silent=True) or {}
     snapshot = body.get("snapshot") or {}
     try:
-        # Reuse the AI provider already configured for MirrorFish (Groq/OpenRouter/HuggingFace).
         from mirrorfish.engine import chat, get_provider_status
+        from research.portfolio_research import load_sec_research, sector_rotation_snapshot
         status = get_provider_status()
         configured = any(v.get("configured") for v in status.values())
         if not configured:
-            return jsonify({"available":False,"message":"No existing MirrorFish AI provider is configured. The quantitative dashboard works without AI."}), 200
-        prompt = ("Review this portfolio risk snapshot as a cautious hedge-fund risk analyst. "
-                  "Use only the supplied figures. Distinguish observed facts from hypotheses; "
-                  "do not claim to predict tops or guarantee a pullback. Discuss concentration, "
-                  "correlation, 20% market stress assumptions, and which profit-taking candidates "
-                  "deserve a manual review. Do not recommend automatic orders. Keep the answer concise. "
-                  "Snapshot JSON: " + __import__("json").dumps(snapshot, separators=(",",":"))[:16000])
-        # Prefer the same gpt-oss-20b model used by the hosted Hugging Face route
-        # when its token is configured; otherwise retain the existing provider fallback.
+            return jsonify({"available":False,"message":"No existing MirrorFish AI provider is configured. Quantitative portfolio analysis remains available."}), 200
+
+        # Reuse the scheduled SEC/news cache. Only fetch sector data on demand
+        # when the scheduled snapshot does not yet contain a usable result.
+        research = load_sec_research()
+        sector = research.get("sector_rotation") or {}
+        if not sector.get("available"):
+            try:
+                sector = sector_rotation_snapshot()
+            except Exception as sector_ex:
+                logger.warning("Portfolio AI sector context unavailable: %s", sector_ex)
+                sector = {"available": False, "message": "Sector rotation data unavailable."}
+        news = research.get("news") or {}
+        if not news.get("configured"):
+            try:
+                from research.early_signal_routes import _marketaux_news_batch
+                symbols = [p.get("symbol") for p in (snapshot.get("positions") or []) if p.get("symbol")]
+                news = _marketaux_news_batch(symbols[:24])
+            except Exception as news_ex:
+                logger.warning("Portfolio AI news context unavailable: %s", news_ex)
+                news = {"configured": False, "message": "MarketAux news is not configured or available."}
+
+        news_rows = []
+        for symbol, item in (news.get("results") or {}).items():
+            for article in (item.get("articles") or [])[:2]:
+                news_rows.append({
+                    "ticker": symbol, "title": article.get("title"),
+                    "source": article.get("source"), "published_at": article.get("published_at"),
+                    "sentiment_score": article.get("sentiment_score"),
+                    "snippet": (article.get("snippet") or "")[:350], "url": article.get("url"),
+                })
+        sec_filings = [{
+            "ticker": f.get("symbol"), "form": f.get("form"),
+            "filing_date": f.get("filing_date"), "url": f.get("url"),
+            "excerpt": (f.get("text_excerpt") or "")[:900],
+        } for f in (research.get("filings") or [])[:24]]
+        context = {
+            "portfolio_snapshot": snapshot,
+            "market_news": news_rows,
+            "news_provider": news.get("provider") or ("MarketAux" if news.get("configured") else "unavailable"),
+            "sec_research_status": research.get("status"),
+            "sec_filings": sec_filings,
+            "sec_filing_ai_analysis": (research.get("analysis") or "")[:6500],
+            "sector_rotation": sector,
+            "data_as_of": {
+                "portfolio": snapshot.get("as_of"),
+                "sec_news_refresh": research.get("as_of"),
+                "sector_rotation": sector.get("as_of"),
+            },
+        }
+        prompt = (
+            "Act as a disciplined institutional portfolio manager and risk committee. "
+            "Analyse the supplied live portfolio, company news, SEC filing evidence and sector rotation. "
+            "Return complete, readable Markdown, NOT JSON. Do not stop mid-sentence.\n\n"
+            "Required sections:\n"
+            "1. EXECUTIVE DECISION: risk regime, portfolio health, and the 3 most important actions.\n"
+            "2. HOLDINGS ACTION TABLE: every material holding; label HOLD / TRIM / EXIT REVIEW / ADD ON WEAKNESS. "
+            "Show evidence, confidence (low/medium/high), and the trigger that would change the view. "
+            "Never recommend an exit solely because unrealized P&L is negative.\n"
+            "3. BUY WATCHLIST: up to 3 non-held candidates only when sector leadership, relative strength, "
+            "news and filing evidence support them. If evidence is insufficient, say NO NEW BUY. "
+            "Give an entry condition, invalidation/risk, and why it is better than adding to an existing holding.\n"
+            "4. SECTOR ROTATION: strongest and weakest sectors over 5D/1M/3M relative to SPY; "
+            "state clearly if data is unavailable.\n"
+            "5. NEWS & SEC CATALYSTS: ticker, date, source, positive/negative/unclear, and portfolio implication. "
+            "Use only the supplied filing excerpts and link evidence; do not imply the excerpts are full filings.\n"
+            "6. RISK CONTROLS: concentration, correlation, leverage/negative cash, liquidity, volatility, "
+            "and scenario risks.\n"
+            "7. PRIORITY PLAN: ranked actions for the next 1-5 sessions and what must be monitored.\n\n"
+            "Rules: use only supplied facts; distinguish reported facts from inference; cite supplied URLs inline; "
+            "never invent prices, targets, catalysts, earnings, filing contents or sector data. Explain missing "
+            "coverage. Consider taxes, spreads and slippage before turnover. Do not place or claim to place orders. "
+            "No guaranteed returns or precise probabilities without a validated model. Keep the review concise but "
+            "complete, and explicitly state when the evidence does not justify a buy/sell decision.\n\n"
+            "RESEARCH CONTEXT:\n" +
+            __import__("json").dumps(context, separators=(",", ":"), default=str)[:27000]
+        )
         preferred = "huggingface" if status.get("huggingface", {}).get("configured") else None
-        answer = chat(prompt, {"module":"Portfolio Manager","as_of":snapshot.get("as_of")}, provider_name=preferred)
-        return jsonify({"available":True,"analysis":str(answer)[:12000]})
+        answer = chat(prompt, {"module":"Portfolio Manager Institutional Review",
+                               "as_of":snapshot.get("as_of")}, provider_name=preferred)
+        return jsonify({
+            "available":True, "analysis":str(answer)[:18000],
+            "context_status":{
+                "sec_status":research.get("status") or "not_started",
+                "sec_filings":len(sec_filings),
+                "sec_last_refresh":research.get("as_of"),
+                "news_articles":len(news_rows),
+                "news_configured":bool(news.get("configured")),
+                "sector_rotation":bool(sector.get("available")),
+                "sector_as_of":sector.get("as_of"),
+                "warnings":(research.get("errors") or [])[:8],
+            }
+        })
     except Exception as ex:
         logger.warning("Portfolio AI unavailable: %s",ex)
-        return jsonify({"available":False,"message":"Existing MirrorFish AI endpoint unavailable; use the quantitative dashboard below.","detail":str(ex)}),200
+        return jsonify({"available":False,"message":"Portfolio AI review is unavailable; the quantitative dashboard remains available.","detail":str(ex)[:240]}),200
 
 
 @portfolio_bp.route("/api/portfolio-manager/key-levels")
