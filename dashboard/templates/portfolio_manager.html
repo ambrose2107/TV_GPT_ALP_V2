@@ -156,7 +156,7 @@ async function loadResearchStatus(){
     const when=d.as_of?new Date(d.as_of).toLocaleString():'waiting for first scheduled run';
     const news=d.news_configured?('MarketAux: '+d.news_articles+' articles cached'):'MarketAux news not configured';
     const sector=d.sector_rotation_available?'sector rotation ready':'sector rotation pending';
-    el.textContent='Auto research: '+d.status+' · '+d.filing_count+' SEC filings across '+d.symbols_checked+' holdings · '+news+' · '+sector+' · Last refresh: '+when+
+    el.textContent='Auto research: '+d.status+' · '+d.filing_count+' SEC filings across '+d.symbols_checked+' holdings · '+d.market_candidates+' ranked buy candidates · '+news+' · '+sector+' · Last refresh: '+when+
       (d.analysis_available?' · SEC AI analysis ready':' · SEC AI analysis not yet available')+
       ((d.errors||[]).length?' · Notes: '+d.errors.join('; '):'')+
       (d.message?' · '+d.message:'');
