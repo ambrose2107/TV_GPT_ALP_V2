@@ -379,6 +379,7 @@ def portfolio_research_status():
             "status": research.get("status", "not_started"),
             "as_of": research.get("as_of"),
             "filing_count": research.get("filing_count", len(research.get("filings") or [])),
+            "market_candidates": len(research.get("market_candidates") or []),
             "symbols_checked": len(research.get("symbols_checked") or []),
             "analysis_available": bool(research.get("analysis")),
             "news_configured": bool(news.get("configured")),
@@ -491,6 +492,7 @@ def portfolio_ai():
             "context_status":{
                 "sec_status":research.get("status") or "not_started",
                 "sec_filings":len(sec_filings),
+                "market_candidates":len(research.get("market_candidates") or []),
                 "sec_last_refresh":research.get("as_of"),
                 "news_articles":len(news_rows),
                 "news_configured":bool(news.get("configured")),
