@@ -197,7 +197,7 @@ def refresh_sec_research():
                     json.dumps(evidence, separators=(",", ":"))[:19000]
                 )
                 preferred = "huggingface" if providers.get("huggingface", {}).get("configured") else None
-                analysis = str(chat(prompt, {"module": "Automatic SEC Filing Review"}, provider_name=preferred))[:10000]
+                analysis = str(chat(prompt, {"module": "Automatic SEC Filing Review"}, provider_name=preferred, max_tokens=1500))[:10000]
         except Exception as exc:
             logger.warning("Automatic SEC AI analysis unavailable: %s", exc)
             errors.append("SEC documents downloaded; AI filing analysis unavailable")
