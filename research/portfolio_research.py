@@ -61,12 +61,58 @@ def _load_ticker_map():
     return mapping
 
 
-def _clean_filing_text(html, limit=1800):
+def _clean_filing_text(html, limit=4200):
     soup = BeautifulSoup(html or "", "lxml")
     for node in soup(["script", "style", "ix:header", "header", "footer"]):
         node.decompose()
-    text = re.sub(r"\s+", " ", soup.get_text(" ", strip=True))
-    return text[:limit]
+    full_text = re.sub(r"\s+", " ", soup.get_text(" ", strip=True))
+    # SEC filing primary documents can be hundreds of pages. Extract context
+    # around decision-useful sections instead of blindly taking the cover page.
+    patterns = [
+        r"management.{0,8}discussion.{0,8}analysis",
+        r"risk factors", r"liquidity and capital resources",
+        r"results of operations", r"outlook|guidance",
+        r"legal proceedings", r"subsequent events",
+        r"going concern", r"customer concentration",
+    ]
+    excerpts = []
+    for pattern in patterns:
+        match = re.search(pattern, full_text, flags=re.IGNORECASE)
+        if match:
+            start = max(0, match.start() - 180)
+            end = min(len(full_text), match.end() + 520)
+            snippet = full_text[start:end]
+            if not any(snippet[:160] in old for old in excerpts):
+                excerpts.append(snippet)
+        if sum(len(x) for x in excerpts) >= limit:
+            break
+    selected = " ... ".join(excerpts) if excerpts else full_text[:limit]
+    return selected[:limit]
+
+
+def _market_candidates(held_symbols):
+    """Rank a bounded liquid-stock universe using the existing technical scanner."""
+    key, secret = _alpaca_credentials()
+    if not key or not secret:
+        return []
+    try:
+        from research.early_signal_routes import UNIVERSE, _score_rows
+        start = (datetime.now(timezone.utc) - timedelta(days=100)).isoformat().replace("+00:00", "Z")
+        response = requests.get(
+            "https://data.alpaca.markets/v2/stocks/bars",
+            headers={"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret},
+            params={"symbols": ",".join(UNIVERSE), "timeframe": "1Day",
+                    "start": start, "limit": 10000, "adjustment": "split",
+                    "feed": "iex", "sort": "asc"},
+            timeout=18,
+        )
+        response.raise_for_status()
+        rows, _ = _score_rows(response.json().get("bars") or {})
+        held = {str(s).upper() for s in held_symbols}
+        return [row for row in rows if row.get("symbol") not in held][:8]
+    except Exception as exc:
+        logger.warning("Portfolio candidate scan unavailable: %s", exc)
+        return []
 
 
 def _filings_for_ticker(ticker, cik, now):
@@ -162,10 +208,12 @@ def refresh_sec_research():
             errors.append(symbol + ": SEC submissions unavailable")
         time.sleep(0.12)
 
+    candidates = _market_candidates(symbols)
+    research_symbols = list(dict.fromkeys(symbols + [x.get("symbol") for x in candidates if x.get("symbol")]))[:40]
     news = {"configured": False, "message": "MarketAux news was not fetched."}
     try:
         from research.early_signal_routes import _marketaux_news_batch
-        news = _marketaux_news_batch(symbols)
+        news = _marketaux_news_batch(research_symbols)
     except Exception as exc:
         logger.warning("Automatic portfolio news refresh unavailable: %s", exc)
         news = {"configured": False, "error": "News refresh unavailable."}
@@ -184,8 +232,8 @@ def refresh_sec_research():
                 evidence = [{
                     "ticker": f["symbol"], "form": f["form"],
                     "filing_date": f["filing_date"], "url": f["url"],
-                    "excerpt": f["text_excerpt"][:1300],
-                } for f in filings[:30]]
+                    "excerpt": f["text_excerpt"][:1000],
+                } for f in filings[:18]]
                 prompt = (
                     "You are a forensic public-equity analyst. Analyse only the SEC filing "
                     "evidence below. For each ticker identify material positives, negatives, "
@@ -194,7 +242,7 @@ def refresh_sec_research():
                     "Do not invent figures or claim an excerpt covers the whole filing. "
                     "Flag missing/ambiguous evidence. Finish with a concise cross-holding risk "
                     "summary. Include filing dates and ticker labels.\nEVIDENCE:\n" +
-                    json.dumps(evidence, separators=(",", ":"))[:19000]
+                    json.dumps(evidence, separators=(",", ":"))[:21000]
                 )
                 preferred = "huggingface" if providers.get("huggingface", {}).get("configured") else None
                 analysis = str(chat(prompt, {"module": "Automatic SEC Filing Review"}, provider_name=preferred, max_tokens=1500))[:10000]
@@ -206,6 +254,7 @@ def refresh_sec_research():
         "as_of": datetime.now(timezone.utc).isoformat(),
         "symbols_checked": symbols, "filing_count": len(filings),
         "filings": filings, "analysis": analysis, "news": news,
+        "market_candidates": candidates,
         "sector_rotation": sector_rotation, "errors": errors,
         "source": "SEC EDGAR company submissions and filing primary documents",
         "next_refresh_hours": SEC_CACHE_TTL_HOURS,
