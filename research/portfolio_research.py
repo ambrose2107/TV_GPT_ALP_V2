@@ -162,6 +162,19 @@ def refresh_sec_research():
             errors.append(symbol + ": SEC submissions unavailable")
         time.sleep(0.12)
 
+    news = {"configured": False, "message": "MarketAux news was not fetched."}
+    try:
+        from research.early_signal_routes import _marketaux_news_batch
+        news = _marketaux_news_batch(symbols)
+    except Exception as exc:
+        logger.warning("Automatic portfolio news refresh unavailable: %s", exc)
+        news = {"configured": False, "error": "News refresh unavailable."}
+    try:
+        sector_rotation = sector_rotation_snapshot()
+    except Exception as exc:
+        logger.warning("Automatic sector rotation refresh unavailable: %s", exc)
+        sector_rotation = {"available": False, "message": "Sector rotation data unavailable."}
+
     analysis = None
     if filings:
         try:
@@ -192,7 +205,8 @@ def refresh_sec_research():
         "status": "complete" if filings else "partial",
         "as_of": datetime.now(timezone.utc).isoformat(),
         "symbols_checked": symbols, "filing_count": len(filings),
-        "filings": filings, "analysis": analysis, "errors": errors,
+        "filings": filings, "analysis": analysis, "news": news,
+        "sector_rotation": sector_rotation, "errors": errors,
         "source": "SEC EDGAR company submissions and filing primary documents",
         "next_refresh_hours": SEC_CACHE_TTL_HOURS,
     }
