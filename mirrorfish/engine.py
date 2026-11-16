@@ -193,7 +193,9 @@ Required JSON:
         logger.error(f"MirrorFish portfolio error: {e}")
         return {"portfolio_health":"UNKNOWN","summary":str(e),"provider":p["name"],"error":str(e)}
 
-def chat(message: str, context: dict = None, provider_name: str = None) -> str:
+def chat(message: str, context: dict = None, provider_name: str = None,
+         max_tokens: int = 600) -> str:
+    """Chat wrapper; callers may request a larger bounded completion for reports."""
     pname, p = _get_provider(provider_name)
     if not p:
         return ("MirrorFish is not configured. Add GROQ_API_KEY (free at console.groq.com) "
@@ -201,7 +203,9 @@ def chat(message: str, context: dict = None, provider_name: str = None) -> str:
     ctx = f"\n\nContext: {json.dumps(context, default=str)[:400]}" if context else ""
     messages = [{"role":"system","content":SYSTEM_PROMPT + ctx},{"role":"user","content":message}]
     try:
-        return _call_openai(p, _model_for(pname, p), messages, max_tokens=600, temperature=0.5)
+        output_limit = max(128, min(int(max_tokens), 3000))
+        return _call_openai(p, _model_for(pname, p), messages,
+                            max_tokens=output_limit, temperature=0.35)
     except Exception as e:
         logger.error(f"MirrorFish chat error: {e}")
         return f"MirrorFish error: {str(e)}"
