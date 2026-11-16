@@ -19,12 +19,14 @@ from core.logger import get_logger
 from core.database import get_setting, set_setting
 from research.signal_engine import run_full_scan
 from research.ai_stock_picker import run_research_scan
+from research.portfolio_research import refresh_sec_research
 
 logger = get_logger(__name__)
 
 _scheduler = BackgroundScheduler(daemon=True)
 _scan_lock = threading.Lock()
 _JOB_ID = "signal_scan_job"
+_PORTFOLIO_SEC_JOB_ID = "portfolio_sec_research_job"
 
 VALID_INTERVALS = {0: "Off", 3: "Every 3h", 6: "Every 6h", 12: "Every 12h"}
 
@@ -60,6 +62,24 @@ def _run_research_guarded(symbols: list = None):
     except Exception as e:
         logger.error(f"scheduler: research scan failed: {e}")
         set_setting("last_research_summary", f"error: {e}")
+    finally:
+        _scan_lock.release()
+
+
+def _run_portfolio_sec_guarded():
+    # SEC downloads are bounded and share the scan lock to protect the small
+    # Render instance from overlapping research workloads.
+    if not _scan_lock.acquire(blocking=False):
+        logger.info("scheduler: SEC refresh skipped; another research scan is running")
+        return
+    try:
+        set_setting("portfolio_sec_started_at", datetime.utcnow().isoformat() + "Z")
+        result = refresh_sec_research()
+        set_setting("portfolio_sec_finished_at", datetime.utcnow().isoformat() + "Z")
+        set_setting("portfolio_sec_status", str(result.get("status", "unknown")))
+    except Exception as e:
+        logger.exception("scheduler: automatic SEC refresh failed: %s", e)
+        set_setting("portfolio_sec_status", "error: " + str(e)[:240])
     finally:
         _scan_lock.release()
 
@@ -125,4 +145,11 @@ def init_scheduler():
     saved_hours = int(get_setting("scan_interval_hours", 0) or 0)
     if saved_hours > 0:
         set_interval_hours(saved_hours)
+    # First filing refresh runs one minute after startup; repeat every 12 hours.
+    # This avoids blocking web requests or downloading filings on every page view.
+    if not _scheduler.get_job(_PORTFOLIO_SEC_JOB_ID):
+        _scheduler.add_job(_run_portfolio_sec_guarded, "interval", hours=12,
+                           id=_PORTFOLIO_SEC_JOB_ID,
+                           next_run_time=datetime.now() + timedelta(seconds=60),
+                           max_instances=1, coalesce=True)
     logger.info(f"scheduler: initialized, interval={VALID_INTERVALS.get(saved_hours,'Off')}")
