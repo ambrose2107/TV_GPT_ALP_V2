@@ -492,7 +492,7 @@ def portfolio_ai():
         )
         preferred = "huggingface" if status.get("huggingface", {}).get("configured") else None
         answer = chat(prompt, {"module":"Portfolio Manager Institutional Review",
-                               "as_of":snapshot.get("as_of")}, provider_name=preferred, max_tokens=2200)
+                               "as_of":snapshot.get("as_of")}, provider_name=preferred, max_tokens=2800)
         return jsonify({
             "available":True, "analysis":str(answer)[:18000],
             "context_status":{
