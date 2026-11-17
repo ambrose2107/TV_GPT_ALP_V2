@@ -164,7 +164,7 @@ function initPortfolioUI(root=document){
   });
   root.querySelectorAll('table').forEach(table=>{
     if(table.dataset.filterReady==='1')return;table.dataset.filterReady='1';
-    const scroller=table.closest('.scroll'),parent=scroller||table.parentElement,tools=document.createElement('div');tools.className='table-tools';
+    const scroller=table.closest('.scroll'),parent=scroller?scroller.parentElement:table.parentElement,tools=document.createElement('div');tools.className='table-tools';
     const search=document.createElement('input');search.type='search';search.placeholder='Search table…';search.setAttribute('aria-label','Search table rows');tools.appendChild(search);
     const selects=[],headers=Array.from(table.querySelectorAll('thead th'));
     headers.forEach((th,index)=>{
