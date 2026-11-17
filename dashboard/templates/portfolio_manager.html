@@ -137,13 +137,63 @@ function renderMarketPulse(d) {
 const money=n=>Number(n||0).toLocaleString('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0});
 const pct=n=>(Number(n||0)).toFixed(1)+'%';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-async function load(force=false){const b=document.getElementById('refresh');b.disabled=true;document.getElementById('status').textContent='Fetching live account and daily prices…';try{let r=await fetch('/api/portfolio-manager'+(force?'?refresh=1':''));let d=await r.json();if(!r.ok)throw Error((d.error||'API failed')+(d.detail?' — '+d.detail:'')+(d.configured?' [API base: '+d.configured.api_base+'; key present: '+d.configured.alpaca_key_present+'; secret present: '+d.configured.alpaca_secret_present+']':''));SNAP=d;render(d);loadTerminal(false);loadResearchStatus();document.getElementById('status').textContent='Updated '+new Date(d.as_of).toLocaleString()+' · No orders will be placed by this page.';document.getElementById('ai-btn').disabled=false;}catch(e){document.getElementById('status').textContent='Load failed: '+e.message;document.getElementById('app').innerHTML='<div class="notice">Check login session, Alpaca credentials, and Render logs.</div>';}finally{b.disabled=false}}
+async function fetchPortfolioJson(url,timeoutMs=20000){
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+    const response=await fetch(url,{signal:controller.signal});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw Error((data.error||data.message||'HTTP '+response.status)+(data.detail?' — '+data.detail:''));
+    return data;
+  }catch(error){
+    if(error.name==='AbortError')throw Error('Request timed out after '+Math.round(timeoutMs/1000)+' seconds');
+    throw error;
+  }finally{clearTimeout(timer);}
+}
+async function loadAdvancedAnalytics(force=false){
+  try{
+    const d=await fetchPortfolioJson('/api/portfolio-manager'+(force?'?refresh=1':''),110000);
+    if(!SNAP)return;
+    SNAP={...SNAP,...d,etf_lookthrough:SNAP.etf_lookthrough||d.etf_lookthrough};
+    render(SNAP);
+    document.getElementById('status').textContent='Portfolio and advanced analytics updated '+new Date(SNAP.as_of).toLocaleString()+' · No orders will be placed.';
+  }catch(error){
+    const status=document.getElementById('status');
+    if(status)status.textContent='Portfolio loaded. Historical risk analytics are temporarily unavailable: '+error.message+'. Your account and holdings remain visible; use Refresh portfolio to retry.';
+  }
+}
+async function load(force=false){
+  const b=document.getElementById('refresh'),status=document.getElementById('status');
+  b.disabled=true;status.textContent='Fetching account and positions…';
+  try{
+    const d=await fetchPortfolioJson('/api/portfolio-manager?basic=1'+(force?'&refresh=1':''),25000);
+    SNAP=d;render(d);
+    status.textContent='Account and '+((d.positions||[]).length)+' holdings loaded · Historical risk analytics are loading separately…';
+    loadTerminal(false);loadResearchStatus();
+    document.getElementById('ai-btn').disabled=false;
+    loadAdvancedAnalytics(force);
+  }catch(error){
+    status.textContent='Portfolio load failed: '+error.message;
+    document.getElementById('app').innerHTML='<div class="notice">Account data could not be loaded. Check your login session, Alpaca credentials, and Render logs, then retry.</div>';
+  }finally{b.disabled=false;}
+}
+function renderEtfLookthrough(data){
+  const funds=data.funds||[],overlap=data.underlying_overlap||[],unsupported=data.unsupported_held_funds||[];
+  if(!funds.length&&!unsupported.length)return '';
+  const fundRows=funds.map(f=>'<tr><td><b>'+esc(f.fund)+'</b></td><td>'+money(f.market_value_usd)+'</td><td>'+f.as_of+'</td><td>'+pct(f.top_holdings_coverage_pct)+'</td><td>'+money(f.unattributed_value_usd)+'</td><td><a href="'+esc(f.source)+'" target="_blank" rel="noopener">Issuer holdings</a></td></tr>').join('');
+  const overlapRows=overlap.slice(0,30).map(x=>'<tr><td><b>'+esc(x.symbol)+'</b></td><td>'+money(x.direct_market_value_usd)+'</td><td>'+money(x.lookthrough_etf_exposure_usd)+'</td><td>'+money(x.combined_economic_exposure_usd)+'</td><td>'+esc(x.held_via_funds.join(', '))+'</td></tr>').join('');
+  return '<section class="panel"><h2>ETF look-through · underlying holdings and overlap</h2><p class="muted small">'+esc(data.methodology||'Dated issuer holdings snapshots; not complete fund holdings.')+'</p>'+
+    '<div class="scroll"><table><thead><tr><th>ETF</th><th>Position value</th><th>Holdings date</th><th>Top holdings coverage</th><th>Unattributed value</th><th>Source</th></tr></thead><tbody>'+fundRows+'</tbody></table></div>'+
+    (unsupported.length?'<div class="notice small">Held funds without a verified holdings snapshot in this version: '+esc(unsupported.join(', '))+'. These remain fund wrappers and are not guessed.</div>':'')+
+    '<h3 style="font-size:13px;margin:14px 0 8px">Direct holdings + ETF-derived exposure</h3><div class="scroll"><table><thead><tr><th>Underlying stock</th><th>Direct position</th><th>Via ETFs</th><th>Combined economic exposure</th><th>ETF sources</th></tr></thead><tbody>'+overlapRows+'</tbody></table></div>'+
+    '<div class="small muted">Only issuer-published top holdings are included. Fund wrappers are not added a second time; unreported holdings remain unattributed. Private/unlisted names are excluded from listed-stock overlap totals.</div></section>';
+}
 function render(d){const s=d.summary||{},p=d.positions||[],t=d.technical||{};let top=p.slice().sort((a,b)=>b.weight_pct-a.weight_pct).slice(0,8);
 let cards=[['Account equity',money(d.account?.equity)],['Cash',money(d.account?.cash)],['Open positions',s.position_count],['Gross market value',money(s.market_value)],['Invested / equity',pct(s.invested_pct)],['Unrealized P&L',money(s.unrealized_pl)],['Top 5 weight',pct(s.top5_weight_pct)],['Beta-weighted SPY −20% scenario',money(s.beta_minus20_estimate)]];
 let html='<div class="cards">'+cards.map(c=>'<div class="card"><div class="label">'+c[0]+'</div><div class="value">'+c[1]+'</div></div>').join('')+'</div>';
 html+='<section class="panel"><h2>Thematic concentration (heuristic groups)</h2><p class="muted small">Groups overlap conceptually with correlated pairs; each holding is assigned to one primary group for this display. These are research buckets, not formal sector classifications.</p><div class="scroll"><table><thead><tr><th>Theme</th><th>Exposure</th><th>Weight of account equity</th><th>Holdings</th></tr></thead><tbody>'+((d.theme_exposure||[]).map(x=>'<tr><td>'+esc(x.theme)+'</td><td>'+money(x.market_value)+'</td><td>'+pct(x.weight_pct)+'</td><td>'+esc(x.symbols.join(', '))+'</td></tr>').join('')||'<tr><td colspan="4">Theme data unavailable.</td></tr>')+'</tbody></table></div></section>';
 html+='<section class="panel"><h2>Issuer sector allocation · where the capital is invested</h2><p class="muted small">Based on current market value, not number of holdings. Equity weight is measured against total account equity; gross weight is measured against gross open-position value. ETFs and crypto are kept in separate buckets until verified holdings look-through is available.</p><div class="scroll"><table><thead><tr><th>Sector / wrapper</th><th>Market value</th><th>% of account equity</th><th>% of gross positions</th><th>Positions</th><th>Holdings</th></tr></thead><tbody>'+((d.sector_exposure||[]).map(x=>'<tr><td><b>'+esc(x.sector)+'</b></td><td>'+money(x.market_value)+'</td><td>'+pct(x.equity_weight_pct)+'</td><td>'+pct(x.gross_weight_pct)+'</td><td>'+x.position_count+'</td><td class="small">'+esc((x.symbols||[]).join(', '))+'</td></tr>').join('')||'<tr><td colspan="6">Sector mapping unavailable.</td></tr>')+'</tbody></table></div><div class="small muted">Classification coverage: '+(d.classification_coverage_pct??'—')+'%'+((d.classification_unmapped||[]).length?' · Needs mapping: '+esc(d.classification_unmapped.join(', ')):' · All held symbols mapped')+'</div></section>';
 html+='<section class="panel"><h2>Every holding · sector and investment map</h2><p class="muted small">The company sector answers what industry the issuer belongs to; the theme answers what economic driver the position is exposed to. This avoids treating AI, semiconductors, quantum and power as interchangeable sectors.</p><div class="scroll"><table><thead><tr><th>Symbol</th><th>Issuer sector / wrapper</th><th>Industry</th><th>Investment theme</th><th>Business / exposure</th><th>Current value</th><th>% of equity</th><th>Instrument</th><th>Key risk drivers</th></tr></thead><tbody>'+((p.slice().sort((a,b)=>Math.abs(b.market_value)-Math.abs(a.market_value))).map(x=>'<tr><td><b>'+esc(x.symbol)+'</b></td><td>'+esc(x.sector||'Unclassified')+'</td><td>'+esc(x.industry||'—')+'</td><td>'+esc(x.theme||'—')+'</td><td class="small">'+esc(x.description||'—')+'</td><td>'+money(x.market_value)+'</td><td>'+pct(x.weight_pct)+'</td><td>'+esc(x.instrument_type||'—')+'</td><td class="small">'+esc((x.risk_tags||[]).join(', '))+'</td></tr>').join('')||'<tr><td colspan="9">No positions.</td></tr>')+'</tbody></table></div><div class="small muted">ETF positions are shown as fund wrappers, not falsely re-labelled as single-stock sector exposures. Fund look-through can be added from dated holdings files in a later step.</div></section>';
+html+=renderEtfLookthrough(d.etf_lookthrough||{});
 html+='<section class="panel"><h2>Interactive portfolio analytics</h2><p class="muted small">Charts use current position market values and mapped primary sector/theme. Hover or tap chart elements for details; ETF wrappers remain separate until holdings look-through is available.</p><div class="grid2"><div class="panel"><h2>Capital by sector / wrapper</h2><div style="height:280px;position:relative"><canvas id="pm-sector-chart"></canvas></div></div><div class="panel"><h2>Capital by investment theme</h2><div style="height:280px;position:relative"><canvas id="pm-theme-chart"></canvas></div></div><div class="panel"><h2>Position concentration vs unrealized return</h2><div style="height:300px;position:relative"><canvas id="pm-risk-chart"></canvas></div><div class="small muted">X-axis: % of account equity · Y-axis: unrealized return %. Each dot is one holding.</div></div></div></section>';
 html+='<div class="grid2"><section class="panel"><h2>Stress test: market falls 20%</h2><p>Simple invested-value shock: <b class="bad">'+money(s.simple_minus20_pct_dollars)+'</b></p><p>Beta-weighted estimate: <b class="bad">'+money(s.beta_minus20_estimate)+'</b></p><p>Historical beta coverage: '+s.beta_coverage_count+' positions</p><div class="notice">'+esc(d.methodology||'')+'</div></section><section class="panel"><h2>Largest exposures</h2><div class="scroll"><table><thead><tr><th>Symbol</th><th>Weight</th><th>Unrealized P&L</th></tr></thead><tbody>'+top.map(x=>'<tr><td><b>'+esc(x.symbol)+'</b></td><td>'+pct(x.weight_pct)+'</td><td class="'+(x.unrealized_pl>=0?'good':'bad')+'">'+money(x.unrealized_pl)+' ('+pct(x.unrealized_pct)+')</td></tr>').join('')+'</tbody></table></div></section></div>';
 html+='<section class="panel"><h2>Position risk and profit-taking watchlist</h2><p class="muted small">Watch score is a rule-based review priority (0–10), not a probability of a decline. Flags can coexist with a continuing uptrend.</p><div class="scroll"><table><thead><tr><th>Symbol</th><th>Weight</th><th>Unrealized</th><th>20D return</th><th>60D return</th><th>vs 20D mean</th><th>vs 3M high</th><th>Volatility</th><th>Review score</th><th>Signals</th></tr></thead><tbody>';
