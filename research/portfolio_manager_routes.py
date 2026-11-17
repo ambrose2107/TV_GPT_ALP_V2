@@ -352,7 +352,7 @@ def portfolio_data():
             payload = {
                 "as_of": datetime.now(timezone.utc).isoformat(), "account":{"equity":equity,"cash":cash,
                 "buying_power":_safe_float(account.get("buying_power")),"portfolio_value":_safe_float(account.get("portfolio_value") or equity)},
-                "positions":positions,"theme_exposure":theme_exposure,"sector_exposure":sector_exposure,"instrument_exposure":instrument_exposure,"classification_coverage_pct":classification["classification_coverage_pct"],"classification_unmapped":classification["classification_unmapped"],"classification_methodology":classification["methodology"],"summary":{"position_count":len(positions),"market_value":total_mv,
+                "positions":positions,"theme_exposure":theme_exposure,"sector_exposure":sector_exposure,"instrument_exposure":instrument_exposure,"classification_coverage_pct":classification["classification_coverage_pct"],"classification_unmapped":classification["classification_unmapped"],"classification_methodology":classification["methodology"],"etf_lookthrough":etf_lookthrough,"summary":{"position_count":len(positions),"market_value":total_mv,
                 "invested_pct":invested,"cash_pct":(cash/equity*100 if equity else 0),
                 "unrealized_pl":sum(p["unrealized_pl"] for p in positions),
                 "top5_weight_pct":sum(p["weight_pct"] for p in positions[:5]),
@@ -367,7 +367,7 @@ def portfolio_data():
             payload = {
                 "as_of": datetime.now(timezone.utc).isoformat(),"account":{"equity":equity,"cash":cash,
                 "buying_power":_safe_float(account.get("buying_power")),"portfolio_value":_safe_float(account.get("portfolio_value") or equity)},
-                "positions":positions,"theme_exposure":theme_exposure,"sector_exposure":sector_exposure,"instrument_exposure":instrument_exposure,"classification_coverage_pct":classification["classification_coverage_pct"],"classification_unmapped":classification["classification_unmapped"],"classification_methodology":classification["methodology"],
+                "positions":positions,"theme_exposure":theme_exposure,"sector_exposure":sector_exposure,"instrument_exposure":instrument_exposure,"classification_coverage_pct":classification["classification_coverage_pct"],"classification_unmapped":classification["classification_unmapped"],"classification_methodology":classification["methodology"],"etf_lookthrough":etf_lookthrough,
                 "summary":{"position_count":len(positions),"market_value":total_mv,
                 "invested_pct":invested,"cash_pct":(cash/equity*100 if equity else 0),
                 "unrealized_pl":sum(p["unrealized_pl"] for p in positions),"top5_weight_pct":sum(p["weight_pct"] for p in positions[:5]),
@@ -495,7 +495,7 @@ def portfolio_ai():
                          "unmapped_symbols":snapshot.get("classification_unmapped") or [],
                          "methodology":snapshot.get("classification_methodology"),
                          "etf_lookthrough":snapshot.get("etf_lookthrough") or {}},
-          "holdings": {"account":account,"all_holdings":holdings,"portfolio_sector_allocation":portfolio_sector_rows,"portfolio_theme_allocation":portfolio_theme_rows},
+          "holdings": {"account":account,"all_holdings":holdings,"portfolio_sector_allocation":portfolio_sector_rows,"portfolio_theme_allocation":portfolio_theme_rows,"etf_lookthrough":snapshot.get("etf_lookthrough") or {}},
           "buys": {"candidates":candidates,"sectors":sector_rows,"news":news_by_symbol,
                    "portfolio_sector_allocation":portfolio_sector_rows,"portfolio_themes":portfolio_theme_rows},
           "rotation": {"sector_rotation":sector,"portfolio_sector_allocation":portfolio_sector_rows,"portfolio_themes":portfolio_theme_rows},
@@ -507,8 +507,8 @@ def portfolio_ai():
                         "etf_lookthrough":snapshot.get("etf_lookthrough") or {}}
         }
         instructions = {
-          "executive":"EXECUTIVE DECISION: assess account health, negative cash/leverage, issuer-sector and theme concentration by market value, ETF overlap and top 3 observations. Explicitly state the largest sector weights in dollars and % of equity.",
-          "allocation":"SECTOR & CAPITAL ALLOCATION REVIEW: use the full holdings_sector_map and sector/theme/instrument totals. Explain where the money is invested in USD and % of account equity; rank the largest issuer sectors and investment themes; distinguish direct single-stock exposure from ETF wrappers and crypto; flag concentrated AI/semiconductor/quantum/data-centre/power exposures and any obvious overlap. Do not invent ETF look-through. State classification gaps and what holdings data would be needed for look-through.",
+          "executive":"EXECUTIVE DECISION: assess account health, negative cash/leverage, issuer-sector and theme concentration by market value, ETF overlap and top 3 observations. Explicitly state the largest sector weights in dollars and % of equity. Use only dated ETF look-through evidence supplied and disclose coverage.",
+          "allocation":"SECTOR & CAPITAL ALLOCATION REVIEW: use the full holdings_sector_map and sector/theme/instrument totals. Explain where the money is invested in USD and % of account equity; rank the largest issuer sectors and investment themes; distinguish direct single-stock exposure from ETF wrappers and crypto; flag concentrated AI/semiconductor/quantum/data-centre/power exposures and overlap. Use supplied dated issuer-published ETF top-holdings snapshots only; quantify direct plus ETF-derived exposure, state each source date and coverage, flag unsupported funds and unattributed weight, and never extrapolate missing holdings.",
           "holdings":"HOLDINGS ACTION REVIEW: assess EVERY listed holding using its supplied sector, industry and theme; label HOLD/TRIM/EXIT REVIEW/ADD ON WEAKNESS; give evidence, confidence and a condition that changes the view. A loss alone is not an exit thesis.",
           "buys":"BUY WATCHLIST: recommend at most 3 non-held candidates or say NO NEW BUY. Prefer scanner score >=60 and supportive relative sector strength/catalysts when supplied. Give thesis, entry condition, invalidation and portfolio-fit rationale. Never invent an entry price.",
           "rotation":"SECTOR ROTATION: rank strongest/weakest supplied sectors using 5D/1M/3M relative returns versus SPY; explain portfolio implications. Clearly disclose missing data.",
