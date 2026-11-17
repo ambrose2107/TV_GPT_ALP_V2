@@ -20,9 +20,9 @@ def test_etf_lookthrough_uses_dated_top_holdings_and_preserves_uncovered_weight(
 
 def test_unsupported_funds_are_not_guessed_or_looked_through():
     result = build_etf_lookthrough([
-        {"symbol": "QQQI", "market_value": 300},
-        {"symbol": "SOXX", "market_value": 400},
-        {"symbol": "IBIT", "market_value": 500},
+        {"symbol": "QQQI", "market_value": 300, "instrument_type": "ETF"},
+        {"symbol": "SOXX", "market_value": 400, "instrument_type": "ETF"},
+        {"symbol": "IBIT", "market_value": 500, "instrument_type": "ETF"},
     ])
     assert result["funds"] == []
     assert result["underlying_overlap"] == []
