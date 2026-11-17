@@ -111,6 +111,7 @@ def enrich_portfolio(positions, account_equity=0.0):
                 field: key, "market_value": round(mv, 2),
                 "gross_weight_pct": round(mv / gross * 100, 2) if gross else 0.0,
                 "equity_weight_pct": round(mv / account_equity * 100, 2) if account_equity else 0.0,
+                "weight_pct": round(mv / account_equity * 100, 2) if account_equity else 0.0,
                 "position_count": value["position_count"],
                 "symbols": value["symbols"],
             })
