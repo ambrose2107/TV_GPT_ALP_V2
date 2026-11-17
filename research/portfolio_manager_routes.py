@@ -446,11 +446,10 @@ def portfolio_ai():
                  "solely because P&L is negative. Consider concentration, leverage, taxes, spreads and "
                  "slippage. No orders are placed. No guaranteed returns. Be concise and actionable.")
         allocation_holdings = [{
-            "ticker":p.get("symbol"),"sector":p.get("sector"),"industry":p.get("industry"),
-            "theme":p.get("theme"),"instrument_type":p.get("instrument_type"),
-            "market_value":round(_safe_float(p.get("market_value")),2),
-            "equity_weight_pct":round(_safe_float(p.get("weight_pct")),2),
-            "risk_tags":(p.get("risk_tags") or [])[:3]
+            "ticker":p.get("symbol"),"sector":p.get("sector"),
+            "theme":p.get("theme"),"type":p.get("instrument_type"),
+            "value_usd":round(_safe_float(p.get("market_value")),2),
+            "equity_pct":round(_safe_float(p.get("weight_pct")),2)
         } for p in positions]
         contexts = {
           "executive": {"account":account,"summary":summary,"largest_holdings":holdings[:8],"portfolio_sector_allocation":portfolio_sector_rows,"portfolio_theme_allocation":portfolio_theme_rows,"sectors":sector_rows},
