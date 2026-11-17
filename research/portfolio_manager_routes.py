@@ -400,116 +400,93 @@ def portfolio_ai():
     if err: return err
     body = request.get_json(silent=True) or {}
     snapshot = body.get("snapshot") or {}
+    section = str(body.get("section") or "").lower()
+    allowed = {"executive", "holdings", "buys", "rotation", "catalysts", "risk_plan"}
+    if section not in allowed:
+        return jsonify({"available":False,"message":"Unknown review section."}), 400
     try:
         from mirrorfish.engine import chat, get_provider_status
         from research.portfolio_research import load_sec_research, sector_rotation_snapshot
         status = get_provider_status()
-        configured = any(v.get("configured") for v in status.values())
-        if not configured:
-            return jsonify({"available":False,"message":"No existing MirrorFish AI provider is configured. Quantitative portfolio analysis remains available."}), 200
-
-        # Reuse the scheduled SEC/news cache. Only fetch sector data on demand
-        # when the scheduled snapshot does not yet contain a usable result.
-        research = load_sec_research()
+        if not any(v.get("configured") for v in status.values()):
+            return jsonify({"available":False,"message":"No MirrorFish AI provider is configured."}), 200
+        research = load_sec_research() or {}
         sector = research.get("sector_rotation") or {}
         if not sector.get("available"):
-            try:
-                sector = sector_rotation_snapshot()
-            except Exception as sector_ex:
-                logger.warning("Portfolio AI sector context unavailable: %s", sector_ex)
-                sector = {"available": False, "message": "Sector rotation data unavailable."}
-        news = research.get("news") or {}
-        if not news.get("configured"):
-            try:
-                from research.early_signal_routes import _marketaux_news_batch
-                symbols = [p.get("symbol") for p in (snapshot.get("positions") or []) if p.get("symbol")]
-                news = _marketaux_news_batch(symbols[:24])
-            except Exception as news_ex:
-                logger.warning("Portfolio AI news context unavailable: %s", news_ex)
-                news = {"configured": False, "message": "MarketAux news is not configured or available."}
-
-        news_rows = []
-        for symbol, item in (news.get("results") or {}).items():
-            for article in (item.get("articles") or [])[:2]:
-                news_rows.append({
-                    "ticker": symbol, "title": article.get("title"),
-                    "source": article.get("source"), "published_at": article.get("published_at"),
-                    "sentiment_score": article.get("sentiment_score"),
-                    "snippet": (article.get("snippet") or "")[:350], "url": article.get("url"),
-                })
-        latest_by_symbol = {}
-        for filing in (research.get("filings") or []):
-            symbol = filing.get("symbol")
-            current = latest_by_symbol.get(symbol)
-            if current is None or (current.get("form") == "8-K" and filing.get("form") in ("10-Q", "10-K")):
-                latest_by_symbol[symbol] = filing
-        sec_filings = [{
-            "ticker": f.get("symbol"), "form": f.get("form"),
-            "filing_date": f.get("filing_date"), "url": f.get("url"),
-            "excerpt": (f.get("text_excerpt") or "")[:1100],
-        } for f in list(latest_by_symbol.values())[:24]]
-        context = {
-            "portfolio_snapshot": snapshot,
-            "market_news": news_rows,
-            "news_provider": news.get("provider") or ("MarketAux" if news.get("configured") else "unavailable"),
-            "sec_research_status": research.get("status"),
-            "sec_filings": sec_filings,
-            "market_candidates": (research.get("market_candidates") or [])[:8],
-            "sec_filing_ai_analysis": (research.get("analysis") or "")[:6500],
-            "sector_rotation": sector,
-            "data_as_of": {
-                "portfolio": snapshot.get("as_of"),
-                "sec_news_refresh": research.get("as_of"),
-                "sector_rotation": sector.get("as_of"),
-            },
+            try: sector = sector_rotation_snapshot()
+            except Exception as ex:
+                logger.warning("Portfolio AI sector context unavailable: %s", ex)
+                sector = {"available":False,"message":"Sector rotation data unavailable."}
+        news_by_symbol = {}
+        for symbol, item in ((research.get("news") or {}).get("results") or {}).items():
+            news_by_symbol[str(symbol).upper()] = [{
+                "title":a.get("title"),"date":a.get("published_at"),
+                "sentiment":a.get("sentiment_score"),"source":a.get("source"),
+                "snippet":(a.get("snippet") or "")[:160],"url":a.get("url")
+            } for a in (item.get("articles") or [])[:1]]
+        filings_by_symbol = {}
+        for filing in research.get("filings") or []:
+            symbol = str(filing.get("symbol") or "").upper()
+            if not symbol: continue
+            old = filings_by_symbol.get(symbol)
+            if old is None or (old.get("form") == "8-K" and filing.get("form") in ("10-Q","10-K")):
+                filings_by_symbol[symbol] = {
+                    "form":filing.get("form"),"date":filing.get("filing_date"),
+                    "url":filing.get("url"),"excerpt":(filing.get("text_excerpt") or "")[:320]
+                }
+        positions = sorted(snapshot.get("positions") or [],
+                           key=lambda p:abs(_safe_float(p.get("market_value"))),reverse=True)
+        holdings = [{
+            "ticker":p.get("symbol"),"weight_pct":round(_safe_float(p.get("weight_pct")),2),
+            "market_value":round(_safe_float(p.get("market_value")),2),
+            "unrealized_pnl":round(_safe_float(p.get("unrealized_pl")),2),
+            "unrealized_pct":round(_safe_float(p.get("unrealized_pct")),2),
+            "qty":p.get("qty"),"avg_entry":p.get("avg_entry"),
+            "news":news_by_symbol.get(str(p.get("symbol") or "").upper(),[]),
+            "latest_sec":filings_by_symbol.get(str(p.get("symbol") or "").upper())
+        } for p in positions[:28]]
+        account = snapshot.get("account") or {}
+        summary = snapshot.get("summary") or {}
+        sector_rows = (sector.get("sectors") or [])[:10]
+        candidates = (research.get("market_candidates") or [])[:8]
+        rules = ("You are an institutional portfolio risk analyst. Use only supplied evidence; "
+                 "separate facts from inference; do not invent prices, targets or events. Never sell "
+                 "solely because P&L is negative. Consider concentration, leverage, taxes, spreads and "
+                 "slippage. No orders are placed. No guaranteed returns. Be concise and actionable.")
+        contexts = {
+          "executive": {"account":account,"summary":summary,"largest_holdings":holdings[:8],"sectors":sector_rows},
+          "holdings": {"account":account,"all_holdings":holdings},
+          "buys": {"candidates":candidates,"sectors":sector_rows,"news":news_by_symbol,
+                   "portfolio_themes":(snapshot.get("theme_exposure") or [])[:8]},
+          "rotation": {"sector_rotation":sector,"portfolio_themes":(snapshot.get("theme_exposure") or [])[:8]},
+          "catalysts": {"filings":filings_by_symbol,"news":news_by_symbol,
+                        "research_status":research.get("status"),"coverage_warnings":(research.get("errors") or [])[:8]},
+          "risk_plan": {"account":account,"summary":summary,"holdings":holdings,
+                        "themes":(snapshot.get("theme_exposure") or [])[:8],
+                        "sector_rotation":sector_rows,"technical":snapshot.get("technical") or {}}
         }
-        prompt = (
-            "Act as a disciplined institutional portfolio manager and risk committee. "
-            "Analyse the supplied live portfolio, company news, SEC filing evidence and sector rotation. "
-            "Return complete, readable Markdown, NOT JSON. Do not stop mid-sentence.\n\n"
-            "Required sections:\n"
-            "1. EXECUTIVE DECISION: risk regime, portfolio health, and the 3 most important actions.\n"
-            "2. HOLDINGS ACTION TABLE: every material holding; label HOLD / TRIM / EXIT REVIEW / ADD ON WEAKNESS. "
-            "Show evidence, confidence (low/medium/high), and the trigger that would change the view. "
-            "Never recommend an exit solely because unrealized P&L is negative.\n"
-            "3. BUY WATCHLIST: up to 3 non-held candidates only when the supplied technical scanner score, sector leadership, relative strength, "
-            "news and filing evidence support them. Prefer scanner score >=60, positive 1M sector-relative strength and a non-negative catalyst read. If evidence is insufficient, say NO NEW BUY. "
-            "Give an entry condition, invalidation/risk, and why it is better than adding to an existing holding.\n"
-            "4. SECTOR ROTATION: strongest and weakest sectors over 5D/1M/3M relative to SPY; "
-            "state clearly if data is unavailable.\n"
-            "5. NEWS & SEC CATALYSTS: ticker, date, source, positive/negative/unclear, and portfolio implication. "
-            "Use only the supplied filing excerpts and link evidence; do not imply the excerpts are full filings.\n"
-            "6. RISK CONTROLS: concentration, correlation, leverage/negative cash, liquidity, volatility, "
-            "and scenario risks.\n"
-            "7. PRIORITY PLAN: ranked actions for the next 1-5 sessions and what must be monitored.\n\n"
-            "Rules: use only supplied facts; distinguish reported facts from inference; cite supplied URLs inline; "
-            "never invent prices, targets, catalysts, earnings, filing contents or sector data. Explain missing "
-            "coverage. Consider taxes, spreads and slippage before turnover. Do not place or claim to place orders. "
-            "No guaranteed returns or precise probabilities without a validated model. Keep the review concise but "
-            "complete, and explicitly state when the evidence does not justify a buy/sell decision.\n\n"
-            "RESEARCH CONTEXT:\n" +
-            __import__("json").dumps(context, separators=(",", ":"), default=str)[:27000]
-        )
-        preferred = "huggingface" if status.get("huggingface", {}).get("configured") else None
-        answer = chat(prompt, {"module":"Portfolio Manager Institutional Review",
-                               "as_of":snapshot.get("as_of")}, provider_name=preferred, max_tokens=2800)
-        return jsonify({
-            "available":True, "analysis":str(answer)[:18000],
-            "context_status":{
-                "sec_status":research.get("status") or "not_started",
-                "sec_filings":len(sec_filings),
-                "market_candidates":len(research.get("market_candidates") or []),
-                "sec_last_refresh":research.get("as_of"),
-                "news_articles":len(news_rows),
-                "news_configured":bool(news.get("configured")),
-                "sector_rotation":bool(sector.get("available")),
-                "sector_as_of":sector.get("as_of"),
-                "warnings":(research.get("errors") or [])[:8],
-            }
-        })
+        instructions = {
+          "executive":"EXECUTIVE DECISION: assess account health, negative cash/leverage, concentration and top 3 observations.",
+          "holdings":"HOLDINGS ACTION REVIEW: assess EVERY listed holding; label HOLD/TRIM/EXIT REVIEW/ADD ON WEAKNESS; give evidence, confidence and a condition that changes the view. A loss alone is not an exit thesis.",
+          "buys":"BUY WATCHLIST: recommend at most 3 non-held candidates or say NO NEW BUY. Prefer scanner score >=60 and supportive relative sector strength/catalysts when supplied. Give thesis, entry condition, invalidation and portfolio-fit rationale. Never invent an entry price.",
+          "rotation":"SECTOR ROTATION: rank strongest/weakest supplied sectors using 5D/1M/3M relative returns versus SPY; explain portfolio implications. Clearly disclose missing data.",
+          "catalysts":"NEWS & SEC CATALYSTS: list decision-relevant ticker/date/source, positive/negative/unclear, reported fact and portfolio implication. SEC excerpts are partial, not full reports. Identify missing coverage.",
+          "risk_plan":"RISK CONTROLS + 1-5 SESSION PLAN: assess concentration, theme overlap, leverage/negative cash, liquidity and correlated exposures only where data exists; rank 3-5 actions with triggers."
+        }
+        prompt = rules+"\n\n"+instructions[section]+"\nEVIDENCE (compact JSON):\n"+__import__("json").dumps(contexts[section],separators=(",",":"),default=str)[:10500]
+        preferred = "huggingface" if status.get("huggingface",{}).get("configured") else None
+        answer = str(chat(prompt,{"module":"Portfolio Manager / "+section,"as_of":snapshot.get("as_of")},
+                          provider_name=preferred,max_tokens=520))
+        if answer.startswith("MirrorFish error:"):
+            return jsonify({"available":False,"section":section,"message":answer}),503
+        return jsonify({"available":True,"section":section,"analysis":answer,
+            "context_status":{"sec_filings":len(filings_by_symbol),
+              "news_articles":sum(len(v) for v in news_by_symbol.values()),
+              "sector_rotation":bool(sector.get("available")),"research_as_of":research.get("as_of")}})
     except Exception as ex:
-        logger.warning("Portfolio AI unavailable: %s",ex)
-        return jsonify({"available":False,"message":"Portfolio AI review is unavailable; the quantitative dashboard remains available.","detail":str(ex)[:240]}),200
+        logger.warning("Portfolio AI section %s unavailable: %s",section,ex)
+        return jsonify({"available":False,"section":section,
+                        "message":"This section could not be generated: "+str(ex)[:240]}),200
 
 
 @portfolio_bp.route("/api/portfolio-manager/key-levels")
