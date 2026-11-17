@@ -170,16 +170,22 @@ const AI_REVIEW_SECTIONS=[
   ["catalysts","5. News and SEC catalysts"],
   ["risk_plan","6. Risk controls and action plan"]
 ];
+const AI_REVIEW_DONE={};
 const waitForAI=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function runAI(){
   if(!SNAP)return;
   const b=document.getElementById('ai-btn'),o=document.getElementById('ai-result');
-  b.disabled=true;b.textContent='Generating 1/6…';o.style.display='block';o.textContent='';
-  let completed=0;
+  if(Object.keys(AI_REVIEW_DONE).length===6){
+    Object.keys(AI_REVIEW_DONE).forEach(k=>delete AI_REVIEW_DONE[k]);
+    o.textContent='';
+  }
+  b.disabled=true;o.style.display='block';
+  let completed=Object.keys(AI_REVIEW_DONE).length,requestsMade=0;
   try{
     for(let i=0;i<AI_REVIEW_SECTIONS.length;i++){
       const [section,title]=AI_REVIEW_SECTIONS[i];
-      b.textContent='Generating '+(i+1)+'/6…';
+      if(AI_REVIEW_DONE[section])continue;
+      b.textContent='Generating '+(completed+1)+'/6…';
       o.textContent+=(o.textContent?'\n\n':'')+'⏳ '+title+' — working…';
       const r=await fetch('/api/portfolio-manager/ai',{
         method:'POST',headers:{'Content-Type':'application/json'},
@@ -189,14 +195,13 @@ async function runAI(){
       if(!r.ok||!d.available){
         const message=d.message||('HTTP '+r.status);
         o.textContent=o.textContent.replace('⏳ '+title+' — working…','⚠ '+title+' — not completed: '+message);
-        o.textContent+='\n\nCompleted sections are retained. Wait briefly and run the review again; already completed work can be copied before retrying.';
+        o.textContent+='\n\n'+completed+'/6 sections saved. Wait briefly, then retry; completed sections will be skipped.';
         return;
       }
-      const text=d.analysis||'No commentary returned.';
       o.textContent=o.textContent.replace('⏳ '+title+' — working…','');
-      o.textContent+=(o.textContent.trim()?'\n\n':'')+'## '+title+'\n'+text;
-      completed++;
-      if(i<AI_REVIEW_SECTIONS.length-1){
+      o.textContent+=(o.textContent.trim()?'\n\n':'')+'## '+title+'\n'+(d.analysis||'No commentary returned.');
+      AI_REVIEW_DONE[section]=true;completed++;requestsMade++;
+      if(completed<6){
         o.textContent+='\n\nNext section starts after a short pause to stay within the AI provider rate limit…';
         await waitForAI(12000);
         o.textContent=o.textContent.replace('\n\nNext section starts after a short pause to stay within the AI provider rate limit…','');
@@ -204,7 +209,7 @@ async function runAI(){
     }
     o.textContent+='\n\n---\nReview complete · '+completed+'/6 sections · No orders placed.';
   }catch(e){
-    o.textContent+='\n\nReview paused after '+completed+'/6 completed sections: '+e.message+'. Completed sections remain visible.';
+    o.textContent+='\n\nReview paused after '+completed+'/6 completed sections: '+e.message+'. Completed sections remain saved; retry resumes from the next section.';
   }finally{
     b.disabled=false;b.textContent=completed===6?'Regenerate complete AI review':'Retry incomplete AI review';
   }
