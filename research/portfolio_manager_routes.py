@@ -484,7 +484,7 @@ def portfolio_ai():
             "equity_pct":round(_safe_float(p.get("weight_pct")),2)
         } for p in positions]
         contexts = {
-          "executive": {"account":account,"summary":summary,"largest_holdings":holdings[:8],"portfolio_sector_allocation":portfolio_sector_rows,"portfolio_theme_allocation":portfolio_theme_rows,"sectors":sector_rows},
+          "executive": {"account":account,"summary":summary,"largest_holdings":holdings[:8],"portfolio_sector_allocation":portfolio_sector_rows,"portfolio_theme_allocation":portfolio_theme_rows,"etf_lookthrough":snapshot.get("etf_lookthrough") or {},"sectors":sector_rows},
           "allocation": {"account_equity":_safe_float(account.get("equity")),
                          "gross_positions_market_value":_safe_float(summary.get("market_value")),
                          "sector_allocation":portfolio_sector_rows,
@@ -493,7 +493,8 @@ def portfolio_ai():
                          "holdings_sector_map":allocation_holdings,
                          "classification_coverage_pct":snapshot.get("classification_coverage_pct"),
                          "unmapped_symbols":snapshot.get("classification_unmapped") or [],
-                         "methodology":snapshot.get("classification_methodology")},
+                         "methodology":snapshot.get("classification_methodology"),
+                         "etf_lookthrough":snapshot.get("etf_lookthrough") or {}},
           "holdings": {"account":account,"all_holdings":holdings,"portfolio_sector_allocation":portfolio_sector_rows,"portfolio_theme_allocation":portfolio_theme_rows},
           "buys": {"candidates":candidates,"sectors":sector_rows,"news":news_by_symbol,
                    "portfolio_sector_allocation":portfolio_sector_rows,"portfolio_themes":portfolio_theme_rows},
@@ -502,7 +503,8 @@ def portfolio_ai():
                         "research_status":research.get("status"),"coverage_warnings":(research.get("errors") or [])[:8]},
           "risk_plan": {"account":account,"summary":summary,"holdings":holdings,
                         "portfolio_sector_allocation":portfolio_sector_rows,"themes":portfolio_theme_rows,
-                        "sector_rotation":sector_rows,"technical":snapshot.get("technical") or {}}
+                        "sector_rotation":sector_rows,"technical":snapshot.get("technical") or {},
+                        "etf_lookthrough":snapshot.get("etf_lookthrough") or {}}
         }
         instructions = {
           "executive":"EXECUTIVE DECISION: assess account health, negative cash/leverage, issuer-sector and theme concentration by market value, ETF overlap and top 3 observations. Explicitly state the largest sector weights in dollars and % of equity.",
