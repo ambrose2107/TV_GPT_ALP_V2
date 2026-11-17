@@ -100,27 +100,14 @@ def portfolio_data():
                 "cost_basis": cb, "unrealized_pl": pl, "unrealized_pct": pct,
                 "weight_pct": (mv / equity * 100) if equity else 0,
             })
-        theme_map = {
-            "Semiconductors & equipment": {"AMD","ASML","MRVL","TSM","SNDK","KLAC","MU","INTC","SMH","QCOM","NVDA","AVGO","AMAT","LRCX","SOXX"},
-            "AI infrastructure / optical": {"LITE","AAOI","NBIS","CRWV","ORCL","VRT","ANET","DELL","SMCI"},
-            "Quantum / emerging technology": {"QBTS","RGTI","IONQ","QUBT"},
-            "Space / frontier growth": {"RKLB","ASTS","ONDS","OUST"},
-            "Crypto-linked": {"IBIT","CONL","COIN","MARA","RIOT"},
-            "Broad market / diversified ETFs": {"SPY","QQQ","IWM","DIA","VTI","VOO","SMH","SOXX"},
-        }
-        for p in positions:
-            p["theme"] = next((name for name, members in theme_map.items() if p["symbol"] in members), "Other / unclassified")
+        from research.portfolio_classification import enrich_portfolio
+        classification = enrich_portfolio(positions, equity)
+        positions = classification["positions"]
         positions.sort(key=lambda x: abs(x["market_value"]), reverse=True)
         total_mv = sum(abs(p["market_value"]) for p in positions)
-        theme_totals = {}
-        for p in positions:
-            row = theme_totals.setdefault(p["theme"], {"market_value": 0.0, "symbols": []})
-            row["market_value"] += abs(p["market_value"])
-            row["symbols"].append(p["symbol"])
-        theme_exposure = [{"theme": k, "market_value": round(v["market_value"], 2),
-                           "weight_pct": (v["market_value"] / equity * 100) if equity else 0,
-                           "symbols": v["symbols"]}
-                          for k, v in sorted(theme_totals.items(), key=lambda kv: -kv[1]["market_value"])]
+        theme_exposure = classification["theme_exposure_detailed"]
+        sector_exposure = classification["sector_exposure"]
+        instrument_exposure = classification["instrument_exposure"]
         invested = (total_mv / equity * 100) if equity else 0
         # Use Alpaca's market-data API instead of yfinance.  Render often gets
         # Yahoo Finance rate-limit/JSON failures, which can make every ticker fail.
@@ -333,7 +320,7 @@ def portfolio_data():
             payload = {
                 "as_of": datetime.now(timezone.utc).isoformat(), "account":{"equity":equity,"cash":cash,
                 "buying_power":_safe_float(account.get("buying_power")),"portfolio_value":_safe_float(account.get("portfolio_value") or equity)},
-                "positions":positions,"theme_exposure":theme_exposure,"summary":{"position_count":len(positions),"market_value":total_mv,
+                "positions":positions,"theme_exposure":theme_exposure,"sector_exposure":sector_exposure,"instrument_exposure":instrument_exposure,"classification_coverage_pct":classification["classification_coverage_pct"],"classification_unmapped":classification["classification_unmapped"],"classification_methodology":classification["methodology"],"summary":{"position_count":len(positions),"market_value":total_mv,
                 "invested_pct":invested,"cash_pct":(cash/equity*100 if equity else 0),
                 "unrealized_pl":sum(p["unrealized_pl"] for p in positions),
                 "top5_weight_pct":sum(p["weight_pct"] for p in positions[:5]),
@@ -348,7 +335,7 @@ def portfolio_data():
             payload = {
                 "as_of": datetime.now(timezone.utc).isoformat(),"account":{"equity":equity,"cash":cash,
                 "buying_power":_safe_float(account.get("buying_power")),"portfolio_value":_safe_float(account.get("portfolio_value") or equity)},
-                "positions":positions,"theme_exposure":theme_exposure,
+                "positions":positions,"theme_exposure":theme_exposure,"sector_exposure":sector_exposure,"instrument_exposure":instrument_exposure,"classification_coverage_pct":classification["classification_coverage_pct"],"classification_unmapped":classification["classification_unmapped"],"classification_methodology":classification["methodology"],
                 "summary":{"position_count":len(positions),"market_value":total_mv,
                 "invested_pct":invested,"cash_pct":(cash/equity*100 if equity else 0),
                 "unrealized_pl":sum(p["unrealized_pl"] for p in positions),"top5_weight_pct":sum(p["weight_pct"] for p in positions[:5]),
@@ -442,36 +429,41 @@ def portfolio_ai():
             "unrealized_pnl":round(_safe_float(p.get("unrealized_pl")),2),
             "unrealized_pct":round(_safe_float(p.get("unrealized_pct")),2),
             "qty":p.get("qty"),"avg_entry":p.get("avg_entry"),
+            "sector":p.get("sector"),"industry":p.get("industry"),
+            "theme":p.get("theme"),"instrument_type":p.get("instrument_type"),
+            "description":p.get("description"),"risk_tags":p.get("risk_tags"),
             "news":news_by_symbol.get(str(p.get("symbol") or "").upper(),[]),
             "latest_sec":filings_by_symbol.get(str(p.get("symbol") or "").upper())
         } for p in positions[:28]]
         account = snapshot.get("account") or {}
         summary = snapshot.get("summary") or {}
         sector_rows = (sector.get("sectors") or [])[:10]
+        portfolio_sector_rows = (snapshot.get("sector_exposure") or [])[:12]
+        portfolio_theme_rows = (snapshot.get("theme_exposure") or [])[:12]
         candidates = (research.get("market_candidates") or [])[:8]
         rules = ("You are an institutional portfolio risk analyst. Use only supplied evidence; "
                  "separate facts from inference; do not invent prices, targets or events. Never sell "
                  "solely because P&L is negative. Consider concentration, leverage, taxes, spreads and "
                  "slippage. No orders are placed. No guaranteed returns. Be concise and actionable.")
         contexts = {
-          "executive": {"account":account,"summary":summary,"largest_holdings":holdings[:8],"sectors":sector_rows},
-          "holdings": {"account":account,"all_holdings":holdings},
+          "executive": {"account":account,"summary":summary,"largest_holdings":holdings[:8],"portfolio_sector_allocation":portfolio_sector_rows,"portfolio_theme_allocation":portfolio_theme_rows,"sectors":sector_rows},
+          "holdings": {"account":account,"all_holdings":holdings,"portfolio_sector_allocation":portfolio_sector_rows,"portfolio_theme_allocation":portfolio_theme_rows},
           "buys": {"candidates":candidates,"sectors":sector_rows,"news":news_by_symbol,
-                   "portfolio_themes":(snapshot.get("theme_exposure") or [])[:8]},
-          "rotation": {"sector_rotation":sector,"portfolio_themes":(snapshot.get("theme_exposure") or [])[:8]},
+                   "portfolio_sector_allocation":portfolio_sector_rows,"portfolio_themes":portfolio_theme_rows},
+          "rotation": {"sector_rotation":sector,"portfolio_sector_allocation":portfolio_sector_rows,"portfolio_themes":portfolio_theme_rows},
           "catalysts": {"filings":filings_by_symbol,"news":news_by_symbol,
                         "research_status":research.get("status"),"coverage_warnings":(research.get("errors") or [])[:8]},
           "risk_plan": {"account":account,"summary":summary,"holdings":holdings,
-                        "themes":(snapshot.get("theme_exposure") or [])[:8],
+                        "portfolio_sector_allocation":portfolio_sector_rows,"themes":portfolio_theme_rows,
                         "sector_rotation":sector_rows,"technical":snapshot.get("technical") or {}}
         }
         instructions = {
-          "executive":"EXECUTIVE DECISION: assess account health, negative cash/leverage, concentration and top 3 observations.",
-          "holdings":"HOLDINGS ACTION REVIEW: assess EVERY listed holding; label HOLD/TRIM/EXIT REVIEW/ADD ON WEAKNESS; give evidence, confidence and a condition that changes the view. A loss alone is not an exit thesis.",
+          "executive":"EXECUTIVE DECISION: assess account health, negative cash/leverage, issuer-sector and theme concentration by market value, ETF overlap and top 3 observations. Explicitly state the largest sector weights in dollars and % of equity.",
+          "holdings":"HOLDINGS ACTION REVIEW: assess EVERY listed holding using its supplied sector, industry and theme; label HOLD/TRIM/EXIT REVIEW/ADD ON WEAKNESS; give evidence, confidence and a condition that changes the view. A loss alone is not an exit thesis.",
           "buys":"BUY WATCHLIST: recommend at most 3 non-held candidates or say NO NEW BUY. Prefer scanner score >=60 and supportive relative sector strength/catalysts when supplied. Give thesis, entry condition, invalidation and portfolio-fit rationale. Never invent an entry price.",
           "rotation":"SECTOR ROTATION: rank strongest/weakest supplied sectors using 5D/1M/3M relative returns versus SPY; explain portfolio implications. Clearly disclose missing data.",
           "catalysts":"NEWS & SEC CATALYSTS: list decision-relevant ticker/date/source, positive/negative/unclear, reported fact and portfolio implication. SEC excerpts are partial, not full reports. Identify missing coverage.",
-          "risk_plan":"RISK CONTROLS + 1-5 SESSION PLAN: assess concentration, theme overlap, leverage/negative cash, liquidity and correlated exposures only where data exists; rank 3-5 actions with triggers."
+          "risk_plan":"RISK CONTROLS + 1-5 SESSION PLAN: assess sector and theme concentration by dollars and % of equity, ETF overlap (without double counting unknown fund look-through), leverage/negative cash, liquidity and correlated exposures only where data exists; rank 3-5 actions with triggers."
         }
         prompt = rules+"\n\n"+instructions[section]+"\nEVIDENCE (compact JSON):\n"+__import__("json").dumps(contexts[section],separators=(",",":"),default=str)[:10500]
         preferred = "huggingface" if status.get("huggingface",{}).get("configured") else None
