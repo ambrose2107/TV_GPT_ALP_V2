@@ -388,7 +388,7 @@ def portfolio_ai():
     body = request.get_json(silent=True) or {}
     snapshot = body.get("snapshot") or {}
     section = str(body.get("section") or "").lower()
-    allowed = {"executive", "holdings", "buys", "rotation", "catalysts", "risk_plan"}
+    allowed = {"executive", "allocation", "holdings", "buys", "rotation", "catalysts", "risk_plan"}
     if section not in allowed:
         return jsonify({"available":False,"message":"Unknown review section."}), 400
     try:
@@ -445,8 +445,24 @@ def portfolio_ai():
                  "separate facts from inference; do not invent prices, targets or events. Never sell "
                  "solely because P&L is negative. Consider concentration, leverage, taxes, spreads and "
                  "slippage. No orders are placed. No guaranteed returns. Be concise and actionable.")
+        allocation_holdings = [{
+            "ticker":p.get("symbol"),"sector":p.get("sector"),"industry":p.get("industry"),
+            "theme":p.get("theme"),"instrument_type":p.get("instrument_type"),
+            "market_value":round(_safe_float(p.get("market_value")),2),
+            "equity_weight_pct":round(_safe_float(p.get("weight_pct")),2),
+            "risk_tags":(p.get("risk_tags") or [])[:3]
+        } for p in positions]
         contexts = {
           "executive": {"account":account,"summary":summary,"largest_holdings":holdings[:8],"portfolio_sector_allocation":portfolio_sector_rows,"portfolio_theme_allocation":portfolio_theme_rows,"sectors":sector_rows},
+          "allocation": {"account_equity":_safe_float(account.get("equity")),
+                         "gross_positions_market_value":_safe_float(summary.get("market_value")),
+                         "sector_allocation":portfolio_sector_rows,
+                         "theme_allocation":portfolio_theme_rows,
+                         "instrument_allocation":(snapshot.get("instrument_exposure") or [])[:10],
+                         "holdings_sector_map":allocation_holdings,
+                         "classification_coverage_pct":snapshot.get("classification_coverage_pct"),
+                         "unmapped_symbols":snapshot.get("classification_unmapped") or [],
+                         "methodology":snapshot.get("classification_methodology")},
           "holdings": {"account":account,"all_holdings":holdings,"portfolio_sector_allocation":portfolio_sector_rows,"portfolio_theme_allocation":portfolio_theme_rows},
           "buys": {"candidates":candidates,"sectors":sector_rows,"news":news_by_symbol,
                    "portfolio_sector_allocation":portfolio_sector_rows,"portfolio_themes":portfolio_theme_rows},
@@ -459,6 +475,7 @@ def portfolio_ai():
         }
         instructions = {
           "executive":"EXECUTIVE DECISION: assess account health, negative cash/leverage, issuer-sector and theme concentration by market value, ETF overlap and top 3 observations. Explicitly state the largest sector weights in dollars and % of equity.",
+          "allocation":"SECTOR & CAPITAL ALLOCATION REVIEW: use the full holdings_sector_map and sector/theme/instrument totals. Explain where the money is invested in USD and % of account equity; rank the largest issuer sectors and investment themes; distinguish direct single-stock exposure from ETF wrappers and crypto; flag concentrated AI/semiconductor/quantum/data-centre/power exposures and any obvious overlap. Do not invent ETF look-through. State classification gaps and what holdings data would be needed for look-through.",
           "holdings":"HOLDINGS ACTION REVIEW: assess EVERY listed holding using its supplied sector, industry and theme; label HOLD/TRIM/EXIT REVIEW/ADD ON WEAKNESS; give evidence, confidence and a condition that changes the view. A loss alone is not an exit thesis.",
           "buys":"BUY WATCHLIST: recommend at most 3 non-held candidates or say NO NEW BUY. Prefer scanner score >=60 and supportive relative sector strength/catalysts when supplied. Give thesis, entry condition, invalidation and portfolio-fit rationale. Never invent an entry price.",
           "rotation":"SECTOR ROTATION: rank strongest/weakest supplied sectors using 5D/1M/3M relative returns versus SPY; explain portfolio implications. Clearly disclose missing data.",
