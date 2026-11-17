@@ -44,7 +44,7 @@
   <div id="pt-sector-heatmap" class="grid2" style="margin-top:12px">Loading technology themes…</div>
 </section>
 
-<section class="panel"><h2>AI Portfolio Review · News · SEC filings</h2><p class="muted">Background research automatically checks held-company 10-K, 10-Q and 8-K filings, MarketAux news and sector rotation every 12 hours. Generate a portfolio decision review using this evidence. No orders are placed.</p><div id="research-status" class="notice small">Checking automatic SEC/news research status…</div><button class="btn secondary" id="ai-btn" onclick="runAI()" disabled>Generate full AI review (6 sections)</button><div id="ai-result" class="notice" style="display:none;white-space:pre-wrap"></div></section>
+<section class="panel"><h2>AI Portfolio Review · News · SEC filings</h2><p class="muted">Background research automatically checks held-company 10-K, 10-Q and 8-K filings, MarketAux news and sector rotation every 12 hours. Generate a portfolio decision review using this evidence. No orders are placed.</p><div id="research-status" class="notice small">Checking automatic SEC/news research status…</div><button class="btn secondary" id="ai-btn" onclick="runAI()" disabled>Generate full AI review (7 sections)</button><div id="ai-result" class="notice" style="display:none;white-space:pre-wrap"></div></section>
 <section class="panel"><h2>Quick guide: profit-taking and buyback</h2>
 <p>Use the watchlist as a review queue, not an instruction to sell. A large unrealized gain alone is not a pullback signal. Consider partial profit-taking only when the position is oversized or multiple independent signals weaken; define the re-entry trigger before selling.</p>
 <ol><li><b>Check extension:</b> distance above the 20-day mean and recent return.</li><li><b>Check trend damage:</b> price below the 20-day mean and 20-day mean below the 50-day mean.</li><li><b>Plan:</b> record the trim size, invalidation level, and buyback condition (e.g. reclaim of a moving average or stabilization near a defined support zone).</li><li><b>Account for friction:</b> taxes, spread, slippage, overnight gaps and the possibility that the stock never returns to the intended dip.</li><li><b>Avoid all-or-nothing timing:</b> a staged trim and staged re-entry can reduce dependence on picking exact tops/bottoms.</li></ol>
@@ -166,18 +166,19 @@ async function loadResearchStatus(){
 }
 const AI_REVIEW_SECTIONS=[
   ["executive","1. Executive decision"],
-  ["holdings","2. Holdings action review"],
-  ["buys","3. Buy watchlist"],
-  ["rotation","4. Sector rotation"],
-  ["catalysts","5. News and SEC catalysts"],
-  ["risk_plan","6. Risk controls and action plan"]
+  ["allocation","2. Sector and capital allocation"],
+  ["holdings","3. Holdings action review"],
+  ["buys","4. Buy watchlist"],
+  ["rotation","5. Sector rotation"],
+  ["catalysts","6. News and SEC catalysts"],
+  ["risk_plan","7. Risk controls and action plan"]
 ];
 const AI_REVIEW_DONE={};
 const waitForAI=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function runAI(){
   if(!SNAP)return;
   const b=document.getElementById('ai-btn'),o=document.getElementById('ai-result');
-  if(Object.keys(AI_REVIEW_DONE).length===6){
+  if(Object.keys(AI_REVIEW_DONE).length===7){
     Object.keys(AI_REVIEW_DONE).forEach(k=>delete AI_REVIEW_DONE[k]);
     o.textContent='';
   }
@@ -187,7 +188,7 @@ async function runAI(){
     for(let i=0;i<AI_REVIEW_SECTIONS.length;i++){
       const [section,title]=AI_REVIEW_SECTIONS[i];
       if(AI_REVIEW_DONE[section])continue;
-      b.textContent='Generating '+(completed+1)+'/6…';
+      b.textContent='Generating '+(completed+1)+'/7…';
       o.textContent+=(o.textContent?'\n\n':'')+'⏳ '+title+' — working…';
       const r=await fetch('/api/portfolio-manager/ai',{
         method:'POST',headers:{'Content-Type':'application/json'},
@@ -197,23 +198,23 @@ async function runAI(){
       if(!r.ok||!d.available){
         const message=d.message||('HTTP '+r.status);
         o.textContent=o.textContent.replace('⏳ '+title+' — working…','⚠ '+title+' — not completed: '+message);
-        o.textContent+='\n\n'+completed+'/6 sections saved. Wait briefly, then retry; completed sections will be skipped.';
+        o.textContent+='\n\n'+completed+'/7 sections saved. Wait briefly, then retry; completed sections will be skipped.';
         return;
       }
       o.textContent=o.textContent.replace('⏳ '+title+' — working…','');
       o.textContent+=(o.textContent.trim()?'\n\n':'')+'## '+title+'\n'+(d.analysis||'No commentary returned.');
       AI_REVIEW_DONE[section]=true;completed++;requestsMade++;
-      if(completed<6){
+      if(completed<7){
         o.textContent+='\n\nNext section starts after a short pause to stay within the AI provider rate limit…';
         await waitForAI(12000);
         o.textContent=o.textContent.replace('\n\nNext section starts after a short pause to stay within the AI provider rate limit…','');
       }
     }
-    o.textContent+='\n\n---\nReview complete · '+completed+'/6 sections · No orders placed.';
+    o.textContent+='\n\n---\nReview complete · '+completed+'/7 sections · No orders placed.';
   }catch(e){
-    o.textContent+='\n\nReview paused after '+completed+'/6 completed sections: '+e.message+'. Completed sections remain saved; retry resumes from the next section.';
+    o.textContent+='\n\nReview paused after '+completed+'/7 completed sections: '+e.message+'. Completed sections remain saved; retry resumes from the next section.';
   }finally{
-    b.disabled=false;b.textContent=completed===6?'Regenerate complete AI review':'Retry incomplete AI review';
+    b.disabled=false;b.textContent=completed===7?'Regenerate complete AI review':'Retry incomplete AI review';
   }
 }
 
