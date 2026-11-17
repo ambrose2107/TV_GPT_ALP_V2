@@ -105,7 +105,36 @@ def portfolio_data():
         positions = classification["positions"]
         positions.sort(key=lambda x: abs(x["market_value"]), reverse=True)
         total_mv = sum(abs(p["market_value"]) for p in positions)
+        from research.etf_lookthrough import build_etf_lookthrough
+        etf_lookthrough = build_etf_lookthrough(positions)
         theme_exposure = classification["theme_exposure_detailed"]
+        # Fast path: account and holdings are returned before historical price
+        # downloads/correlation calculations. The browser can paint the core
+        # portfolio immediately and load advanced analytics separately.
+        if request.args.get("basic") == "1":
+            basic_payload = {
+                "as_of": datetime.now(timezone.utc).isoformat(),
+                "account": {"equity": equity, "cash": cash,
+                    "buying_power": _safe_float(account.get("buying_power")),
+                    "portfolio_value": _safe_float(account.get("portfolio_value") or equity)},
+                "positions": positions, "theme_exposure": theme_exposure,
+                "sector_exposure": sector_exposure, "instrument_exposure": instrument_exposure,
+                "classification_coverage_pct": classification["classification_coverage_pct"],
+                "classification_unmapped": classification["classification_unmapped"],
+                "classification_methodology": classification["methodology"],
+                "etf_lookthrough": etf_lookthrough,
+                "summary": {"position_count": len(positions), "market_value": total_mv,
+                    "invested_pct": invested, "cash_pct": (cash / equity * 100 if equity else 0),
+                    "unrealized_pl": sum(p["unrealized_pl"] for p in positions),
+                    "top5_weight_pct": sum(p["weight_pct"] for p in positions[:5]),
+                    "simple_minus20_pct_dollars": -0.20 * total_mv,
+                    "beta_minus20_estimate": -0.20 * total_mv, "beta_coverage_count": 0},
+                "technical": {}, "risk_metrics": {}, "high_correlations": [],
+                "warnings": ["Core account and holdings loaded. Historical risk analytics are loading separately."],
+                "methodology": "Basic portfolio snapshot; advanced market-history risk metrics are not included in this fast response."
+            }
+            return jsonify(basic_payload)
+
         sector_exposure = classification["sector_exposure"]
         instrument_exposure = classification["instrument_exposure"]
         invested = (total_mv / equity * 100) if equity else 0
