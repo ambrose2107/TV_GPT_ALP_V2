@@ -108,6 +108,9 @@ def portfolio_data():
         from research.etf_lookthrough import build_etf_lookthrough
         etf_lookthrough = build_etf_lookthrough(positions)
         theme_exposure = classification["theme_exposure_detailed"]
+        sector_exposure = classification["sector_exposure"]
+        instrument_exposure = classification["instrument_exposure"]
+        invested = (total_mv / equity * 100) if equity else 0
         # Fast path: account and holdings are returned before historical price
         # downloads/correlation calculations. The browser can paint the core
         # portfolio immediately and load advanced analytics separately.
