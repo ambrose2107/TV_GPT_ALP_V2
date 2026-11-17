@@ -104,6 +104,10 @@ def build_etf_lookthrough(positions):
         "underlying_overlap": direct_overlap,
         "supported_funds": sorted(f["fund"] for f in funds),
         "unsupported_held_funds": sorted(
-            s for s in direct if s in {"QQQI", "SOXX", "IBIT", "XLU"} and direct[s] > 0
+            str(p.get("symbol") or "").upper()
+            for p in positions
+            if str(p.get("instrument_type") or "").lower() in {"etf", "leveraged etf"}
+            and str(p.get("symbol") or "").upper() not in ETF_HOLDINGS
+            and abs(float(p.get("market_value") or 0)) > 0
         ),
     }
