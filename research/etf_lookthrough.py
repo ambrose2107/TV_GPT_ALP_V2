@@ -10,7 +10,7 @@ ETF_HOLDINGS = {
     "SMH": {
         "as_of": "2026-11-16",
         "source": "https://www.vaneck.com/us/en/investments/semiconductor-etf-smh/holdings/",
-        "coverage_pct": 76.43,
+        "coverage_pct": 84.28,
         "holdings": [
             ("NVDA", 17.44), ("TSM", 9.97), ("AVGO", 6.50), ("TXN", 6.31),
             ("AMD", 6.05), ("ADI", 5.15), ("ASML", 4.57), ("QCOM", 4.49),
@@ -21,7 +21,7 @@ ETF_HOLDINGS = {
     "CIBR": {
         "as_of": "2026-11-16",
         "source": "https://www.ftportfolios.com/Retail/Etf/EtfHoldings.aspx?Ticker=CIBR",
-        "coverage_pct": 40.99,
+        "coverage_pct": 42.21,
         "holdings": [
             ("CRWD", 8.29), ("AVGO", 7.73), ("CSCO", 7.34),
             ("PANW", 7.10), ("FTNT", 6.19), ("OKTA", 4.17),
@@ -32,7 +32,7 @@ ETF_HOLDINGS = {
     "WQTM": {
         "as_of": "2026-09-25",
         "source": "https://www.wisdomtree.com/us/products/megatrends/wqtm",
-        "coverage_pct": 48.07,
+        "coverage_pct": 48.09,
         "holdings": [
             ("IONQ", 6.59), ("QUANTINUUM_PRIVATE", 6.41), ("RGTI", 5.86),
             ("QBTS", 5.43), ("INFLIQTION_PRIVATE", 5.13), ("IBM", 5.01),
@@ -42,7 +42,7 @@ ETF_HOLDINGS = {
     "QQQ": {
         "as_of": "2026-11-03",
         "source": "https://www.invesco.com/qqq-etf/en/about.html",
-        "coverage_pct": 46.45,
+        "coverage_pct": 46.44,
         "holdings": [
             ("AAPL", 8.13), ("NVDA", 8.02), ("MSFT", 6.20), ("AMZN", 4.36),
             ("MU", 4.28), ("TSLA", 3.49), ("AMD", 3.47), ("META", 2.97),
