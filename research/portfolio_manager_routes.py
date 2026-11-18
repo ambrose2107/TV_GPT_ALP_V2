@@ -153,7 +153,7 @@ def portfolio_data():
             # truncated when the portfolio contains many tickers.
             bars = {}
             page_token = None
-            for _page in range(4):
+            for _page in range(2):
                 params = {
                     "symbols": ",".join(data_symbols),
                     "timeframe": "1Day",
@@ -168,7 +168,7 @@ def portfolio_data():
                 resp = requests.get(
                     data_url, params=params,
                     headers={"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret},
-                    timeout=12,
+                    timeout=(3, 8),
                 )
                 resp.raise_for_status()
                 body = resp.json()
@@ -224,7 +224,7 @@ def portfolio_data():
                 ath_resp = requests.get(
                     data_url, params=ath_params,
                     headers={"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret},
-                    timeout=15,
+                    timeout=(3, 8),
                 )
                 ath_resp.raise_for_status()
                 ath_body = ath_resp.json()
