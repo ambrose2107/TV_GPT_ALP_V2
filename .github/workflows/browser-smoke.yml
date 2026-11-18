@@ -40,7 +40,7 @@ jobs:
       - name: Validate portfolio research enrichment
         run: python -m pytest -q tests/test_portfolio_research.py
       - name: Validate portfolio sector classification and exposure math
-        run: python -m pytest -q tests/test_portfolio_classification.py tests/test_etf_lookthrough.py
+        run: python -m pytest -q tests/test_portfolio_classification.py tests/test_etf_lookthrough.py tests/test_portfolio_manager_fast.py
       - name: Validate portfolio terminal return calculations
         run: python -m pytest -q tests/test_portfolio_terminal.py
       - name: Validate Alpaca account-history calculations
