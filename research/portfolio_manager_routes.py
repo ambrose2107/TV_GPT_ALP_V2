@@ -4,13 +4,14 @@ from core.config import Config
 from core.logger import get_logger
 import os, math, time
 import requests
-from brokers.alpaca_adapter import AlpacaAdapter
 from datetime import datetime, timezone
 
 portfolio_bp = Blueprint("portfolio_manager", __name__)
 logger = get_logger(__name__)
 _CACHE = {"at": 0, "payload": None}
+_BASIC_CACHE = {"at": 0, "payload": None}
 CACHE_SECONDS = 300
+BASIC_CACHE_SECONDS = 30
 
 def _auth_json():
     if not session.get("logged_in"):
@@ -42,45 +43,35 @@ def portfolio_data():
     err = _auth_json()
     if err: return err
     force = request.args.get("refresh") == "1"
+    basic_requested = request.args.get("basic") == "1"
     now = time.time()
-    if not force and _CACHE["payload"] and now - _CACHE["at"] < CACHE_SECONDS:
+    if basic_requested and not force and _BASIC_CACHE["payload"] and now - _BASIC_CACHE["at"] < BASIC_CACHE_SECONDS:
+        return jsonify(_BASIC_CACHE["payload"])
+    if not basic_requested and not force and _CACHE["payload"] and now - _CACHE["at"] < CACHE_SECONDS:
         return jsonify(_CACHE["payload"])
     try:
-        # Reuse the same Alpaca adapter already used by the working Positions/Account dashboard.
-        # This keeps Portfolio Manager on the exact same credentials, ALPACA_MODE and request path.
-        adapter = AlpacaAdapter()
-        try:
-            account = adapter.get_account()
-            raw = adapter.get_positions()
-        except Exception as ex:
-            # The dashboard's working Positions tab also supports legacy Render
-            # environment names.  Retry with those exact credentials before
-            # declaring Portfolio Manager unavailable.
-            key = Config.ALPACA_API_KEY or os.environ.get("APCA_API_KEY_ID", "") or os.environ.get("ALPACA_KEY", "")
-            secret = Config.ALPACA_SECRET_KEY or os.environ.get("APCA_API_SECRET_KEY", "") or os.environ.get("ALPACA_SECRET", "")
-            base = Config.ALPACA_BASE_URL
-            if not key or not secret:
-                raise RuntimeError(
-                    "Alpaca credentials are not available to Portfolio Manager. "
-                    "The Positions tab may be using legacy APCA_API_KEY_ID/APCA_API_SECRET_KEY names."
-                ) from ex
-            headers = {
-                "APCA-API-KEY-ID": key,
-                "APCA-API-SECRET-KEY": secret,
-                "Content-Type": "application/json",
-            }
-            try:
-                ar = requests.get(base + "/v2/account", headers=headers, timeout=8)
-                ar.raise_for_status()
-                pr = requests.get(base + "/v2/positions", headers=headers, timeout=8)
-                pr.raise_for_status()
-                account = ar.json()
-                raw = pr.json()
-            except Exception as retry_ex:
-                raise RuntimeError(
-                    "Alpaca account/positions request failed. "
-                    "Adapter: " + str(ex)[:180] + "; fallback: " + str(retry_ex)[:280]
-                ) from retry_ex
+        # Fetch only the two small trading-account endpoints for the first paint.
+        # Avoid the adapter's 10s-per-call timeout and its retry path on Render.
+        key = Config.ALPACA_API_KEY or os.environ.get("APCA_API_KEY_ID", "") or os.environ.get("ALPACA_KEY", "")
+        secret = Config.ALPACA_SECRET_KEY or os.environ.get("APCA_API_SECRET_KEY", "") or os.environ.get("ALPACA_SECRET", "")
+        base = (Config.ALPACA_BASE_URL or "https://paper-api.alpaca.markets").rstrip("/")
+        if not key or not secret:
+            raise RuntimeError("Alpaca credentials are missing. Check ALPACA_API_KEY / APCA_API_KEY_ID and the matching secret in Render.")
+        headers = {"APCA-API-KEY-ID": key, "APCA-API-SECRET-KEY": secret, "Content-Type": "application/json"}
+        from concurrent.futures import ThreadPoolExecutor
+        def _get_account():
+            response = requests.get(base + "/v2/account", headers=headers, timeout=(3, 5))
+            response.raise_for_status()
+            return response.json()
+        def _get_positions():
+            response = requests.get(base + "/v2/positions", headers=headers, timeout=(3, 5))
+            response.raise_for_status()
+            return response.json()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            account_future = pool.submit(_get_account)
+            positions_future = pool.submit(_get_positions)
+            account = account_future.result(timeout=9)
+            raw = positions_future.result(timeout=9)
         if not isinstance(account, dict):
             raise RuntimeError("Alpaca account response was not an object.")
         if not isinstance(raw, list):
@@ -114,7 +105,7 @@ def portfolio_data():
         # Fast path: account and holdings are returned before historical price
         # downloads/correlation calculations. The browser can paint the core
         # portfolio immediately and load advanced analytics separately.
-        if request.args.get("basic") == "1":
+        if basic_requested:
             basic_payload = {
                 "as_of": datetime.now(timezone.utc).isoformat(),
                 "account": {"equity": equity, "cash": cash,
@@ -136,6 +127,7 @@ def portfolio_data():
                 "warnings": ["Core account and holdings loaded. Historical risk analytics are loading separately."],
                 "methodology": "Basic portfolio snapshot; advanced market-history risk metrics are not included in this fast response."
             }
+            _BASIC_CACHE.update({"at": time.time(), "payload": basic_payload})
             return jsonify(basic_payload)
 
         sector_exposure = classification["sector_exposure"]
