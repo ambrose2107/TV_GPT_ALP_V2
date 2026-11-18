@@ -4,7 +4,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#0d1117;color:#e6edf3;font:13px system-ui,-apple-system,sans-serif}a{color:#58a6ff;text-decoration:none}.wrap{max-width:1450px;margin:auto;padding:18px}.top{display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap}.top h1{font-size:21px;margin:0 0 5px}.muted{color:#8b949e}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:10px;margin:16px 0}.card,.panel{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:14px;margin-bottom:12px}.panel{position:relative}.panel-heading{padding-right:88px}.panel-collapse{position:absolute;right:10px;top:9px;border:1px solid #484f58;border-radius:5px;background:#21262d;color:#c9d1d9;padding:5px 8px;font-size:11px;cursor:pointer}.panel.collapsed>:not(.panel-collapse):not(.panel-heading){display:none!important}.panel.collapsed{padding-bottom:12px}.table-tools{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:8px 0}.table-tools input,.table-tools select{background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:7px;max-width:190px}.table-tools button{border:1px solid #484f58;border-radius:5px;background:#21262d;color:#c9d1d9;padding:6px 9px;cursor:pointer}.label{color:#8b949e;font-size:11px}.value{font-size:21px;font-weight:650;margin-top:5px}.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:12px}.panel h2{font-size:14px;margin:0 0 12px}.btn{border:0;border-radius:6px;padding:8px 12px;background:#1f6feb;color:white;cursor:pointer;font-weight:600}.btn.secondary{background:#30363d}.btn:disabled{opacity:.5}table{border-collapse:collapse;width:100%;font-size:12px}th,td{text-align:left;padding:8px;border-bottom:1px solid #30363d;white-space:nowrap}th{color:#8b949e;font-weight:500} .scroll{overflow:auto}.good{color:#3fb950}.bad{color:#f85149}.warn{color:#d29922}.tag{padding:3px 6px;border-radius:4px;background:#30363d}.meter{height:7px;background:#30363d;border-radius:4px;overflow:hidden;min-width:70px}.meter span{display:block;height:100%;background:#d29922}.notice{padding:10px;background:#1c2128;border-radius:6px;color:#c9d1d9;margin:8px 0}.small{font-size:11px}.loading{padding:24px;text-align:center;color:#8b949e}@media(max-width:600px){.wrap{padding:10px}.value{font-size:18px}}
-</style></head><body><main class="wrap">
+.pm-stats-tabs{display:flex;gap:7px;overflow-x:auto;padding:8px 0 12px;margin-bottom:12px;border-bottom:1px solid var(--border,#30363d);position:sticky;top:0;z-index:5;background:var(--bg,#0d1117)}.pm-stats-tab{white-space:nowrap;border:1px solid var(--border,#30363d);border-radius:8px;padding:9px 12px;background:transparent;color:inherit;font-weight:600}.pm-stats-tab.active{background:#1f6feb;color:#fff;border-color:#1f6feb}.pm-stats-pane[hidden]{display:none!important}.pm-risk-loader{padding:14px;margin-bottom:14px}.pm-risk-loader button{padding:9px 13px;border-radius:8px;border:1px solid #388bfd;background:#1f6feb;color:#fff;font-weight:600}</style></head><body><main class="wrap">
 <div class="top"><div><h1>🛡️ Portfolio Manager</h1><div class="muted">Exposure · Correlation · Drawdown scenarios · Profit-taking watchlist</div></div><div><a href="/">← Dashboard</a> &nbsp; <button class="btn secondary" onclick="setAllPanels(true)">Minimize all</button> <button class="btn secondary" onclick="setAllPanels(false)">Expand all</button> <button class="btn" id="refresh" onclick="load(true)">Refresh portfolio</button></div></div>
 <div id="status" class="notice">Loading live Alpaca positions and historical daily prices…</div>
 <div id="app"><div class="loading">Loading…</div></div>
@@ -149,17 +149,24 @@ async function fetchPortfolioJson(url,timeoutMs=20000){
     throw error;
   }finally{clearTimeout(timer);}
 }
+let ADVANCED_LOADING=false;
 async function loadAdvancedAnalytics(force=false){
+  if(ADVANCED_LOADING)return;
+  ADVANCED_LOADING=true;
+  const button=document.getElementById('pm-load-risk');
+  if(button){button.disabled=true;button.textContent='Loading risk statistics…';}
   try{
-    const d=await fetchPortfolioJson('/api/portfolio-manager'+(force?'?refresh=1':''),110000);
+    const d=await fetchPortfolioJson('/api/portfolio-manager'+(force?'?refresh=1':''),45000);
     if(!SNAP)return;
     SNAP={...SNAP,...d,etf_lookthrough:SNAP.etf_lookthrough||d.etf_lookthrough};
     render(SNAP);
-    document.getElementById('status').textContent='Portfolio and advanced analytics updated '+new Date(SNAP.as_of).toLocaleString()+' · No orders will be placed.';
+    document.getElementById('status').textContent='Advanced statistics updated '+new Date(SNAP.as_of).toLocaleString()+' · No orders placed.';
   }catch(error){
     const status=document.getElementById('status');
-    if(status)status.textContent='Portfolio loaded. Historical risk analytics are temporarily unavailable: '+error.message+'. Your account and holdings remain visible; use Refresh portfolio to retry.';
-  }
+    if(status)status.textContent='Account and holdings remain available. Advanced statistics failed: '+error.message+'.';
+    const note=document.getElementById('pm-risk-load-note');
+    if(note)note.textContent='Risk statistics unavailable: '+error.message+'. Retry when ready.';
+  }finally{ADVANCED_LOADING=false;const next=document.getElementById('pm-load-risk');if(next){next.disabled=false;next.textContent='Retry advanced risk statistics';}}
 }
 async function load(force=false){
   const b=document.getElementById('refresh'),status=document.getElementById('status');
@@ -170,7 +177,6 @@ async function load(force=false){
     status.textContent='Account and '+((d.positions||[]).length)+' holdings loaded · Historical risk analytics are loading separately…';
     loadTerminal(false);loadResearchStatus();
     document.getElementById('ai-btn').disabled=false;
-    loadAdvancedAnalytics(force);
   }catch(error){
     status.textContent='Portfolio load failed: '+error.message;
     document.getElementById('app').innerHTML='<div class="notice">Account data could not be loaded. Check your login session, Alpaca credentials, and Render logs, then retry.</div>';
@@ -200,7 +206,47 @@ html+='<section class="panel"><h2>Position risk and profit-taking watchlist</h2>
 html+=p.map(x=>{let q=t[x.symbol]||{},sc=q.pullback_watch_score??null;return '<tr><td><b>'+esc(x.symbol)+'</b></td><td>'+pct(x.weight_pct)+'</td><td class="'+(x.unrealized_pl>=0?'good':'bad')+'">'+money(x.unrealized_pl)+' ('+pct(x.unrealized_pct)+')</td><td>'+ (q.ret20_pct==null?'—':pct(q.ret20_pct))+'</td><td>'+ (q.ret60_pct==null?'—':pct(q.ret60_pct))+'</td><td>'+ (q.last&&q.ma20?pct((q.last/q.ma20-1)*100):'—')+'</td><td>'+ (q.drawdown_from_3m_high_pct==null?'—':pct(q.drawdown_from_3m_high_pct))+'</td><td>'+ (q.volatility_pct==null?'—':pct(q.volatility_pct))+'</td><td>'+(sc==null?'—':'<span class="tag '+(sc>=6?'warn':'')+'">'+sc+'/10</span>')+'</td><td class="small">'+esc((q.flags||[]).join('; ')||'No clear rule flags / history unavailable')+'</td></tr>'}).join('');
 html+='</tbody></table></div></section>';
 html+='<section class="panel"><h2>High-Correlation Pairs: Return & Risk Comparison</h2><p class="muted small">Pairs with correlation ≥0.75 on either 1-month or 6-month daily-return window. Returns use adjusted closes; “—” means insufficient history.</p><div class="scroll"><table><thead><tr><th>Pair</th><th>1M Corr.</th><th>6M Corr.</th><th>A 1M</th><th>B 1M</th><th>Spread 1M</th><th>A 3M</th><th>B 3M</th><th>Spread 3M</th><th>A 6M</th><th>B 6M</th><th>Spread 6M</th><th>A 12M</th><th>B 12M</th><th>Spread 12M</th><th>A Vol.</th><th>B Vol.</th><th>A Max DD</th><th>B Max DD</th><th>Coverage A/B</th></tr></thead><tbody>'+((d.high_correlations||[]).map(x=>{const a=x.a_metrics||{},b=x.b_metrics||{},sp=x.return_spread_pct||{};const fmt=v=>v==null||!isFinite(Number(v))?'—':(Number(v)>=0?'+':'')+Number(v).toFixed(1)+'%';const corr=v=>v==null||!isFinite(Number(v))?'—':Number(v).toFixed(2);return '<tr><td><b>'+esc(x.a)+' / '+esc(x.b)+'</b></td><td>'+corr(x.corr_1m)+'</td><td>'+corr(x.corr_6m)+'</td><td>'+fmt(a.ret_1m_pct)+'</td><td>'+fmt(b.ret_1m_pct)+'</td><td>'+fmt(sp['1m'])+'</td><td>'+fmt(a.ret_3m_pct)+'</td><td>'+fmt(b.ret_3m_pct)+'</td><td>'+fmt(sp['3m'])+'</td><td>'+fmt(a.ret_6m_pct)+'</td><td>'+fmt(b.ret_6m_pct)+'</td><td>'+fmt(sp['6m'])+'</td><td>'+fmt(a.ret_12m_pct)+'</td><td>'+fmt(b.ret_12m_pct)+'</td><td>'+fmt(sp['12m'])+'</td><td>'+fmt(a.volatility_3m_pct)+'</td><td>'+fmt(b.volatility_3m_pct)+'</td><td>'+fmt(a.max_drawdown_12m_pct)+'</td><td>'+fmt(b.max_drawdown_12m_pct)+'</td><td>'+(a.coverage_12m_pct==null?'—':a.coverage_12m_pct+'%')+' / '+(b.coverage_12m_pct==null?'—':b.coverage_12m_pct+'%')+'</td></tr>'}).join('')||'<tr><td colspan="20">No pairs met the threshold or history was insufficient.</td></tr>')+'</tbody></table><p class="small muted">Windows: 21/63/126/252 trading days approximate 1/3/6/12 months. Spread = A minus B; positive means A outperformed during that period. Volatility is annualized from recent daily returns; max drawdown is the worst peak-to-trough decline in available trailing-year data. Higher return does not automatically mean better risk-adjusted performance.</p></div></section>';
-if((d.warnings||[]).length)html+='<div class="notice">'+d.warnings.map(esc).join('<br>')+'</div>';document.getElementById('app').innerHTML=html;renderPortfolioAnalytics(d,p);initPortfolioUI(document);}
+if((d.warnings||[]).length)html+='<div class="notice">'+d.warnings.map(esc).join('<br>')+'</div>';document.getElementById('app').innerHTML=html;organizePortfolioTabs();renderPortfolioAnalytics(d,p);initPortfolioUI(document);}
+function organizePortfolioTabs(){
+  const app=document.getElementById('app');if(!app||app.dataset.tabsReady==='1')return;
+  app.dataset.tabsReady='1';
+  const groups=[
+    {id:'overview',label:'Overview',match:/^thematic concentration|^issuer sector allocation/i},
+    {id:'allocation',label:'Allocation & ETF overlap',match:/^issuer sector allocation|^interactive portfolio analytics|^ETF look-through/i},
+    {id:'holdings',label:'Holdings',match:/^every holding/i},
+    {id:'risk',label:'Risk & performance',match:/^stress test|^position risk|^high-correlation/i}
+  ];
+  const nav=document.createElement('div');nav.id='pm-stats-tabs';nav.className='pm-stats-tabs';
+  const panes={};
+  groups.forEach((g,i)=>{
+    const btn=document.createElement('button');btn.type='button';btn.className='pm-stats-tab'+(i===0?' active':'');btn.textContent=g.label;btn.dataset.tab=g.id;
+    btn.addEventListener('click',()=>activatePortfolioTab(g.id));nav.appendChild(btn);
+    const pane=document.createElement('div');pane.className='pm-stats-pane';pane.dataset.pane=g.id;pane.hidden=i!==0;panes[g.id]=pane;
+  });
+  const children=Array.from(app.children);
+  children.forEach(node=>{
+    if(node===nav)return;
+    const heading=node.querySelector('h2');
+    const title=(heading?.textContent||'').trim();
+    let group='overview';
+    if(/^every holding/i.test(title))group='holdings';
+    else if(/^issuer sector allocation|^interactive portfolio analytics|^ETF look-through/i.test(title))group='allocation';
+    else if(/^stress test|^position risk|^high-correlation/i.test(title)||node.classList.contains('grid2'))group='risk';
+    panes[group].appendChild(node);
+  });
+  app.prepend(nav);
+  groups.forEach(g=>app.appendChild(panes[g.id]));
+  const risk=panes.risk;
+  const loader=document.createElement('div');loader.className='panel pm-risk-loader';
+  loader.innerHTML='<h2>Historical risk statistics</h2><p id="pm-risk-load-note" class="muted small">Not loaded automatically. Your account, holdings and allocation statistics are already available. Load 1-year price history only when you need volatility, drawdown, trend and correlation statistics.</p>';
+  const loadButton=document.createElement('button');loadButton.id='pm-load-risk';loadButton.type='button';loadButton.textContent='Load advanced risk statistics';loadButton.addEventListener('click',()=>loadAdvancedAnalytics(false));loader.appendChild(loadButton);
+  risk.prepend(loader);
+  activatePortfolioTab('overview');
+}
+function activatePortfolioTab(id){
+  document.querySelectorAll('#pm-stats-tabs .pm-stats-tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===id));
+  document.querySelectorAll('#app .pm-stats-pane').forEach(p=>p.hidden=p.dataset.pane!==id);
+}
 function setAllPanels(collapsed){document.querySelectorAll('.panel').forEach(panel=>setPanelCollapsed(panel,collapsed));}
 function setPanelCollapsed(panel,collapsed){panel.classList.toggle('collapsed',collapsed);const b=panel.querySelector(':scope > .panel-collapse');if(b){b.textContent=collapsed?'Expand':'Minimize';b.setAttribute('aria-expanded',String(!collapsed));}}
 function initPortfolioUI(root=document){
