@@ -344,7 +344,7 @@ def portfolio_data():
             payload = {
                 "as_of": datetime.now(timezone.utc).isoformat(), "account":{"equity":equity,"cash":cash,
                 "buying_power":_safe_float(account.get("buying_power")),"portfolio_value":_safe_float(account.get("portfolio_value") or equity)},
-                "positions":positions,"theme_exposure":theme_exposure,"sector_exposure":sector_exposure,"instrument_exposure":instrument_exposure,"classification_coverage_pct":classification["classification_coverage_pct"],"classification_unmapped":classification["classification_unmapped"],"classification_methodology":classification["methodology"],"etf_lookthrough":etf_lookthrough,"summary":{"position_count":len(positions),"market_value":total_mv,
+                "positions":positions,"theme_exposure":theme_exposure,"sector_exposure":sector_exposure,"instrument_exposure":instrument_exposure,"classification_coverage_pct":classification["classification_coverage_pct"],"classification_unmapped":classification["classification_unmapped"],"classification_methodology":classification["methodology"],"etf_lookthrough":etf_lookthrough,"etf_lookthrough":etf_lookthrough,"summary":{"position_count":len(positions),"market_value":total_mv,
                 "invested_pct":invested,"cash_pct":(cash/equity*100 if equity else 0),
                 "unrealized_pl":sum(p["unrealized_pl"] for p in positions),
                 "top5_weight_pct":sum(p["weight_pct"] for p in positions[:5]),
