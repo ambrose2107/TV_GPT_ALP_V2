@@ -75,5 +75,5 @@ def test_basic_portfolio_endpoint_fails_fast_without_credentials(monkeypatch):
     with client.session_transaction() as sess:
         sess["logged_in"] = True
     response = client.get("/api/portfolio-manager?basic=1")
-    assert response.status_code == 500
+    assert response.status_code == 503
     assert "credentials are missing" in response.get_json()["error"].lower()
