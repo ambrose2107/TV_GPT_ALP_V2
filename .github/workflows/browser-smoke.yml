@@ -36,7 +36,7 @@ jobs:
       - name: Install Chromium
         run: python -m playwright install --with-deps chromium
       - name: Compile changed Python modules
-        run: python -m py_compile app.py core/market_data.py core/account_history.py research/portfolio_terminal_routes.py research/portfolio_manager_routes.py research/portfolio_classification.py research/etf_lookthrough.py research/portfolio_research.py core/scheduler.py mirrorfish/engine.py tests/test_portfolio_terminal.py tests/test_portfolio_research.py tests/test_account_history.py research/ai_crash_warning.py tests/test_ai_crash_baseline.py tests/test_ai_crash_warning_model.py
+        run: python -m py_compile app.py core/market_data.py core/account_history.py research/portfolio_terminal_routes.py research/portfolio_manager_routes.py research/portfolio_classification.py research/etf_lookthrough.py research/portfolio_research.py core/scheduler.py mirrorfish/engine.py tests/test_portfolio_terminal.py tests/test_portfolio_research.py tests/test_account_history.py research/ai_crash_warning.py tests/test_ai_crash_baseline.py tests/test_ai_crash_warning_model.py tests/test_portfolio_manager_fast.py tests/test_browser_smoke.py
       - name: Validate portfolio research enrichment
         run: python -m pytest -q tests/test_portfolio_research.py
       - name: Validate portfolio sector classification and exposure math
