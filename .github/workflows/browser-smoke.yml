@@ -20,7 +20,7 @@ concurrency:
 jobs:
   playwright-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 18
     env:
       PLAYWRIGHT_TEST_BASE_URL: ${{ inputs.base_url || vars.PLAYWRIGHT_TEST_BASE_URL || 'https://tv-gpt-alp-v2-gpt3.onrender.com' }}
       PLAYWRIGHT_DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
@@ -49,8 +49,24 @@ jobs:
         run: python -m pytest -q tests/test_ai_crash_warning_model.py
       - name: Validate checked-in historical baseline
         run: python -m pytest -q tests/test_ai_crash_baseline.py
-      - name: Run browser smoke tests
-        run: python -m pytest -q -s tests/test_browser_smoke.py
+      # Render's auto-deploy usually needs several minutes after a push.
+      # Wait before the first live browser check, then retry transient cold-start/deploy failures.
+      - name: Wait for Render deployment
+        run: sleep 300
+      - name: Run browser smoke tests (retry transient deploy failures)
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            echo "Live browser smoke attempt ${attempt}/3"
+            if python -m pytest -q -s tests/test_browser_smoke.py; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Smoke test failed; waiting 120 seconds before retry."
+              sleep 120
+            fi
+          done
+          exit 1
       - name: Upload screenshots and browser diagnostics
         if: always()
         uses: actions/upload-artifact@v4
