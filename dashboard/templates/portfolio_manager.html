@@ -52,7 +52,8 @@
 </main><script>
 let SNAP=null;
 
-let ptEquityChart = null;\nconst portfolioCharts={};
+let ptEquityChart = null;
+const portfolioCharts={};
 function ptMoney(v) {
   if (v === null || v === undefined || !isFinite(Number(v))) return '—';
   return Number(v).toLocaleString('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0});
@@ -120,7 +121,8 @@ function renderMarketPulse(d) {
   document.getElementById('pt-losers-today').innerHTML=ptMoverTable(d.losers_today,'day');
   document.getElementById('pt-gainers-5d').innerHTML=ptMoverTable(d.gainers_5d,'5d');
   document.getElementById('pt-losers-5d').innerHTML=ptMoverTable(d.losers_5d,'5d');
-  initPortfolioUI(document);\n  const source=document.getElementById('pt-market-source');
+  initPortfolioUI(document);
+  const source=document.getElementById('pt-market-source');
   if(source)source.textContent=(d.source||'')+' · '+(d.universe_note||'')+((d.warnings||[]).length?' · '+d.warnings.join(' '):'');
   const sectors=document.getElementById('pt-sector-heatmap');
   if(sectors)sectors.innerHTML=(d.sectors||[]).map(s=>{
