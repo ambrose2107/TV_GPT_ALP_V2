@@ -99,6 +99,29 @@ def test_deployed_dashboard_and_ai_crash_smoke():
             )
         assert page.locator("#pane-bt").count() == 1, "Backtest pane is missing."
 
+        # Portfolio Manager must paint the basic account snapshot without waiting
+        # for the optional historical risk-data batch.
+        pm_response = page.goto(BASE_URL + "/portfolio-manager", wait_until="domcontentloaded", timeout=60_000)
+        assert pm_response is not None and pm_response.status < 400, "Portfolio Manager page did not load."
+        page.locator("#pm-stats-tabs").wait_for(state="visible", timeout=30_000)
+        page.wait_for_function("""() => {
+          const status = document.querySelector('#status');
+          const equity = document.querySelector('#app .cards .card .value');
+          return status && !status.textContent.includes('Fetching account') &&
+                 equity && equity.textContent.trim() !== '—';
+        }""", timeout=30_000)
+        pm_tabs = page.locator("#pm-stats-tabs .pm-stats-tab")
+        assert pm_tabs.count() == 4, "Portfolio statistics tabs are missing."
+        for label in ("Allocation & ETF overlap", "Holdings", "Risk & performance"):
+            page.get_by_role("button", name=label, exact=True).click()
+            assert page.locator("#app .pm-stats-pane:visible").count() == 1, (
+                "Portfolio Manager tab did not switch to " + label
+            )
+        print("Portfolio Manager status:", page.locator("#status").inner_text())
+        page.goto(BASE_URL + "/", wait_until="domcontentloaded", timeout=60_000)
+        page.locator("#main-tabs").wait_for(state="visible", timeout=30_000)
+        assert not page_errors, "Browser JavaScript error in Portfolio Manager: " + " | ".join(page_errors)
+
         # Confirm the new Analytics account-history view is present and navigable.
         analytics_tab = page.locator("#main-tabs .tab").filter(has_text="Analytics")
         assert analytics_tab.count() == 1, "The Analytics navigation tab is missing."
