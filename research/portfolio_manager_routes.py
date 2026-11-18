@@ -372,7 +372,8 @@ def portfolio_data():
     except Exception as ex:
         logger.exception("Portfolio Manager data error")
         # Safe diagnostic text: never include request headers or credential values.
-        return jsonify({"error":"Portfolio data could not be loaded.","detail":str(ex)[:500],
+        public_error = str(ex)[:250] if isinstance(ex, RuntimeError) else "Portfolio data could not be loaded."
+        return jsonify({"error":public_error,"detail":str(ex)[:500],
                         "configured":{"alpaca_key_present":bool(_headers().get("APCA-API-KEY-ID")),
                                       "alpaca_secret_present":bool(_headers().get("APCA-API-SECRET-KEY")),
                                       "api_base":(Config.ALPACA_BASE_URL or "").rstrip("/")}}), 503
