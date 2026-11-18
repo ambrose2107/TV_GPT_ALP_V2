@@ -124,7 +124,7 @@ def portfolio_data():
                     "simple_minus20_pct_dollars": -0.20 * total_mv,
                     "beta_minus20_estimate": -0.20 * total_mv, "beta_coverage_count": 0},
                 "technical": {}, "risk_metrics": {}, "high_correlations": [],
-                "warnings": ["Core account and holdings loaded. Historical risk analytics are loading separately."],
+                "warnings": ["Account and holdings are current. Open Risk & performance to load historical statistics on demand."],
                 "methodology": "Basic portfolio snapshot; advanced market-history risk metrics are not included in this fast response."
             }
             _BASIC_CACHE.update({"at": time.time(), "payload": basic_payload})
